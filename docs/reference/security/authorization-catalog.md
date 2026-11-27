@@ -34,6 +34,7 @@
 - `internal.approval-delegations.list-gateway`
 - `internal.approval-tasks.check-overdue`
 - `internal.gateway-cache.invalidate`
+- `internal.masterdata.approval-department.read`
 - `iam.users.read`
 - `iam.users.manage`
 - `iam.roles.read`

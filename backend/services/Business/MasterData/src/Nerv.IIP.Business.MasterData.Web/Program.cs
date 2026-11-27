@@ -14,6 +14,7 @@ using Hangfire.Redis.StackExchange;
 using Microsoft.AspNetCore.Http.Json;
 using Newtonsoft.Json;
 using Nerv.IIP.Business.MasterData.Domain;
+using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Application.OpenApi;
@@ -69,6 +70,7 @@ try
     }
 
     builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
+    ApprovalDepartmentAuthorization.Add(builder);
 
     #endregion
 

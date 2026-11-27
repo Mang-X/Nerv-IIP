@@ -2679,6 +2679,14 @@
     },
     {
       "service": "MasterData",
+      "method": "POST",
+      "route": "/internal/master-data/v1/approval-principal-department",
+      "operationId": "getBusinessMasterDataApprovalPrincipalDepartment",
+      "classification": "internal",
+      "rationale": "仅供持有专用 scoped caller 凭据的 Approval 服务读取经 IAM 验证的最终用户部门。"
+    },
+    {
+      "service": "MasterData",
       "method": "GET",
       "route": "/api/business/v1/master-data/principals/{userId}/work-context",
       "operationId": "getBusinessMasterDataPrincipalWorkContext",

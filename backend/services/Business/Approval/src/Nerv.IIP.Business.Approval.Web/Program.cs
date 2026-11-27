@@ -48,11 +48,12 @@ try
     var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
     AddApprovalAuthorityClient(ResolveApprovalStepAuthority.IamClient, iamBaseAddress);
-    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.MasterDataClient, masterDataBaseAddress);
+    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.MasterDataClient, masterDataBaseAddress)
+        .RedactLoggedHeaders(_ => true);
 
-    void AddApprovalAuthorityClient(string name, Uri baseAddress)
+    IHttpClientBuilder AddApprovalAuthorityClient(string name, Uri baseAddress)
     {
-        builder.Services.AddHttpClient(name, client => client.BaseAddress = baseAddress)
+        return builder.Services.AddHttpClient(name, client => client.BaseAddress = baseAddress)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
     }
 

@@ -1512,8 +1512,17 @@ public sealed class ApprovalEndpointContractTests
     [InlineData("user", "u-reviewer")]
     [InlineData("role", "buyer")]
     [InlineData("department", "purchasing")]
+    [InlineData("department", "purchasing", "success")]
+    [InlineData("department", "purchasing", "denied")]
+    [InlineData("department", "purchasing", "unavailable")]
+    [InlineData("department", "purchasing", "invalid-response")]
+    [InlineData("department", "purchasing", "missing-scope")]
+    [InlineData("department", "purchasing", "missing-credentials")]
+    [InlineData("department", "purchasing", "shared-credential")]
+    [InlineData("department", "purchasing", "reused-credential")]
+    [InlineData("user", "u-reviewer", "no-department")]
     public async Task Resolve_approval_step_uses_verified_membership_and_the_typed_route_target(
-        string approverType, string approverRef)
+        string approverType, string approverRef, string? scopedResult = null)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -1566,6 +1575,37 @@ public sealed class ApprovalEndpointContractTests
         });
         var masterData = new ApprovalAuthorityHandler(request =>
         {
+            if (scopedResult is not null)
+            {
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.Equal("/internal/master-data/v1/approval-principal-department", request.RequestUri!.PathAndQuery);
+                Assert.Equal("Bearer test-department-org-001", request.Headers.Authorization?.ToString());
+                Assert.Equal("Bearer test-end-principal",
+                    Assert.Single(request.Headers.GetValues("X-Nerv-IIP-User-Authorization")));
+                var body = request.Content!.ReadFromJsonAsync<System.Text.Json.JsonElement>().GetAwaiter().GetResult();
+                Assert.Equal("org-001", body.GetProperty("organizationId").GetString());
+                Assert.Equal("env-dev", body.GetProperty("environmentId").GetString());
+                Assert.Equal(2, body.EnumerateObject().Count());
+                return scopedResult switch
+                {
+                    "success" => new(HttpStatusCode.OK)
+                    {
+                        Content = JsonContent.Create(new { success = true, data = new { departmentId = "purchasing" } }),
+                    },
+                    "no-department" => new(HttpStatusCode.OK)
+                    {
+                        Content = JsonContent.Create(new { success = true, data = new { departmentId = (string?)null } }),
+                    },
+                    "denied" => new(HttpStatusCode.Forbidden),
+                    "unavailable" => new(HttpStatusCode.ServiceUnavailable),
+                    "invalid-response" => new(HttpStatusCode.OK)
+                    {
+                        Content = JsonContent.Create(new { success = true, data = new { } }),
+                    },
+                    _ => throw new InvalidOperationException("Unexpected department request."),
+                };
+            }
+
             Assert.Equal("test-internal-token", request.Headers.Authorization?.Parameter);
             Assert.Equal("/api/business/v1/master-data/principals/u-reviewer/work-context?organizationId=org-001&environmentId=env-dev",
                 request.RequestUri!.PathAndQuery);
@@ -1583,6 +1623,29 @@ public sealed class ApprovalEndpointContractTests
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 builder.UseSetting("Approval:Seed:Enabled", "false");
+                if (scopedResult == "missing-credentials")
+                {
+                    builder.UseSetting("Approval:MasterDataDepartment:UseScopedCaller", "true");
+                }
+                else if (scopedResult is not null)
+                {
+                    const string credentials = "Approval:MasterDataDepartment:OutboundCredentials:";
+                    builder.UseSetting(credentials + "0:OrganizationId", "org-token");
+                    builder.UseSetting(credentials + "0:EnvironmentId", "env-token");
+                    builder.UseSetting(credentials + "0:BearerToken", "test-department-org-token");
+                    if (scopedResult != "missing-scope")
+                    {
+                        builder.UseSetting(credentials + "1:OrganizationId", "org-001");
+                        builder.UseSetting(credentials + "1:EnvironmentId", "env-dev");
+                        builder.UseSetting(credentials + "1:BearerToken", scopedResult switch
+                        {
+                            "shared-credential" => "test-internal-token",
+                            "reused-credential" => "test-department-org-token",
+                            _ => "test-department-org-001",
+                        });
+                    }
+                }
+
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
@@ -1628,6 +1691,18 @@ public sealed class ApprovalEndpointContractTests
         siteRestricted = false;
 
         using var response = await client.PostAsJsonAsync(route, command);
+        if (scopedResult is not null and not ("success" or "no-department"))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            var expectedCalls = scopedResult is "denied" or "unavailable" or "invalid-response" ? 1 : 0;
+            Assert.Equal(expectedCalls, masterData.Paths.Count);
+            using var failedScope = factory.Services.CreateScope();
+            Assert.Empty(await failedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .ApprovalChains.SelectMany(chain => chain.Decisions).ToListAsync());
+            return;
+        }
+
+        Assert.Single(masterData.Paths);
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         using var persistedScope = factory.Services.CreateScope();
         var persisted = persistedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

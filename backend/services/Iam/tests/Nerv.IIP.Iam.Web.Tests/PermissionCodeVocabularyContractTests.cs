@@ -83,6 +83,7 @@ public sealed class PermissionCodeVocabularyContractTests
             ["InternalApprovalDelegationsListGateway"] = "internal.approval-delegations.list-gateway",
             ["InternalApprovalTasksCheckOverdue"] = "internal.approval-tasks.check-overdue",
             ["InternalGatewayCacheInvalidate"] = "internal.gateway-cache.invalidate",
+            ["InternalMasterDataApprovalDepartmentRead"] = "internal.masterdata.approval-department.read",
             ["MaintenanceDowntimeReasonsRead"] = "business.maintenance.downtime-reasons.read",
             ["MaintenancePlansManage"] = "business.maintenance.plans.manage",
             ["MaintenancePlansRead"] = "business.maintenance.plans.read",

@@ -109,14 +109,25 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(52, contracts.Count);
+        Assert.Equal(53, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
         {
             Assert.Matches("^[a-z][A-Za-z0-9]*$", contract.OperationId);
             Assert.Contains("BusinessMasterData", contract.OperationId, StringComparison.Ordinal);
+            if (contract.EndpointType == typeof(ApprovalPrincipalDepartmentEndpoint))
+            {
+                Assert.Equal("/internal/master-data/v1/approval-principal-department", contract.Route);
+                Assert.Equal("POST", contract.HttpMethod);
+                Assert.Equal("getBusinessMasterDataApprovalPrincipalDepartment", contract.OperationId);
+                Assert.Equal("internal.masterdata.approval-department.read", contract.PermissionCode);
+                Assert.Equal(ApprovalDepartmentAuthorization.Policy, contract.AuthorizationPolicy);
+                return;
+            }
+
             Assert.StartsWith("/api/business/v1/master-data/", contract.Route, StringComparison.Ordinal);
+            Assert.Equal(InternalServiceAuthorizationPolicy.Name, contract.AuthorizationPolicy);
             Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PUT", "PATCH", "DELETE" });
             if (contract.EndpointType == typeof(ResolveSchedulingTimeContextEndpoint))
             {
@@ -228,7 +239,8 @@ public sealed class MasterDataApiContractTests
             .ToArray();
 
         var failures = MasterDataEndpointContracts.All
-            .Where(contract => !HasInternalServicePolicy(endpoints, contract.Route))
+            .Where(contract => contract.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+                && !HasInternalServicePolicy(endpoints, contract.Route))
             .Select(contract => $"{contract.EndpointType.Name} is missing {InternalServiceAuthorizationPolicy.Name}.")
             .ToArray();
 
@@ -262,7 +274,7 @@ public sealed class MasterDataApiContractTests
             Assert.Equal(contract.Route, endpoint.RoutePattern.RawText);
             Assert.Contains(contract.HttpMethod, endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods);
             Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
-                authorization => authorization.Policy == InternalServiceAuthorizationPolicy.Name);
+                authorization => authorization.Policy == contract.AuthorizationPolicy);
         });
     }
 

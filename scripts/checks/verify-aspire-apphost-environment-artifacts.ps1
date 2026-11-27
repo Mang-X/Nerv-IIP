@@ -4,6 +4,7 @@
 #     - Builds and publishes two temporary Aspire Docker Compose artifacts
 #     - Validates Production Compose internal service port isolation
 #     - Validates environment-gated BarcodeLabel printer configuration and its FileStorage endpoint
+#     - Validates synthetic Approval department caller wiring and rollout in generated Compose
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
 #     - .ryugi/artifacts/script-logs/**
@@ -172,6 +173,60 @@ function Assert-EnvironmentArtifact {
     }
 }
 
+function Assert-ApprovalDepartmentArtifact {
+    param([hashtable] $Services, [bool] $ConfigureSender)
+
+    $expectedRecipients = if ($ConfigureSender) { @('business-master-data', 'business-approval') } else { @('business-master-data') }
+    $masterData = $Services['business-master-data']
+    if ($masterData['Iam__BaseUrl'] -cne 'http://iam:${IAM_PORT}') {
+        throw 'MasterData must receive the generated IAM endpoint for the Approval department receiver.'
+    }
+
+    $scopes = @(
+        @{ OrganizationId = 'verify-approval-org-a'; EnvironmentId = 'verify-approval-env-a' }
+        @{ OrganizationId = 'verify-approval-org-b'; EnvironmentId = 'verify-approval-env-b' }
+    )
+    for ($index = 0; $index -lt $scopes.Count; $index++) {
+        $parameter = 'APPROVAL_MASTER_DATA_DEPARTMENT_' + $index
+        $reference = '${' + $parameter + '}'
+        $receiver = "MasterData__ApprovalDepartment__ScopedCallers__Profiles__${index}__"
+        $sender = "Approval__MasterDataDepartment__OutboundCredentials__${index}__"
+        $targets = @($Services.GetEnumerator() | Where-Object { $_.Value.Values -ccontains $reference } | ForEach-Object Key)
+        if (-not (Test-OrdinalSetEquals -Actual $targets -Expected $expectedRecipients)) {
+            throw 'The Approval department credential has an invalid Compose service set.'
+        }
+        $expectedReceiver = $scopes[$index] + @{
+            Name = "approval-master-data-department-$index"
+            Subject = 'business-approval'
+            Permissions__0 = 'internal.masterdata.approval-department.read'
+            BearerToken = $reference
+        }
+        foreach ($entry in $expectedReceiver.GetEnumerator()) {
+            if ($masterData[$receiver + $entry.Key] -cne $entry.Value) {
+                throw 'MasterData must receive the scoped Approval department caller profile.'
+            }
+        }
+        if ($ConfigureSender) {
+            $approval = $Services['business-approval']
+            $expectedSender = $scopes[$index] + @{ BearerToken = $reference }
+            foreach ($entry in $expectedSender.GetEnumerator()) {
+                if ($approval[$sender + $entry.Key] -cne $entry.Value) {
+                    throw 'Approval must receive the scoped MasterData department credential.'
+                }
+            }
+        }
+    }
+    $approval = $Services['business-approval']
+    if ($ConfigureSender) {
+        if ($approval['Approval__MasterDataDepartment__UseScopedCaller'] -cne 'true') {
+            throw 'Approval must explicitly enable the configured department caller.'
+        }
+    }
+    elseif (@($approval.Keys | Where-Object { $_ -clike 'Approval__MasterDataDepartment__*' }).Count -ne 0) {
+        throw 'Receiver-first deployment must leave the Approval sender configuration absent.'
+    }
+}
+
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-apphost-environment-artifacts-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($temporaryRoot) | Out-Null
@@ -189,12 +244,23 @@ try {
                 ConnectorHost__EnvironmentId = 'verify-environment'
             }
         }
+        $configureApprovalDepartmentSender = $environmentName -ceq 'Development'
+        $publishEnvironment += @{
+            ApprovalMasterDataDepartment__Enabled = 'true'
+            ApprovalMasterDataDepartment__ConfigureSender = $configureApprovalDepartmentSender.ToString()
+            ApprovalMasterDataDepartment__Scopes__0__OrganizationId = 'verify-approval-org-a'
+            ApprovalMasterDataDepartment__Scopes__0__EnvironmentId = 'verify-approval-env-a'
+            ApprovalMasterDataDepartment__Scopes__1__OrganizationId = 'verify-approval-org-b'
+            ApprovalMasterDataDepartment__Scopes__1__EnvironmentId = 'verify-approval-env-b'
+        }
         Invoke-WithScopedEnvironment -Variables $publishEnvironment -ScriptBlock {
             Invoke-Aspire -Arguments @('publish', '--output-path', $outputPath, '--environment', $environmentName, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name "verify-apphost-$($environmentName.ToLowerInvariant())-publish" | Out-Null
         }
         $composePath = Join-Path $outputPath 'docker-compose.yaml'
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
-        Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName
+        $services = Get-ComposeProjectEnvironments -ComposePath $composePath
+        Assert-EnvironmentArtifact -Services $services -EnvironmentName $environmentName
+        Assert-ApprovalDepartmentArtifact -Services $services -ConfigureSender $configureApprovalDepartmentSender
         $composeText = [IO.File]::ReadAllText($composePath)
         if ($environmentName -ceq 'Production') {
             Assert-ProductionComposeInternalPorts -ServiceBlocks (Get-ComposeServiceBlocks -ComposeText $composeText)

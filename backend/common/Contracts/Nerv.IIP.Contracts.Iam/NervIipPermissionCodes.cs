@@ -21,6 +21,7 @@ public static class NervIipPermissionCodes
     public const string InternalApprovalDelegationsListGateway = "internal.approval-delegations.list-gateway";
     public const string InternalApprovalTasksCheckOverdue = "internal.approval-tasks.check-overdue";
     public const string InternalGatewayCacheInvalidate = "internal.gateway-cache.invalidate";
+    public const string InternalMasterDataApprovalDepartmentRead = "internal.masterdata.approval-department.read";
 
     // iam.*
     public const string IamUsersRead = "iam.users.read";

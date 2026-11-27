@@ -190,6 +190,7 @@ internal sealed partial class AppHostComposition
         var businessMasterData = infrastructure.WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")))
             .WithHttpEndpoint(port: fullStackEphemeral ? null : 5107, name: "http")
             .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
+            .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
             .WithEnvironment("MasterData__SchedulingTimeContext__SigningKey", schedulingTimeContextSigningKey)
             .WithEnvironment("Persistence__Provider", "PostgreSQL")
             .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
@@ -443,6 +444,8 @@ internal sealed partial class AppHostComposition
                 .WaitFor(rabbitmq);
         }
 
+        ConfigureApprovalMasterDataDepartment(businessApproval, businessMasterData);
+
         // Inventory 盘点调整审批链（HttpStockCountApprovalClient）、ProductEngineering 工程审批校验
         // （HttpEngineeringApprovalVerifier）与 Mes 工序开工审批（HttpMesOperationTaskStartApprovalClient）
         // 都通过 HTTP 访问 Approval；Approval 声明晚于三者，
@@ -686,6 +689,65 @@ internal sealed partial class AppHostComposition
             return useRedisMessaging
                 ? project.WithReference(redis).WaitFor(redis)
                 : project;
+        }
+    }
+
+    private void ConfigureApprovalMasterDataDepartment(
+        IResourceBuilder<ProjectResource> approval,
+        IResourceBuilder<ProjectResource> masterData)
+    {
+        var settings = builder.Configuration.GetSection("ApprovalMasterDataDepartment");
+        var configureSender = settings.GetValue("ConfigureSender", false);
+        if (!settings.GetValue("Enabled", false))
+        {
+            if (configureSender)
+            {
+                throw new InvalidOperationException("ApprovalMasterDataDepartment requires the receiver before configuring the sender.");
+            }
+
+            return;
+        }
+
+        var scopes = settings.GetSection("Scopes").GetChildren().ToArray();
+        if (scopes.Length == 0)
+        {
+            throw new InvalidOperationException("ApprovalMasterDataDepartment requires at least one organization and environment.");
+        }
+
+        var configuredScopes = new HashSet<(string, string)>();
+        for (var index = 0; index < scopes.Length; index++)
+        {
+            var organizationId = scopes[index]["OrganizationId"];
+            var environmentId = scopes[index]["EnvironmentId"];
+            if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId)
+                || organizationId != organizationId.Trim() || environmentId != environmentId.Trim()
+                || !configuredScopes.Add((organizationId, environmentId)))
+            {
+                throw new InvalidOperationException("ApprovalMasterDataDepartment scopes require unique, nonempty organization and environment IDs.");
+            }
+
+            var name = $"approval-master-data-department-{index}";
+            var credential = builder.AddParameter(name, secret: true);
+            var profile = $"MasterData__ApprovalDepartment__ScopedCallers__Profiles__{index}__";
+            masterData.WithEnvironment(profile + "Name", name)
+                .WithEnvironment(profile + "Subject", "business-approval")
+                .WithEnvironment(profile + "OrganizationId", organizationId)
+                .WithEnvironment(profile + "EnvironmentId", environmentId)
+                .WithEnvironment(profile + "Permissions__0", "internal.masterdata.approval-department.read")
+                .WithEnvironment(profile + "BearerToken", credential);
+
+            if (configureSender)
+            {
+                var outbound = $"Approval__MasterDataDepartment__OutboundCredentials__{index}__";
+                approval.WithEnvironment(outbound + "OrganizationId", organizationId)
+                    .WithEnvironment(outbound + "EnvironmentId", environmentId)
+                    .WithEnvironment(outbound + "BearerToken", credential);
+            }
+        }
+
+        if (configureSender)
+        {
+            approval.WithEnvironment("Approval__MasterDataDepartment__UseScopedCaller", "true");
         }
     }
 
