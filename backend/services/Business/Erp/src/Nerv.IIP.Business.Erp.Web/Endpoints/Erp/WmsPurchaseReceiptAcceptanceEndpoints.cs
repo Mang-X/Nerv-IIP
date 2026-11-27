@@ -13,7 +13,8 @@ public sealed record AcceptWmsPurchaseReceiptRequest(
     string PurchaseOrderNo,
     string SiteCode,
     decimal ExchangeRate,
-    IReadOnlyCollection<WmsPurchaseReceiptActualLine> Lines);
+    IReadOnlyCollection<WmsPurchaseReceiptActualLine> Lines,
+    bool Unrestricted = false);
 
 public sealed class AcceptWmsPurchaseReceiptEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext)
     : ErpEndpoint<AcceptWmsPurchaseReceiptRequest, ResponseData<WmsPurchaseReceiptAcceptanceResponse>>
@@ -30,7 +31,7 @@ public sealed class AcceptWmsPurchaseReceiptEndpoint(ISender sender, IErpIntegra
         {
             await sender.Send(new AcceptWmsPurchaseReceiptCommand(
                 req.OrganizationId, req.EnvironmentId, req.WmsReceiptBatchId, req.PurchaseOrderNo,
-                req.SiteCode, req.ExchangeRate, req.Lines), ct);
+                req.SiteCode, req.ExchangeRate, req.Lines, req.Unrestricted), ct);
         }
         catch (DbUpdateConcurrencyException)
         {

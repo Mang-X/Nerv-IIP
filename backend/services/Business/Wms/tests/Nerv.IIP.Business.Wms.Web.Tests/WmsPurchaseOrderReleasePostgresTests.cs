@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DotNetCore.CAP;
@@ -9,12 +11,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Testing.PostgreSql;
@@ -195,6 +199,11 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         var accepted = await binding;
         Assert.Equal(receipt.ExpectedVersion + 2, accepted.Version);
         Assert.Equal(accepted, await SendAsync(fixture, receipt));
+        await Assert.ThrowsAsync<WmsUnprocessableException>(() => SendAsync(fixture,
+            new CompleteInboundOrderCommand(receipt.InboundOrderId, "quality-complete",
+                OrganizationId: receipt.OrganizationId, EnvironmentId: receipt.EnvironmentId, ActorPrincipalId: receipt.ActorPrincipalId,
+                AuthorizedSiteCodes: receipt.AuthorizedSiteCodes, ScopeKind: receipt.ScopeKind, ScopeId: receipt.ScopeId,
+                ExpectedVersion: accepted.Version)));
 
         Assert.Equal(2, erp.Requests.Count);
         Assert.All(erp.Requests, request => Assert.Equal((bind.BatchId, "PO-123", 1.25m, 12.5m, 0m), request));
@@ -209,6 +218,146 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         Assert.Equal(12.5m, Assert.Single(order.Lines).ReceivedQuantity);
         Assert.Empty(await db.InventoryMovementRequests.ToListAsync());
         Assert.Empty(await db.WarehouseTasks.ToListAsync());
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Bound_unrestricted_receipt_posts_frozen_cost_and_retries_the_same_movement()
+    {
+        var erp = new ReceiptAcceptanceTransport();
+        var settings = Settings();
+        settings[Route + "QualityStatus"] = "unrestricted";
+        settings["Messaging:Provider"] = "InMemory";
+        settings["Wms:WorkPoolSeed:Enabled"] = "false";
+        await using var fixture = await ReplayFixture.CreateAsync(
+            services => services.AddHttpClient<IWmsPurchaseReceiptAcceptanceClient, HttpWmsPurchaseReceiptAcceptanceClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => erp), settings, "Development");
+        await CapTestHost.WaitForCapBootstrapAsync(fixture.Factory.Services);
+        var release = Released();
+        await DeliverAsync(fixture, release with
+        {
+            Payload = release.Payload with
+            {
+                Lines = [.. release.Payload.Lines, new("010", "SKU-B", "pcs", 2m, new DateOnly(2026, 10, 3))],
+            },
+        });
+        var receipt = (await AssignForConfirmationAsync(fixture, "PO-123")) with
+        {
+            Lines = [new("020", 12.5m), new("010", 2m)],
+        };
+        var completion = new CompleteInboundOrderCommand(receipt.InboundOrderId, "complete",
+            OrganizationId: "org-replay", EnvironmentId: "env-replay", ActorPrincipalId: "operator",
+            AuthorizedSiteCodes: ["SITE"], ScopeKind: "site", ScopeId: "SITE", ExpectedVersion: receipt.ExpectedVersion);
+
+        await Assert.ThrowsAsync<WmsUnprocessableException>(() => SendAsync(fixture, completion));
+        await SendAsync(fixture, receipt);
+        var batchId = await BatchIdAsync(fixture);
+        var accepted = await SendAsync(fixture, new BindInboundErpReceiptCommand(receipt, batchId));
+        completion = completion with { ExpectedVersion = accepted.Version };
+        erp.ReceiptNo = "WRONG";
+        await Assert.ThrowsAsync<WmsUnprocessableException>(() => SendAsync(fixture, completion));
+        erp.ReceiptNo = "RCV-123";
+        using var response = await fixture.Client.PostAsJsonAsync(
+            $"/api/business/v1/wms/inbound-orders/{receipt.InboundOrderId}/complete", new
+            {
+                inboundOrderId = receipt.InboundOrderId.ToString(),
+                completion.IdempotencyKey,
+                completion.OrganizationId,
+                completion.EnvironmentId,
+                completion.ActorPrincipalId,
+                completion.AuthorizedSiteCodes,
+                completion.ScopeKind,
+                completion.ScopeId,
+                completion.ExpectedVersion,
+            });
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, responseBody);
+        using var responseJson = JsonDocument.Parse(responseBody);
+        Assert.True(responseJson.RootElement.GetProperty("success").GetBoolean(), responseBody);
+        var posted = await SendAsync(fixture, completion);
+        Assert.Equal(posted, await SendAsync(fixture, completion with { IdempotencyKey = "changed-client-key" }));
+        Assert.NotNull(posted.RequestId);
+
+        string key;
+        using (var read = fixture.Factory.Services.CreateScope())
+        {
+            var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var request = await db.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "020");
+            Assert.Equal(6.25m, (await db.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "010")).UnitCost);
+            Assert.Equal(15.625m, request.UnitCost);
+            Assert.Equal("020", request.SourceDocumentLineId);
+            Assert.Contains(batchId.ToString("N"), request.IdempotencyKey);
+            key = request.IdempotencyKey;
+            var time = DateTimeOffset.Parse("2026-10-03T00:00:00Z");
+            var failed = new StockMovementPostingFailedIntegrationEvent(
+                "failure", InventoryIntegrationEventTypes.StockMovementPostingFailed, 1, time,
+                InventoryIntegrationEventSources.BusinessInventory, "corr", "cause", "org-replay", "env-replay",
+                "system:inventory", "failure", new("inbound", "wms", "PO-123", "020", key, "SKU-A", "kg",
+                    "SITE", "STAGE-A", null, null, "unrestricted", "company", null, 12.5m,
+                    "posting-rejected", "temporary failure", time));
+            var failureLetter = await fixture.AddLetterAsync(failed, StockMovementPostingFailedIntegrationEventHandlerForMarkWmsRequestFailed.ConsumerName);
+            await fixture.ReplayAsync(failureLetter, "replayed");
+        }
+
+        erp.ReceiptNo = "LOOKUP-MUST-NOT-RUN-ON-RETRY";
+        var retry = new RetryInboundInventoryPostingCommand(receipt.InboundOrderId, "another-key",
+            new("org-replay", "env-replay", "operator", ["SITE"], "site", "SITE", "org-replay",
+                "env-replay", "SITE", null, null));
+        Assert.Equal(posted, await SendAsync(fixture, retry));
+        Assert.Equal(posted, await SendAsync(fixture, retry));
+        using var verification = fixture.Factory.Services.CreateScope();
+        var verifiedDb = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var retried = await verifiedDb.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "020");
+        Assert.Equal(key, retried.IdempotencyKey);
+        Assert.Equal(15.625m, retried.UnitCost);
+        Assert.Equal("Pending", retried.Status.ToString());
+        Assert.Equal(2, await verifiedDb.InventoryMovementRequests.CountAsync());
+        var requests = await ReadOutboxAsync(verifiedDb, nameof(InventoryMovementRequestedIntegrationEvent));
+        var originalAndRetry = requests.Select(message => message.GetProperty("Payload"))
+            .Where(payload => payload.GetProperty("SourceDocumentLineId").GetString() == "020").ToArray();
+        Assert.Equal(2, originalAndRetry.Length);
+        Assert.All(originalAndRetry, payload =>
+        {
+            Assert.Equal(key, payload.GetProperty("IdempotencyKey").GetString());
+            Assert.Equal(15.625m, payload.GetProperty("UnitCost").GetDecimal());
+        });
+        Assert.Single(requests, message => message.GetProperty("Payload").GetProperty("SourceDocumentLineId").GetString() == "010");
+        Assert.Empty(await ReadOutboxAsync(verifiedDb, nameof(WmsIntegrationEvent)));
+
+        async Task DeliverPostedAsync(InventoryMovementRequest movement)
+        {
+            using var delivery = fixture.Factory.Services.CreateScope();
+            var time = DateTimeOffset.Parse("2026-10-03T00:00:00Z");
+            var eventId = $"posted-{movement.SourceDocumentLineId}";
+            var postedEvent = new StockMovementPostedIntegrationEvent(
+                eventId, InventoryIntegrationEventTypes.StockMovementPosted, 1, time, InventoryIntegrationEventSources.BusinessInventory,
+                "corr", "cause", movement.OrganizationId, movement.EnvironmentId, "system:inventory", eventId,
+                new($"MOV-{movement.SourceDocumentLineId}", "inbound", "wms", movement.SourceDocumentId,
+                    movement.SourceDocumentLineId, movement.IdempotencyKey, movement.SkuCode, movement.UomCode,
+                    movement.SiteCode, movement.LocationCode, movement.LotNo, null, movement.QualityStatus,
+                    movement.OwnerType, null, movement.Quantity, time, movement.UnitCost, null));
+            await delivery.ServiceProvider.GetRequiredService<StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted>()
+                .HandleCapAsync(postedEvent, default);
+        }
+
+        await DeliverPostedAsync(await verifiedDb.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "010"));
+        Assert.Empty(await ReadOutboxAsync(verifiedDb, nameof(WmsIntegrationEvent)));
+        await DeliverPostedAsync(retried);
+        await DeliverPostedAsync(retried);
+        var acknowledgement = Assert.Single(await ReadOutboxAsync(verifiedDb, nameof(WmsIntegrationEvent))).GetProperty("Payload");
+        Assert.Equal(batchId, acknowledgement.GetProperty("WmsReceiptBatchId").GetGuid());
+        Assert.Equal("RCV-123", acknowledgement.GetProperty("SourceDocumentId").GetString());
+        Assert.Equal(WmsSourceDocumentTypes.PurchaseReceipt, acknowledgement.GetProperty("SourceDocumentType").GetString());
+    }
+
+    private static async Task<JsonElement[]> ReadOutboxAsync(ApplicationDbContext db, string topic)
+    {
+        var content = await db.Database.SqlQuery<string>(
+            $"""SELECT "Content" AS "Value" FROM cap.published WHERE "Name" = {topic}""").ToArrayAsync();
+        return content.Select(value =>
+        {
+            using var json = JsonDocument.Parse(value);
+            return json.RootElement.GetProperty("Value").Clone();
+        }).ToArray();
     }
 
     [WmsDeadLetterReplayPostgresFact]
@@ -631,9 +780,54 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         return await scope.ServiceProvider.GetRequiredService<ISender>().Send(request);
     }
 
+    private sealed class ReceiptAcceptanceTransport : HttpMessageHandler
+    {
+        private Guid? committedBatch;
+        public string ReceiptNo { get; set; } = "RCV-123";
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                var body = await request.Content!.ReadFromJsonAsync<JsonElement>(cancellationToken);
+                Assert.True(body.GetProperty("unrestricted").GetBoolean());
+                committedBatch = body.GetProperty("wmsReceiptBatchId").GetGuid();
+            }
+            else if (committedBatch is null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+            else
+            {
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.EndsWith($"/{committedBatch}?organizationId=org-replay&environmentId=env-replay", request.RequestUri!.PathAndQuery);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        wmsReceiptBatchId = committedBatch, purchaseReceiptNo = ReceiptNo,
+                        purchaseOrderNo = "PO-123", siteCode = "SITE", exchangeRate = 1.25m,
+                        lines = new[] { new { purchaseOrderLineNo = "020", skuCode = "SKU-A", uomCode = "kg",
+                            receivedQuantity = 12.5m, locationCode = "STAGE-A", qualityStatus = "unrestricted", unitCost = 15.625m },
+                            new { purchaseOrderLineNo = "010", skuCode = "SKU-B", uomCode = "pcs",
+                                receivedQuantity = 2m, locationCode = "STAGE-A", qualityStatus = "unrestricted", unitCost = 6.25m } },
+                    },
+                }),
+            };
+        }
+    }
+
     private sealed class ReceiptAcceptanceStub(Func<int, CancellationToken, Task<string>> respond)
         : IWmsPurchaseReceiptAcceptanceClient
     {
+        public Task<IReadOnlyDictionary<string, decimal>> GetBoundUnitCostsAsync(InboundOrder inbound, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("This fixture exercises ERP acceptance only.");
+
         public List<(Guid Batch, string Order, decimal Rate, decimal Requested, decimal Actual)> Requests { get; } = [];
 
         public Task<string> GetOrAcceptAsync(InboundOrder inbound, Guid batchId, CancellationToken cancellationToken)
