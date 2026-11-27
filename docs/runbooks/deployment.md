@@ -69,6 +69,15 @@
 3. 确认所有实例完成切换后，将 `AllowLegacyBearer` 设为 `false`。验证限定凭据可以读取各自的审批链，且共享凭据读取详情时收到 `401`。
 4. 如需回滚，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。用同一组业务入口和链 ID 核对恢复情况。
 
+### Approval 审批链列表、待办和决策读取凭据
+
+在 AppHost 设置 `ApprovalReadCollections:Enabled=true`，用 `ApprovalReadCollections:Scopes` 登记 BusinessGateway 实际使用的每组 `OrganizationId` 和 `EnvironmentId`。为每组范围按列表下标配置 Aspire secret 参数 `approval-read-collections-gateway-{index}`，凭据须与共享、建链及链详情的凭据分别配置。
+
+1. 先更新 Approval，设置 `ApprovalReadCollections:AllowLegacyBearer=true` 和 `ApprovalReadCollections:ConfigureSenders=false`。
+2. 更新 BusinessGateway 并将 `ConfigureSenders` 设为 `true`。逐范围验证链列表、审批待办、工作台待办及审批决策列表，记录响应状态和代表性审批链 ID。
+3. 确认所有 Gateway 实例都已切换后，将 `AllowLegacyBearer` 设为 `false`。确认上述业务入口仍可用，且共享凭据调用 Approval 的链列表、待办及决策列表均收到 `401`。
+4. 若合法范围受阻，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。用相同入口和范围确认恢复。
+
 ### FileStorage tus 字节落点
 
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：

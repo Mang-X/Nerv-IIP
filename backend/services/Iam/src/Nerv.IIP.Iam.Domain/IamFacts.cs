@@ -122,6 +122,7 @@ public static class NervIipSeedPermissions
         "internal.approval-chains.read-quality",
         "internal.approval-chains.read-product-engineering",
         "internal.approval-chains.read-gateway",
+        "internal.approval-chains.list-gateway",
         "internal.gateway-cache.invalidate",
         "iam.users.read",
         "iam.users.manage",

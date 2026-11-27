@@ -274,6 +274,12 @@ public sealed class ListApprovalChainsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalChainsRequest req, CancellationToken ct)
     {
+        if (!ReadApprovalCollectionsAuthorization.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var response = await sender.Send(new ListApprovalChainsQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -351,6 +357,12 @@ public sealed class ListPendingApprovalTasksEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListPendingApprovalTasksRequest req, CancellationToken ct)
     {
+        if (!ReadApprovalCollectionsAuthorization.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var response = await sender.Send(new ListPendingApprovalTasksQuery(req.OrganizationId, req.EnvironmentId, req.ActorType, req.ActorRef, req.Skip, req.Take, req.RoleRefs, req.DepartmentRef), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -381,6 +393,12 @@ public sealed class ListApprovalDecisionsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalDecisionsRequest req, CancellationToken ct)
     {
+        if (!ReadApprovalCollectionsAuthorization.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var response = await sender.Send(new ListApprovalDecisionsQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -750,12 +768,12 @@ public static class ApprovalEndpointContracts
     [
         new(typeof(CreateOrUpdateApprovalTemplateEndpoint), "POST", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateApprovalTemplate"),
         new(typeof(ListApprovalTemplatesEndpoint), "GET", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalTemplates"),
-        new(typeof(ListApprovalChainsEndpoint), "GET", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalChains"),
+        new(typeof(ListApprovalChainsEndpoint), "GET", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Read, ReadApprovalCollectionsAuthorization.PolicyName, "listApprovalChains"),
         new(typeof(StartApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Manage, CreateApprovalChainAuthorization.PolicyName, "startApprovalChain"),
         new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, GetApprovalChainAuthorization.PolicyName, "getApprovalChain"),
-        new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listPendingApprovalTasks"),
+        new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, ReadApprovalCollectionsAuthorization.PolicyName, "listPendingApprovalTasks"),
         new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "checkOverdueApprovalSteps"),
-        new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDecisions"),
+        new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, ReadApprovalCollectionsAuthorization.PolicyName, "listApprovalDecisions"),
         new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, null, "resolveApprovalStep"),
         new(typeof(WithdrawApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/withdraw", ApprovalPermissionCodes.Manage, null, "withdrawApprovalChain"),
         new(typeof(ResubmitApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/resubmit", ApprovalPermissionCodes.Manage, null, "resubmitApprovalChain"),

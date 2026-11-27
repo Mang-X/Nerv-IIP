@@ -110,7 +110,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalChainListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalChainListResponse>(
-            internalBearerToken,
+            ResolveCollectionReadBearer(request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/chains?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -163,7 +163,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalTaskListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalTaskListResponse>(
-            internalBearerToken,
+            ResolveCollectionReadBearer(request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/tasks?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -182,7 +182,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalDecisionListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalDecisionListResponse>(
-            internalBearerToken,
+            ResolveCollectionReadBearer(request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/decisions?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -255,4 +255,17 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
                 ("environmentId", request.EnvironmentId)),
             request,
             cancellationToken);
+
+    private string ResolveCollectionReadBearer(string organizationId, string environmentId, string legacyBearer)
+    {
+        try
+        {
+            return ScopedCallerOutboundToken.Resolve(configuration?.GetSection("Approval:ReadCollections:OutboundCredentials"),
+                organizationId, environmentId, legacyBearer);
+        }
+        catch (InvalidOperationException)
+        {
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.ServiceUnavailable);
+        }
+    }
 }

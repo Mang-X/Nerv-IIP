@@ -24,6 +24,7 @@ using Nerv.IIP.Business.Approval.Web.Application.Queries.Templates;
 using Nerv.IIP.Business.Approval.Web.Endpoints.Approvals;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing.EntityFramework;
 using NetCorePal.Extensions.Primitives;
 using NetCorePal.Extensions.DistributedTransactions;
 
@@ -50,7 +51,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/chains"
             && x.PermissionCode == ApprovalPermissionCodes.Read
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.ReadCollections"
             && x.OperationId == "listApprovalChains");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains"
@@ -65,7 +66,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/tasks"
             && x.PermissionCode == ApprovalPermissionCodes.Read
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.ReadCollections"
             && x.OperationId == "listPendingApprovalTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/tasks/overdue/check"
@@ -75,7 +76,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/decisions"
             && x.PermissionCode == ApprovalPermissionCodes.Read
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.ReadCollections"
             && x.OperationId == "listApprovalDecisions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve"
@@ -200,6 +201,95 @@ public sealed class ApprovalEndpointContractTests
         Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, -1, 100)).IsValid);
         Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, 0, 501)).IsValid);
         Assert.False(taskValidator.Validate(new ListPendingApprovalTasksQuery("org-001", "env-dev", "user", "u-reviewer", -1, 100)).IsValid);
+    }
+
+    [Theory]
+    [InlineData("business-gateway", "list-gateway", "scoped", false, HttpStatusCode.OK)]
+    [InlineData("business-gateway", "list-gateway", "scoped", true, HttpStatusCode.OK)]
+    [InlineData("quality", "list-gateway", "scoped", true, HttpStatusCode.Forbidden)]
+    [InlineData("business-gateway", "read-gateway", "scoped", true, HttpStatusCode.Forbidden)]
+    [InlineData("business-gateway", "list-gateway", "shared", true, HttpStatusCode.OK)]
+    [InlineData("business-gateway", "list-gateway", "shared", false, HttpStatusCode.Unauthorized)]
+    public async Task Approval_collection_reads_enforce_gateway_capability_and_persisted_scope(
+        string subject, string capability, string credential, bool allowLegacy, HttpStatusCode expected)
+    {
+        const string sharedToken = "synthetic-shared-internal-token";
+        const string scopedToken = "synthetic-scoped-approval-collection-token";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", sharedToken);
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            builder.UseSetting("Approval:ReadCollections:AllowLegacyBearer", allowLegacy.ToString());
+            const string profile = "Approval:ReadCollections:ScopedCallers:Profiles:0:";
+            builder.UseSetting(profile + "Name", "fixture-collection-reader");
+            builder.UseSetting(profile + "BearerToken", scopedToken);
+            builder.UseSetting(profile + "Subject", subject);
+            builder.UseSetting(profile + "OrganizationId", "org-001");
+            builder.UseSetting(profile + "EnvironmentId", "env-dev");
+            builder.UseSetting(profile + "Permissions:0", $"internal.approval-chains.{capability}");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection)
+                    .ReplaceService<IModelCustomizer, SqliteDateTimeOffsetModelCustomizer>());
+            });
+        });
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            foreach (var (organization, environment, documentId) in new[]
+            {
+                ("org-001", "env-dev", "in-scope"),
+                ("org-other", "env-dev", "other-org"),
+                ("org-001", "env-other", "other-env"),
+            })
+            {
+                var template = NewTemplate(organization, environment);
+                var chain = ApprovalChain.Start(template,
+                    new ApprovalDocumentReference("eco", "engineering-change-order", documentId, null), "u-requester");
+                chain.ResolveStep(1, "user", "u-engineering", "approve", "ok");
+                db.ApprovalTemplates.Add(template);
+                db.ApprovalChains.Add(chain);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", credential == "scoped" ? scopedToken : sharedToken);
+        const string root = "/api/business/v1/approvals/";
+        foreach (var (route, filters) in new[] { ("chains", ""), ("tasks", "&actorType=user&actorRef=u-quality"), ("decisions", "") })
+        {
+            using var response = await client.GetAsync(root + route + "?organizationId=org-001&environmentId=env-dev" + filters);
+            Assert.Equal(expected, response.StatusCode);
+            if (expected != HttpStatusCode.OK)
+            {
+                continue;
+            }
+
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = body.RootElement.GetProperty("data");
+            Assert.Equal(1, data.GetProperty("total").GetInt32());
+            var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+            Assert.Equal("in-scope", item.GetProperty("documentId").GetString());
+
+            if (credential == "scoped")
+            {
+                foreach (var query in new[] { "organizationId=org-other&environmentId=env-dev",
+                    "organizationId=org-001&environmentId=env-other", "organizationId=org-001" })
+                {
+                    using var outside = await client.GetAsync(root + route + "?" + query + filters);
+                    Assert.Equal(HttpStatusCode.Forbidden, outside.StatusCode);
+                }
+            }
+        }
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", scopedToken);
+        using var templates = await client.GetAsync(root + "templates");
+        Assert.Equal(HttpStatusCode.Unauthorized, templates.StatusCode);
     }
 
     [Fact]
@@ -1782,11 +1872,11 @@ public sealed class ApprovalEndpointContractTests
             ]);
     }
 
-    internal static ApprovalTemplate NewTemplate()
+    internal static ApprovalTemplate NewTemplate(string organizationId = "org-001", string environmentId = "env-dev")
     {
         return ApprovalTemplate.Create(
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             "ECO-DEFAULT",
             "engineering-change-order",
             1,

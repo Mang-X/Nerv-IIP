@@ -77,6 +77,7 @@ public sealed class PermissionCodeVocabularyContractTests
             ["InternalApprovalChainsReadQuality"] = "internal.approval-chains.read-quality",
             ["InternalApprovalChainsReadProductEngineering"] = "internal.approval-chains.read-product-engineering",
             ["InternalApprovalChainsReadGateway"] = "internal.approval-chains.read-gateway",
+            ["InternalApprovalChainsListGateway"] = "internal.approval-chains.list-gateway",
             ["InternalGatewayCacheInvalidate"] = "internal.gateway-cache.invalidate",
             ["MaintenanceDowntimeReasonsRead"] = "business.maintenance.downtime-reasons.read",
             ["MaintenancePlansManage"] = "business.maintenance.plans.manage",

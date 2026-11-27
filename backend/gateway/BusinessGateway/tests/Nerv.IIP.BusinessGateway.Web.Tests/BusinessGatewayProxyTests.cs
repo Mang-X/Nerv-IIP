@@ -9130,6 +9130,46 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-routing", payload.RootElement.GetProperty("routingOrganizationId").GetString());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approval_collection_client_uses_the_configured_scope_without_retrying_with_shared_bearer(bool scoped)
+    {
+        const string profile = "Approval:ReadCollections:OutboundCredentials:0:";
+        const string scopedToken = "synthetic-gateway-approval-collection-token";
+        const string sharedToken = "synthetic-shared-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(scoped
+            ? new Dictionary<string, string?>
+            {
+                [profile + "OrganizationId"] = "org-001",
+                [profile + "EnvironmentId"] = "env-dev",
+                [profile + "BearerToken"] = scopedToken,
+            }
+            : new Dictionary<string, string?>()).Build();
+        using var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+
+        foreach (var read in new Func<string, Task>[]
+        {
+            env => client.ListChainsAsync(sharedToken, new("org-001", env, null, null, null, null, null), CancellationToken.None),
+            env => client.ListPendingTasksAsync(sharedToken, new("org-001", env, "user", "u-reviewer"), CancellationToken.None),
+            env => client.ListDecisionsAsync(sharedToken, new("org-001", env), CancellationToken.None),
+        })
+        {
+            var denied = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => read("env-dev"));
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            if (scoped)
+            {
+                var unavailable = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => read("env-other"));
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            }
+        }
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.All(handler.Requests, request => Assert.Equal(scoped ? scopedToken : sharedToken, request.Headers.Authorization?.Parameter));
+    }
+
     [Fact]
     public async Task Approval_client_uses_the_scoped_read_bearer_and_preserves_detail_not_found()
     {

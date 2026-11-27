@@ -167,6 +167,8 @@ internal sealed partial class AppHostComposition
             (businessQuality, "quality", "quality"),
             (businessProductEngineering, "product-engineering", "product-engineering"),
             (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalChainCallers(businessApproval, "ReadCollections", "read-collections", "list",
+            (businessGateway, "business-gateway", "gateway"));
 
         if (fullStackEphemeral)
         {

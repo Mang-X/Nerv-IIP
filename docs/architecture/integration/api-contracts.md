@@ -39,6 +39,8 @@ PlatformGateway 与 BusinessGateway 分别拥有自己的 OpenAPI 输出和生�
 
 BusinessGateway 的报工列表和详情在 MES 读取授权与响应范围确定后，为响应内出现的操作人引用读取同一组织/环境的 IAM 当前显示名。MES 保留原始身份与报工事实，IAM 保留姓名事实；公开投影只增加可空姓名，不开放账号目录、登录名或其它账号资料。三个追溯读面复用同一受限解析，仅整理已授权图中 Operator 的显示名称；原始节点身份和关联以及质量内容权限分层不变。
 
+BusinessGateway 在用户授权通过后，可按组织和环境使用专用凭据读取审批链列表、待办及决策列表。Approval 在执行查询前核对凭据范围，查询按持久化审批链的组织和环境限制结果与总数。工作台的审批待办复用同一调用路径。凭据切换步骤见 [部署 Runbook](../../runbooks/deployment.md#approval-审批链列表待办和决策读取凭据)。
+
 BusinessGateway 在创建和撤销审批委托时转发当前主体的 bearer。Approval 创建时验证请求的组织环境，撤销时验证路由目标中持久化的委托组织环境。两条写入路径均需通过 IAM 的 `business.approvals.manage` 和数据范围校验，委托人、创建人或撤销人均来自验证后的主体。受托人和委托条件由业务请求携带。请求及权限登记以 [Approval 端点登记](../../../backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Endpoints/Approvals/ApprovalEndpoints.cs) 为准。
 
 ## Platform SDK 边界
