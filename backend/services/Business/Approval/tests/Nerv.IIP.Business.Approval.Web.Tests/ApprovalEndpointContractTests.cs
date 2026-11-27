@@ -41,12 +41,12 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/templates"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.WriteTemplates"
             && x.OperationId == "createOrUpdateApprovalTemplate");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/templates"
             && x.PermissionCode == ApprovalPermissionCodes.Read
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.ReadTemplates"
             && x.OperationId == "listApprovalTemplates");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/chains"
@@ -106,7 +106,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/delegations"
             && x.PermissionCode == ApprovalPermissionCodes.Read
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.ReadDelegations"
             && x.OperationId == "listApprovalDelegations");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/delegations"
@@ -201,6 +201,122 @@ public sealed class ApprovalEndpointContractTests
         Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, -1, 100)).IsValid);
         Assert.False(chainValidator.Validate(new ListApprovalChainsQuery("org-001", "env-dev", null, null, null, null, null, 0, 501)).IsValid);
         Assert.False(taskValidator.Validate(new ListPendingApprovalTasksQuery("org-001", "env-dev", "user", "u-reviewer", -1, 100)).IsValid);
+    }
+
+    [Theory]
+    [InlineData(false, "read-gateway", false, "scoped", HttpStatusCode.OK)]
+    [InlineData(false, "write-gateway", false, "scoped", HttpStatusCode.Forbidden)]
+    [InlineData(true, "write-gateway", false, "scoped", HttpStatusCode.OK)]
+    [InlineData(true, "read-gateway", false, "scoped", HttpStatusCode.Forbidden)]
+    [InlineData(true, "write-gateway", true, "scoped", HttpStatusCode.Forbidden)]
+    [InlineData(false, "read-gateway", true, "scoped", HttpStatusCode.Forbidden)]
+    [InlineData(false, "read-gateway", false, "legacy", HttpStatusCode.OK)]
+    [InlineData(false, "read-gateway", false, "shared", HttpStatusCode.Unauthorized)]
+    [InlineData(true, "write-gateway", false, "shared", HttpStatusCode.Unauthorized)]
+    public async Task Approval_templates_enforce_operation_capability_and_scope(
+        bool write, string capability, bool outsideScope, string credential, HttpStatusCode expected)
+    {
+        const string sharedToken = "synthetic-shared-template-test-token";
+        const string scopedToken = "synthetic-scoped-template-test-token";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", sharedToken);
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            var operation = write ? "WriteTemplates" : "ReadTemplates";
+            builder.UseSetting($"Approval:{operation}:AllowLegacyBearer", (credential == "legacy").ToString());
+            var profile = $"Approval:{operation}:ScopedCallers:Profiles:0:";
+            builder.UseSetting(profile + "Name", "fixture-template-caller");
+            builder.UseSetting(profile + "BearerToken", scopedToken);
+            builder.UseSetting(profile + "Subject", "business-gateway");
+            builder.UseSetting(profile + "OrganizationId", "org-001");
+            builder.UseSetting(profile + "EnvironmentId", "env-dev");
+            builder.UseSetting(profile + "Permissions:0", $"internal.approval-templates.{capability}");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection)
+                    .ReplaceService<IModelCustomizer, SqliteDateTimeOffsetModelCustomizer>());
+            });
+        });
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", credential == "scoped" ? scopedToken : sharedToken);
+        const string route = "/api/business/v1/approvals/templates";
+        var environmentId = outsideScope ? "env-other" : "env-dev";
+        using var response = write
+            ? await client.PostAsJsonAsync(route, new
+            {
+                organizationId = "org-001",
+                environmentId,
+                templateCode = "ECO-DEFAULT",
+                documentType = "engineering-change-order",
+                version = 1,
+                isActive = true,
+                steps = new[] { new { stepNo = 1, stepName = "Review", approverType = "user", approverRef = "u-reviewer" } },
+            })
+            : await client.GetAsync(route + $"?organizationId=org-001&environmentId={environmentId}");
+        Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("internal.approval-delegations.list-gateway", "scoped", HttpStatusCode.OK)]
+    [InlineData("internal.approval-chains.list-gateway", "scoped", HttpStatusCode.Forbidden)]
+    [InlineData("internal.approval-delegations.list-gateway", "legacy", HttpStatusCode.OK)]
+    [InlineData("internal.approval-delegations.list-gateway", "shared", HttpStatusCode.Unauthorized)]
+    public async Task Approval_delegation_list_requires_its_own_scoped_capability(
+        string permission, string credential, HttpStatusCode expected)
+    {
+        const string sharedToken = "synthetic-shared-delegation-test-token";
+        const string scopedToken = "synthetic-scoped-delegation-test-token";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", sharedToken);
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            builder.UseSetting("Approval:ReadDelegations:AllowLegacyBearer", (credential == "legacy").ToString());
+            const string profile = "Approval:ReadDelegations:ScopedCallers:Profiles:0:";
+            builder.UseSetting(profile + "Name", "fixture-delegation-reader");
+            builder.UseSetting(profile + "BearerToken", scopedToken);
+            builder.UseSetting(profile + "Subject", "business-gateway");
+            builder.UseSetting(profile + "OrganizationId", "org-001");
+            builder.UseSetting(profile + "EnvironmentId", "env-dev");
+            builder.UseSetting(profile + "Permissions:0", permission);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection)
+                    .ReplaceService<IModelCustomizer, SqliteDateTimeOffsetModelCustomizer>());
+            });
+        });
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", credential == "scoped" ? scopedToken : sharedToken);
+        const string route = "/api/business/v1/approvals/delegations";
+        using var response = await client.GetAsync(route + "?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(expected, response.StatusCode);
+
+        if (credential == "scoped" && expected == HttpStatusCode.OK)
+        {
+            using var otherOrganization = await client.GetAsync(route + "?organizationId=org-other&environmentId=env-dev");
+            using var otherEnvironment = await client.GetAsync(route + "?organizationId=org-001&environmentId=env-other");
+            Assert.Equal(HttpStatusCode.Forbidden, otherOrganization.StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, otherEnvironment.StatusCode);
+        }
     }
 
     [Theory]

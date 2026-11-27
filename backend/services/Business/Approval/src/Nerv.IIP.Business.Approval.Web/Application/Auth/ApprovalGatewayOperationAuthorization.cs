@@ -4,27 +4,37 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Auth;
 
-internal static class ReadApprovalCollectionsAuthorization
+internal sealed class ApprovalGatewayOperationAuthorization(string operation, string permission)
 {
-    internal const string PolicyName = "Approval.ReadCollections";
-    private const string SchemeName = "ApprovalReadCollectionsCaller";
+    internal static readonly ApprovalGatewayOperationAuthorization ReadCollections =
+        new("ReadCollections", NervIipPermissionCodes.InternalApprovalChainsListGateway);
+    internal static readonly ApprovalGatewayOperationAuthorization ReadTemplates =
+        new("ReadTemplates", NervIipPermissionCodes.InternalApprovalTemplatesReadGateway);
+    internal static readonly ApprovalGatewayOperationAuthorization WriteTemplates =
+        new("WriteTemplates", NervIipPermissionCodes.InternalApprovalTemplatesWriteGateway);
+    internal static readonly ApprovalGatewayOperationAuthorization ReadDelegations =
+        new("ReadDelegations", NervIipPermissionCodes.InternalApprovalDelegationsListGateway);
 
-    internal static void AddReadApprovalCollectionsAuthorization(this IServiceCollection services, IConfiguration configuration)
+    internal string PolicyName => $"Approval.{operation}";
+    private string SchemeName => $"Approval{operation}Caller";
+
+    internal void Register(IServiceCollection services, IConfiguration configuration)
     {
-        var settings = configuration.GetSection("Approval:ReadCollections");
+        var settings = configuration.GetSection($"Approval:{operation}");
         var scopedCallers = settings.GetSection("ScopedCallers");
         var useScopedCallers = scopedCallers.Exists();
         var allowLegacy = settings.GetValue("AllowLegacyBearer", true);
 
         if (!useScopedCallers && !allowLegacy)
         {
-            throw new InvalidOperationException("Approval collection reads require scoped caller profiles when legacy authentication is disabled.");
+            throw new InvalidOperationException($"{PolicyName} requires scoped caller profiles when legacy authentication is disabled.");
         }
 
         if (useScopedCallers)
         {
-            var otherOperationTokens = configuration.GetSection("Approval:CreateChain:ScopedCallers:Profiles").GetChildren()
-                .Concat(configuration.GetSection("Approval:GetChain:ScopedCallers:Profiles").GetChildren())
+            var otherOperationTokens = configuration.GetSection("Approval").GetChildren()
+                .Where(section => !string.Equals(section.Key, operation, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(section => section.GetSection("ScopedCallers:Profiles").GetChildren())
                 .Select(profile => profile["BearerToken"])
                 .ToHashSet(StringComparer.Ordinal);
 
@@ -33,7 +43,7 @@ internal static class ReadApprovalCollectionsAuthorization
                 .Validate<IInternalServiceTokenProvider>((options, legacy) =>
                     options.Profiles.All(profile => profile.BearerToken != legacy.BearerToken
                         && !otherOperationTokens.Contains(profile.BearerToken)),
-                    "Approval collection-read credentials must differ from the shared, create-chain and get-chain credentials.");
+                    $"{PolicyName} credentials must differ from shared and other Approval operation credentials.");
         }
 
         services.AddAuthorization(options => options.AddPolicy(PolicyName, policy =>
@@ -52,7 +62,7 @@ internal static class ReadApprovalCollectionsAuthorization
         }));
     }
 
-    internal static bool Allows(ClaimsPrincipal principal, string organizationId, string environmentId)
+    internal bool Allows(ClaimsPrincipal principal, string? organizationId, string? environmentId)
     {
         var caller = principal.Identities.SingleOrDefault(identity =>
             identity.IsAuthenticated && identity.AuthenticationType == SchemeName);
@@ -65,7 +75,7 @@ internal static class ReadApprovalCollectionsAuthorization
         return !string.IsNullOrWhiteSpace(organizationId)
             && !string.IsNullOrWhiteSpace(environmentId)
             && caller.HasClaim(ScopedCallerClaimTypes.Subject, "business-gateway")
-            && caller.HasClaim(ScopedCallerClaimTypes.Permission, NervIipPermissionCodes.InternalApprovalChainsListGateway)
+            && caller.HasClaim(ScopedCallerClaimTypes.Permission, permission)
             && caller.HasClaim(ScopedCallerClaimTypes.OrganizationId, organizationId)
             && caller.HasClaim(ScopedCallerClaimTypes.EnvironmentId, environmentId);
     }

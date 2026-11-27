@@ -158,16 +158,22 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessMaintenance)
             .WaitFor(redis);
 
-        ConfigureApprovalChainCallers(businessApproval, "CreateChain", "create-chain", "create",
+        ConfigureApprovalCallers(businessApproval, "CreateChain", "create-chain", "internal.approval-chains.create",
             (businessErp, "business-erp", "erp"),
             (businessInventory, "inventory", "inventory"),
             (businessGateway, "business-gateway", "gateway"));
-        ConfigureApprovalChainCallers(businessApproval, "GetChain", "get-chain", "read",
+        ConfigureApprovalCallers(businessApproval, "GetChain", "get-chain", "internal.approval-chains.read",
             (businessMes, "business-mes", "mes"),
             (businessQuality, "quality", "quality"),
             (businessProductEngineering, "product-engineering", "product-engineering"),
             (businessGateway, "business-gateway", "gateway"));
-        ConfigureApprovalChainCallers(businessApproval, "ReadCollections", "read-collections", "list",
+        ConfigureApprovalCallers(businessApproval, "ReadCollections", "read-collections", "internal.approval-chains.list",
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "ReadTemplates", "read-templates", "internal.approval-templates.read",
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "WriteTemplates", "write-templates", "internal.approval-templates.write",
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "ReadDelegations", "read-delegations", "internal.approval-delegations.list",
             (businessGateway, "business-gateway", "gateway"));
 
         if (fullStackEphemeral)
@@ -293,11 +299,11 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessGateway);
     }
 
-    private void ConfigureApprovalChainCallers(
+    private void ConfigureApprovalCallers(
         IResourceBuilder<ProjectResource> approval,
         string operation,
         string parameterOperation,
-        string permissionAction,
+        string permissionPrefix,
         params (IResourceBuilder<ProjectResource> Resource, string Subject, string Capability)[] callers)
     {
         var configuration = builder.Configuration.GetSection($"Approval{operation}");
@@ -342,7 +348,7 @@ internal sealed partial class AppHostComposition
                     .WithEnvironment(profile + "Subject", subject)
                     .WithEnvironment(profile + "OrganizationId", organizationId)
                     .WithEnvironment(profile + "EnvironmentId", environmentId)
-                    .WithEnvironment(profile + "Permissions__0", $"internal.approval-chains.{permissionAction}-{capability}")
+                    .WithEnvironment(profile + "Permissions__0", $"{permissionPrefix}-{capability}")
                     .WithEnvironment(profile + "BearerToken", secret);
 
                 if (configureSenders)

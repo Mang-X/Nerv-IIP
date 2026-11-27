@@ -228,6 +228,12 @@ public sealed class CreateOrUpdateApprovalTemplateEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateOrUpdateApprovalTemplateRequest req, CancellationToken ct)
     {
+        if (!ApprovalGatewayOperationAuthorization.WriteTemplates.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var templateId = await sender.Send(new CreateOrUpdateApprovalTemplateCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -259,6 +265,12 @@ public sealed class ListApprovalTemplatesEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalTemplatesRequest req, CancellationToken ct)
     {
+        if (!ApprovalGatewayOperationAuthorization.ReadTemplates.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var response = await sender.Send(new ListApprovalTemplatesQuery(req.OrganizationId, req.EnvironmentId, req.DocumentType, req.IsActive, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -274,7 +286,7 @@ public sealed class ListApprovalChainsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalChainsRequest req, CancellationToken ct)
     {
-        if (!ReadApprovalCollectionsAuthorization.Allows(User, req.OrganizationId, req.EnvironmentId))
+        if (!ApprovalGatewayOperationAuthorization.ReadCollections.Allows(User, req.OrganizationId, req.EnvironmentId))
         {
             await Send.ForbiddenAsync(ct);
             return;
@@ -357,7 +369,7 @@ public sealed class ListPendingApprovalTasksEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListPendingApprovalTasksRequest req, CancellationToken ct)
     {
-        if (!ReadApprovalCollectionsAuthorization.Allows(User, req.OrganizationId, req.EnvironmentId))
+        if (!ApprovalGatewayOperationAuthorization.ReadCollections.Allows(User, req.OrganizationId, req.EnvironmentId))
         {
             await Send.ForbiddenAsync(ct);
             return;
@@ -393,7 +405,7 @@ public sealed class ListApprovalDecisionsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalDecisionsRequest req, CancellationToken ct)
     {
-        if (!ReadApprovalCollectionsAuthorization.Allows(User, req.OrganizationId, req.EnvironmentId))
+        if (!ApprovalGatewayOperationAuthorization.ReadCollections.Allows(User, req.OrganizationId, req.EnvironmentId))
         {
             await Send.ForbiddenAsync(ct);
             return;
@@ -662,6 +674,12 @@ public sealed class ListApprovalDelegationsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalDelegationsRequest req, CancellationToken ct)
     {
+        if (!ApprovalGatewayOperationAuthorization.ReadDelegations.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var response = await sender.Send(new ListApprovalDelegationsQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -766,20 +784,20 @@ public static class ApprovalEndpointContracts
 {
     public static readonly IReadOnlyCollection<ApprovalEndpointContract> All =
     [
-        new(typeof(CreateOrUpdateApprovalTemplateEndpoint), "POST", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateApprovalTemplate"),
-        new(typeof(ListApprovalTemplatesEndpoint), "GET", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalTemplates"),
-        new(typeof(ListApprovalChainsEndpoint), "GET", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Read, ReadApprovalCollectionsAuthorization.PolicyName, "listApprovalChains"),
+        new(typeof(CreateOrUpdateApprovalTemplateEndpoint), "POST", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Manage, ApprovalGatewayOperationAuthorization.WriteTemplates.PolicyName, "createOrUpdateApprovalTemplate"),
+        new(typeof(ListApprovalTemplatesEndpoint), "GET", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadTemplates.PolicyName, "listApprovalTemplates"),
+        new(typeof(ListApprovalChainsEndpoint), "GET", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadCollections.PolicyName, "listApprovalChains"),
         new(typeof(StartApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Manage, CreateApprovalChainAuthorization.PolicyName, "startApprovalChain"),
         new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, GetApprovalChainAuthorization.PolicyName, "getApprovalChain"),
-        new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, ReadApprovalCollectionsAuthorization.PolicyName, "listPendingApprovalTasks"),
+        new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadCollections.PolicyName, "listPendingApprovalTasks"),
         new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "checkOverdueApprovalSteps"),
-        new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, ReadApprovalCollectionsAuthorization.PolicyName, "listApprovalDecisions"),
+        new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadCollections.PolicyName, "listApprovalDecisions"),
         new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, null, "resolveApprovalStep"),
         new(typeof(WithdrawApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/withdraw", ApprovalPermissionCodes.Manage, null, "withdrawApprovalChain"),
         new(typeof(ResubmitApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/resubmit", ApprovalPermissionCodes.Manage, null, "resubmitApprovalChain"),
         new(typeof(AddApprovalStepSignerEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer", ApprovalPermissionCodes.Manage, null, "addApprovalStepSigner"),
         new(typeof(TransferApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer", ApprovalPermissionCodes.Manage, null, "transferApprovalStep"),
-        new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDelegations"),
+        new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadDelegations.PolicyName, "listApprovalDelegations"),
         new(typeof(CreateApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Manage, null, "createApprovalDelegation"),
         new(typeof(RevokeApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations/{delegationId}/revoke", ApprovalPermissionCodes.Manage, null, "revokeApprovalDelegation"),
     ];
