@@ -18,18 +18,9 @@ public sealed class ResolveApprovalStepAuthority(
     public const string IamClient = "ApprovalIam";
     public const string MasterDataClient = "ApprovalMasterData";
 
-    internal Task<(int Status, Actor? Actor)> ResolveAsync(
-        string authorization, string organizationId, string environmentId, ApprovalChainId chainId, CancellationToken ct,
-        bool loadApproverContext = true) =>
-        ResolveAsync(authorization, organizationId, environmentId, chainId, ct, loadApproverContext, verifySource: false);
-
-    internal Task<(int Status, Actor? Actor)> ResolveChainActionAsync(
-        string authorization, string? organizationId, string? environmentId, ApprovalChainId chainId, CancellationToken ct) =>
-        ResolveAsync(authorization, organizationId, environmentId, chainId, ct, loadApproverContext: false, verifySource: true);
-
-    private async Task<(int Status, Actor? Actor)> ResolveAsync(
+    internal async Task<(int Status, Actor? Actor)> ResolveChainActionAsync(
         string authorization, string? organizationId, string? environmentId, ApprovalChainId chainId, CancellationToken ct,
-        bool loadApproverContext, bool verifySource)
+        bool loadApproverContext = false)
     {
         if (!AuthenticationHeaderValue.TryParse(authorization, out var bearer)
             || !string.Equals(bearer.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
@@ -55,34 +46,28 @@ public sealed class ResolveApprovalStepAuthority(
                 return (StatusCodes.Status403Forbidden, null);
             }
 
-            ChainSource? source = null;
-            if (verifySource)
+            if ((organizationId is null) != (environmentId is null)
+                || (organizationId is not null && (string.IsNullOrWhiteSpace(organizationId)
+                    || string.IsNullOrWhiteSpace(environmentId))))
             {
-                if ((organizationId is null) != (environmentId is null)
-                    || (organizationId is not null && (string.IsNullOrWhiteSpace(organizationId)
-                        || string.IsNullOrWhiteSpace(environmentId))))
-                {
-                    return (StatusCodes.Status400BadRequest, null);
-                }
-
-                source = await dbContext.ApprovalChains.AsNoTracking()
-                    .Where(chain => chain.Id == chainId)
-                    .Select(chain => new ChainSource(
-                        chain.OrganizationId, chain.EnvironmentId, chain.DocumentReference.OrganizationId))
-                    .SingleOrDefaultAsync(ct);
-                if (source is null || (organizationId is not null
-                    && (organizationId != source.OrganizationId || environmentId != source.EnvironmentId)))
-                {
-                    return (StatusCodes.Status403Forbidden, null);
-                }
-
-                organizationId = source.OrganizationId;
-                environmentId = source.EnvironmentId;
+                return (StatusCodes.Status400BadRequest, null);
             }
 
-            if (organizationId is null || environmentId is null
-                || (principal.PrincipalType == "external-client"
-                    && (principal.OrganizationId != organizationId || principal.EnvironmentId != environmentId)))
+            var source = await dbContext.ApprovalChains.AsNoTracking()
+                .Where(chain => chain.Id == chainId)
+                .Select(chain => new ChainSource(
+                    chain.OrganizationId, chain.EnvironmentId, chain.DocumentReference.OrganizationId))
+                .SingleOrDefaultAsync(ct);
+            if (source is null || (organizationId is not null
+                && (organizationId != source.OrganizationId || environmentId != source.EnvironmentId)))
+            {
+                return (StatusCodes.Status403Forbidden, null);
+            }
+
+            organizationId = source.OrganizationId;
+            environmentId = source.EnvironmentId;
+            if (principal.PrincipalType == "external-client"
+                && (principal.OrganizationId != organizationId || principal.EnvironmentId != environmentId))
             {
                 return (StatusCodes.Status403Forbidden, null);
             }
@@ -92,7 +77,7 @@ public sealed class ResolveApprovalStepAuthority(
                     "approval-chain", chainId.Id.ToString("D"))
                 {
                     IncludeSelectedMembership = principal.PrincipalType == "user",
-                    IncludePrincipalContext = verifySource && principal.PrincipalType == "user",
+                    IncludePrincipalContext = principal.PrincipalType == "user",
                 }, ct);
             if (check.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
@@ -102,7 +87,7 @@ public sealed class ResolveApprovalStepAuthority(
             var permission = await ReadDataAsync<AuthorizationCheckResponse>(check, ct);
             if (!permission.Allowed || permission.PrincipalId != principal.UserId
                 || permission.PrincipalType != principal.PrincipalType || permission.DataScope?.DenyAll == true
-                || (source is not null && !AllowsSource(permission, source)))
+                || !AllowsSource(permission, source))
             {
                 return (StatusCodes.Status403Forbidden, null);
             }

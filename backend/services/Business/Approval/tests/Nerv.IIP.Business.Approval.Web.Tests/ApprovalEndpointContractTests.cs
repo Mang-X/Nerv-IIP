@@ -1314,6 +1314,9 @@ public sealed class ApprovalEndpointContractTests
             [new ApprovalTemplateStepDefinition(1, "Review", null, approverType, approverRef, 24)]);
         var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null), "u-requester");
         var target = Assert.Single(chain.Steps).Id;
+        var siteRestricted = false;
+        var iamDenied = false;
+        var hasMembership = true;
         var iam = new ApprovalAuthorityHandler(request =>
         {
             Assert.Equal("test-end-principal", request.Headers.Authorization?.Parameter);
@@ -1333,12 +1336,13 @@ public sealed class ApprovalEndpointContractTests
             var check = request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Iam.AuthorizationCheckRequest>().GetAwaiter().GetResult();
             Assert.Equal("business.approvals.manage", check!.PermissionCode);
             Assert.Equal("org-001", check.OrganizationId);
-            if (check.EnvironmentId == "env-denied")
+            Assert.Equal("env-dev", check.EnvironmentId);
+            Assert.True(check.IncludePrincipalContext);
+            if (iamDenied)
             {
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
             }
 
-            Assert.Contains(check.EnvironmentId, new[] { "env-dev", "env-absent" });
             Assert.Equal("approval-chain", check.ResourceType);
             Assert.Equal(chain.Id.ToString(), check.ResourceId);
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -1346,7 +1350,8 @@ public sealed class ApprovalEndpointContractTests
                 Content = JsonContent.Create(new { success = true, data = new
                 {
                     allowed = true, principalId = "u-reviewer", principalType = "user",
-                    selectedMembership = check.EnvironmentId == "env-dev"
+                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope(siteRestricted ? ["site-1"] : [], [], []),
+                    selectedMembership = hasMembership
                         ? new { organizationId = "org-001", environmentId = "env-dev", roleIds = new[] { "buyer" } }
                         : null,
                 } }),
@@ -1396,14 +1401,24 @@ public sealed class ApprovalEndpointContractTests
         var route = $"/api/business/v1/approvals/chains/{chain.Id}/steps/1/resolve";
         var command = new { organizationId = "org-001", environmentId = "env-dev", decision = "approve", targetStepId = target.ToString(),
             actorType = "user", actorRef = "u-forged", roleRefs = "token-only", departmentRef = "forged" };
-        using var denied = await client.PostAsJsonAsync(route, command with { environmentId = "env-denied" });
+        iamDenied = true;
+        using var denied = await client.PostAsJsonAsync(route, command);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
-        using var absentMembership = await client.PostAsJsonAsync(route, command with { environmentId = "env-absent" });
+        iamDenied = false;
+        hasMembership = false;
+        using var absentMembership = await client.PostAsJsonAsync(route, command);
         Assert.Equal(HttpStatusCode.Forbidden, absentMembership.StatusCode);
         Assert.Empty(masterData.Paths);
 
+        hasMembership = true;
         using var wrongTarget = await client.PostAsJsonAsync(route, command with { targetStepId = "invalid" });
         Assert.Equal(HttpStatusCode.BadRequest, wrongTarget.StatusCode);
+
+        siteRestricted = true;
+        using var restricted = await client.PostAsJsonAsync(route, command);
+        Assert.Equal(HttpStatusCode.Forbidden, restricted.StatusCode);
+        Assert.Empty(masterData.Paths);
+        siteRestricted = false;
 
         using var response = await client.PostAsJsonAsync(route, command);
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
@@ -1433,6 +1448,7 @@ public sealed class ApprovalEndpointContractTests
             chain.Withdraw("user", "u-original", null, DateTimeOffset.Parse("2026-11-27T00:00:00Z"));
         }
 
+        var siteRestricted = false;
         var iam = new ApprovalAuthorityHandler(request =>
         {
             if (request.Headers.Authorization?.Parameter == "expired-session")
@@ -1461,7 +1477,6 @@ public sealed class ApprovalEndpointContractTests
             Assert.Equal("approval-chain", check.ResourceType);
             Assert.Equal(chain.Id.ToString(), check.ResourceId);
             Assert.True(check.IncludeSelectedMembership);
-            Assert.Equal(action != ApprovalDecisions.Withdraw, check.IncludePrincipalContext);
             if (check.EnvironmentId == "env-read-only")
             {
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
@@ -1471,7 +1486,7 @@ public sealed class ApprovalEndpointContractTests
             {
                 Content = JsonContent.Create(new { success = true, data = new
                 {
-                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope([], [], [], OrganizationIds: ["org-001"]),
+                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope(siteRestricted ? ["site-1"] : [], [], [], OrganizationIds: ["org-001"]),
                     allowed = true, principalId = "u-requester", principalType = "user",
                     selectedMembership = check.EnvironmentId == "env-no-membership"
                         ? null
@@ -1539,6 +1554,11 @@ public sealed class ApprovalEndpointContractTests
                 request.fromActorType, request.fromActorRef, request.toActorType, request.toActorRef,
             }
             : request;
+        siteRestricted = true;
+        using var restricted = await client.PostAsJsonAsync(route, body);
+        Assert.Equal(HttpStatusCode.Forbidden, restricted.StatusCode);
+        siteRestricted = false;
+
         using var response = await client.PostAsJsonAsync(route, body);
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         var result = await response.Content.ReadFromJsonAsync<JsonElement>();

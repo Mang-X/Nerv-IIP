@@ -411,8 +411,9 @@ public sealed class ResolveApprovalStepEndpoint(ISender sender, ResolveApprovalS
         }
 
         var chainId = new ApprovalChainId(chainGuid);
-        var (status, actor) = await authority.ResolveAsync(
-            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct);
+        var (status, actor) = await authority.ResolveChainActionAsync(
+            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct,
+            loadApproverContext: true);
         if (actor is null)
         {
             await WriteErrorAsync(status, "无法授权当前审批裁决。", ct);
@@ -467,7 +468,7 @@ public sealed class WithdrawApprovalChainEndpoint(ISender sender, ResolveApprova
         }
 
         var chainId = new ApprovalChainId(chainGuid);
-        var (status, actor) = await authority.ResolveAsync(
+        var (status, actor) = await authority.ResolveChainActionAsync(
             HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct,
             loadApproverContext: false);
         if (actor is null)
