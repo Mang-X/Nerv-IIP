@@ -336,6 +336,14 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 
 官方依据见 [PostgreSQL 主版本升级说明](https://www.postgresql.org/docs/19/upgrading.html) 和 [PostgreSQL 官方 Docker 镜像的卷布局](https://hub.docker.com/_/postgres)。
 
+### 6.12 BusinessERP 销售订单实际发运数量 migration
+
+`20261127134330_AddSalesOrderLineShippedQuantity` 从 ERP 发货单的已确认行数量回填销售订单行 `shipped_quantity`。`delivered_quantity` 继续记录开单占量。
+
+1. 按第 2 节备份并暂停 ERP 写入和 WMS 完成事件消费，在第 4.1 节的受治理业务数据库迁移入口应用 ERP migration，成功后再启用新版本写入。
+2. 若迁移报出发货单或销售行无法核对，保持新版本停用并保留迁移日志。按报出的组织、环境和单号核对 WMS/库存过账的实际出库行。旧版完成 inbox 和应收金额只能辅助定位，缺少实际行数量时须先完成有据可查的数据修正。
+3. 旧版本可读取新增列后的 schema。若需降级运行，保持 WMS 完成事件消费暂停，或在恢复新版本消费前按批准的发布方案重新核对和回填累计数量。旧消费者仍写发货单行和 inbox，新增销售订单行累计会落后，事件重放也会被既有 inbox 去重。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed，以及下文非 Development 下随 IAM 启动执行的平台引导。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

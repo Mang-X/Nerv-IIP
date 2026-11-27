@@ -181,6 +181,11 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
         }
 
         var becameCompleted = delivery.ApplyShipment(shipmentLines, integrationEvent.OccurredAtUtc.UtcDateTime);
+        foreach (var shipmentLine in shipmentLines.Where(x => x.Quantity > 0m))
+        {
+            salesOrder.RegisterShipment(shipmentLine.SalesOrderLineNo, shipmentLine.Quantity);
+        }
+
         if (!becameCompleted)
         {
             return;
