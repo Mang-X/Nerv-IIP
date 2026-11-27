@@ -39,6 +39,18 @@ public sealed record InboundOrderLineCapture(
     DateOnly? ProductionDate,
     DateOnly? ExpiryDate);
 
+public sealed record ExpectedInboundOrderLine(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal ExpectedQuantity,
+    string StagingLocationCode,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId);
+
+public sealed record InboundReceiptQuantity(string LineNo, decimal ReceivedQuantity);
+
 public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 {
     private readonly List<InboundOrderLine> lines = [];
@@ -54,7 +66,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<InboundOrderLineDraft> lineDrafts,
+        IEnumerable<InboundOrderLine> inboundLines,
         string? assignedOperatorUserId,
         string? assignedPoolCode)
     {
@@ -69,14 +81,11 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         Status = InboundOrderStatus.Open;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
-        foreach (var draft in lineDrafts)
-        {
-            lines.Add(InboundOrderLine.Create(draft));
-        }
+        lines.AddRange(inboundLines);
 
         if (lines.Count == 0)
         {
-            throw new ArgumentException("At least one inbound line is required.", nameof(lineDrafts));
+            throw new ArgumentException("At least one inbound line is required.", nameof(inboundLines));
         }
     }
 
@@ -114,9 +123,68 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             sourceDocumentType,
             sourceDocumentId,
             siteCode,
-            lines,
+            lines.Select(InboundOrderLine.Create),
             assignedOperatorUserId,
             assignedPoolCode);
+    }
+
+    public static InboundOrder CreatePendingReceipt(
+        string organizationId,
+        string environmentId,
+        string inboundOrderNo,
+        string sourceDocumentType,
+        string sourceDocumentId,
+        string siteCode,
+        IEnumerable<ExpectedInboundOrderLine> lines,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
+    {
+        var order = new InboundOrder(
+            organizationId,
+            environmentId,
+            inboundOrderNo,
+            sourceDocumentType,
+            sourceDocumentId,
+            siteCode,
+            lines.Select(InboundOrderLine.CreatePendingReceipt),
+            assignedOperatorUserId,
+            assignedPoolCode);
+        if (order.lines.Select(line => line.LineNo).Distinct(StringComparer.Ordinal).Count() != order.lines.Count)
+        {
+            throw new ArgumentException("Expected inbound line numbers must be unique.", nameof(lines));
+        }
+
+        return order;
+    }
+
+    public void ConfirmReceipt(long expectedVersion, IReadOnlyCollection<InboundReceiptQuantity> quantities)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureOpen();
+        if (quantities.Count != lines.Count || lines.Any(line => !line.AwaitingReceiptConfirmation))
+        {
+            throw new InvalidOperationException("Receipt confirmation requires all lines of a pending receipt.");
+        }
+
+        var linesByNumber = lines.ToDictionary(line => line.LineNo, StringComparer.Ordinal);
+        var confirmed = new Dictionary<InboundOrderLine, decimal>();
+        foreach (var quantity in quantities)
+        {
+            var lineNo = WmsText.Required(quantity.LineNo, nameof(quantity.LineNo));
+            if (!linesByNumber.TryGetValue(lineNo, out var line)
+                || quantity.ReceivedQuantity != line.ExpectedQuantity
+                || !confirmed.TryAdd(line, quantity.ReceivedQuantity))
+            {
+                throw new InvalidOperationException($"Actual quantity for inbound line '{lineNo}' must be confirmed once and match its expected quantity.");
+            }
+        }
+
+        foreach (var (line, receivedQuantity) in confirmed)
+        {
+            line.RecordReceivedQuantity(receivedQuantity);
+        }
+
+        AdvanceVersion();
     }
 
     public void AssignWorkPool(
@@ -177,6 +245,11 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public InboundOrderLine EnsureCanCreatePutawayTask(string lineNo, decimal quantity)
     {
         var line = FindLine(lineNo);
+        if (line.AwaitingReceiptConfirmation)
+        {
+            throw new InvalidOperationException("Inbound line requires receipt confirmation before putaway.");
+        }
+
         EnsureCanCreatePutawayTask(line);
         if (quantity > line.ReceivedQuantity)
         {
@@ -197,6 +270,11 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
+        if (lines.Any(line => line.AwaitingReceiptConfirmation))
+        {
+            throw new InvalidOperationException("Inbound order requires receipt confirmation before completion.");
+        }
+
         var validatedCaptures = ValidateCaptures(captures);
         foreach (var (line, capture) in validatedCaptures)
         {
@@ -506,12 +584,15 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     {
     }
 
-    private InboundOrderLine(InboundOrderLineDraft draft)
+    private InboundOrderLine(InboundOrderLineDraft draft, decimal? expectedQuantity = null)
     {
         LineNo = WmsText.Required(draft.LineNo, nameof(draft.LineNo));
         SkuCode = WmsText.Required(draft.SkuCode, nameof(draft.SkuCode));
         UomCode = WmsText.Required(draft.UomCode, nameof(draft.UomCode));
-        ReceivedQuantity = WmsText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
+        ExpectedQuantity = expectedQuantity;
+        ReceivedQuantity = expectedQuantity.HasValue
+            ? 0m
+            : WmsText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
         StagingLocationCode = WmsText.Required(draft.StagingLocationCode, nameof(draft.StagingLocationCode));
         LotNo = WmsText.Optional(draft.LotNo);
         SerialNo = WmsText.Optional(draft.SerialNo);
@@ -529,6 +610,8 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public string SkuCode { get; private set; } = string.Empty;
     public string UomCode { get; private set; } = string.Empty;
     public decimal ReceivedQuantity { get; private set; }
+    public decimal? ExpectedQuantity { get; private set; }
+    internal bool AwaitingReceiptConfirmation => ExpectedQuantity.HasValue && ReceivedQuantity == 0m;
     public string StagingLocationCode { get; private set; } = string.Empty;
     public string? LotNo { get; private set; }
     public string? SerialNo { get; private set; }
@@ -548,6 +631,24 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public static InboundOrderLine Create(InboundOrderLineDraft draft)
     {
         return new InboundOrderLine(draft);
+    }
+
+    internal static InboundOrderLine CreatePendingReceipt(ExpectedInboundOrderLine line)
+    {
+        var expected = line.ExpectedQuantity;
+        if (expected <= 0m || expected >= 1_000_000_000_000m || decimal.Round(expected, 6) != expected)
+        {
+            throw new ArgumentOutOfRangeException(nameof(line), expected, "Expected quantity must be positive and fit the inbound quantity precision (18,6).");
+        }
+
+        return new InboundOrderLine(new InboundOrderLineDraft(
+            line.LineNo, line.SkuCode, line.UomCode, 0m, line.StagingLocationCode,
+            null, null, line.QualityStatus, line.OwnerType, line.OwnerId), expected);
+    }
+
+    internal void RecordReceivedQuantity(decimal receivedQuantity)
+    {
+        ReceivedQuantity = receivedQuantity;
     }
 
     internal void Capture(InboundOrderLineCapture capture)

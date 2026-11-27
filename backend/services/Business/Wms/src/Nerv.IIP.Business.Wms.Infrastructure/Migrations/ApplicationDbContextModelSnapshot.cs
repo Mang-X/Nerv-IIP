@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("wms")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -392,6 +392,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Inbound order line id.");
+
+                    b.Property<decimal?>("ExpectedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("expected_quantity")
+                        .HasComment("Expected quantity for a receipt requiring actual quantity confirmation; null for manual inbound lines.");
 
                     b.Property<DateOnly?>("ExpiryDate")
                         .HasColumnType("date")

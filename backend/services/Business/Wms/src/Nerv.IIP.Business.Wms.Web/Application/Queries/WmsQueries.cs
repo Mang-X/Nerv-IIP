@@ -647,6 +647,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 x.AssignedPoolCode,
                 x.Version,
                 HasAnyLine = x.Lines.Any(),
+                HasUnconfirmedReceipt = x.Lines.Any(l => l.ExpectedQuantity != null && l.ReceivedQuantity == 0m),
                 HasRejected = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Rejected),
                 HasPending = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Pending),
                 HasConditional = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.ConditionalReleased),
@@ -674,7 +675,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                     x.StatusValue.ToString(),
                     x.CreatedAtUtc,
                     InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
-                    InboundOrderQualityAggregate.ReleasedForPutaway(
+                    !x.HasUnconfirmedReceipt && InboundOrderQualityAggregate.ReleasedForPutaway(
                         x.StatusValue,
                         x.HasAnyLine,
                         x.HasRejected,

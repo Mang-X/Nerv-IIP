@@ -63,6 +63,10 @@ public sealed class WmsInboundReceivingQueryTests
             seed.InboundOrders.Add(InboundOrder("IN-Q-A", Line("1", "quality"), Line("2", "unrestricted")));
             // B：仅免检行 → 单据级 not-required，放行上架（无待检/不合格）。
             seed.InboundOrders.Add(InboundOrder("IN-Q-B", Line("1", "unrestricted")));
+            seed.InboundOrders.Add(Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.CreatePendingReceipt(
+                "org-001", "env-dev", "IN-Q-C", "purchase-order", "PO-001", "SITE-1",
+                [new("1", "SKU-1", "kg", 5m, "LOC-STAGE", "unrestricted", "company", "owner-001")],
+                assignedPoolCode: "POOL-RECEIVING"));
             await seed.SaveChangesAsync(CancellationToken.None);
         }
 
@@ -83,6 +87,9 @@ public sealed class WmsInboundReceivingQueryTests
         var b = result.Items.Single(x => x.InboundOrderNo == "IN-Q-B");
         Assert.Equal(InboundQualityGateStatuses.NotRequired, b.QualityGateStatus);
         Assert.True(b.IsReleasedForPutaway);
+
+        var pendingReceipt = result.Items.Single(x => x.InboundOrderNo == "IN-Q-C");
+        Assert.False(pendingReceipt.IsReleasedForPutaway);
     }
 
     [Fact]
