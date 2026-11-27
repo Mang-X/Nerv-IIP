@@ -113,9 +113,10 @@ FileStorage 的 tus 根目录承载上传暂存，默认 `local` 模式也存放
 | `FileStorage__S3__AccessKey`、`FileStorage__S3__SecretKey` | 必填，通过 secret manager 或受限部署环境注入。 |
 | `FileStorage__S3__Region` | 默认 `us-east-1`，应与桶的签名区域匹配。 |
 | `FileStorage__S3__ForcePathStyle` | 默认 `true`。设为 `false` 时，桶名作为主机名前缀，需相应 DNS 和证书。 |
+| `FileStorage__S3__ReadIdleTimeoutSeconds` | 远端响应体单次读取的空闲超时，默认 30 秒，允许 1 至 3600 秒。 |
 | `FileStorage__S3__KeyPrefix` | 可选，相对对象键前缀，例如 `production/files`。 |
 
-该模式采用单次条件 PUT，每个正式文件上限为 5 GiB，业务用途可配置更小的限制。对象服务须支持 SigV4、`If-None-Match: *` 条件写入和写后立即回读。切换已有数据前，按停服离线迁移原则准备并逐对象复核副本，保持每条数据库记录对应的键，核对挂起提交与新环境的桶和前缀，保留原卷供回滚。服务切换后检查 `/health/tus-volume` 返回 `200 Healthy`，并抽样复核已有文件和新上传。探针返回 `503 Unhealthy` 时暂停开放流量并检查权限、DNS、TLS 和配置。本地正式文件对账在 S3 模式返回 409。回退前需停止服务并复核切换后新增的正式字节和数据库状态。省略 `FileStorage__StorageProvider` 或设为 `local` 即选择本地模式。
+该模式采用单次条件 PUT，每个正式文件上限为 5 GiB，业务用途可配置更小的限制。对象服务须支持 SigV4、`If-None-Match: *` 条件写入和写后立即回读。切换已有数据前，按停服离线迁移原则准备并逐对象复核副本，保持每条数据库记录对应的键，核对挂起提交与新环境的桶和前缀，保留原卷供回滚。服务切换后检查 `/health/tus-volume` 返回 `200 Healthy`，并抽样复核已有文件和新上传。探针同时检查本地 tus 暂存卷与 S3 桶。任一侧不可用时返回 `503 Unhealthy`，应暂停开放流量并检查本地挂载、卷标记、权限、DNS、TLS 和配置。桶正常但本地空间低于阈值时返回 `200 Degraded`。独立的 `/health` 探针继续检查进程存活。本地正式文件对账在 S3 模式返回 409。回退前需停止服务并复核切换后新增的正式字节和数据库状态。省略 `FileStorage__StorageProvider` 或设为 `local` 即选择本地模式。
 
 ## Release-install 与数据库迁移
 

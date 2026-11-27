@@ -138,9 +138,17 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
                     || x.ExpiresAtUtc > now)
                 .Select(x => x.UploadSessionId)
                 .ToArrayAsync(cancellationToken);
-            localTusFilesRemoved += store.DeleteFilesExcept(
-                retainedTusUploadSessionIds,
-                now - ResolveOrphanGracePeriod(configuration));
+            try
+            {
+                localTusFilesRemoved += store.DeleteFilesExcept(
+                    retainedTusUploadSessionIds,
+                    now - ResolveOrphanGracePeriod(configuration));
+            }
+            catch (Exception error) when (s3 is { IsEnabled: true } && error is IOException or UnauthorizedAccessException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new IOException("FileStorage 无法检查暂存目录。");
+            }
         }
 
         return new FileStorageGarbageCollectionResult(

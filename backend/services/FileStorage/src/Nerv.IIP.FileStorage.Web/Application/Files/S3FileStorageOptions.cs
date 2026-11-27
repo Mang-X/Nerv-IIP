@@ -5,12 +5,17 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 internal sealed class S3FileStorageOptions
 {
+    private const int MaximumObjectKeyBytes = 1024;
+    // 最短 ObjectKey 为 1 字节组织标识、斜杠、file_ 和 32 位 GUID。
+    private const int MinimumGeneratedObjectKeyBytes = 1 + 1 + 5 + 32;
+
     public required Uri Endpoint { get; init; }
     public required string Bucket { get; init; }
     public required string AccessKey { get; init; }
     public required string SecretKey { get; init; }
     public required string Region { get; init; }
     public required bool ForcePathStyle { get; init; }
+    public required int ReadIdleTimeoutSeconds { get; init; }
     public string? KeyPrefix { get; init; }
 
     public static S3FileStorageOptions? Load(IConfiguration configuration)
@@ -64,9 +69,16 @@ internal sealed class S3FileStorageOptions
         }
 
         var prefix = section["KeyPrefix"];
-        if (prefix is not null && !IsSafeKey(prefix))
+        if (prefix is not null && (!IsSafeKey(prefix)
+            || Encoding.UTF8.GetByteCount(prefix) + 1 + MinimumGeneratedObjectKeyBytes > MaximumObjectKeyBytes))
         {
             throw Invalid("KeyPrefix");
+        }
+
+        if (!int.TryParse(section["ReadIdleTimeoutSeconds"] ?? "30", out var idleSeconds)
+            || idleSeconds is < 1 or > 3600)
+        {
+            throw Invalid("ReadIdleTimeoutSeconds");
         }
 
         return new()
@@ -77,6 +89,7 @@ internal sealed class S3FileStorageOptions
             SecretKey = Required("SecretKey"),
             Region = region,
             ForcePathStyle = pathStyle,
+            ReadIdleTimeoutSeconds = idleSeconds,
             KeyPrefix = prefix
         };
 
@@ -100,7 +113,7 @@ internal sealed class S3FileStorageOptions
     {
         try
         {
-            return new UTF8Encoding(false, true).GetByteCount(key) <= 1024;
+            return new UTF8Encoding(false, true).GetByteCount(key) <= MaximumObjectKeyBytes;
         }
         catch (EncoderFallbackException)
         {

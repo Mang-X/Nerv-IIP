@@ -26,11 +26,18 @@ public sealed class LocalUploadByteStore
         }
 
         var marker = Path.Combine(rootPath, ".filestorage-volume-v1");
-        if (string.IsNullOrWhiteSpace(volumeIdentity)
-            || !File.Exists(marker)
-            || !string.Equals(File.ReadAllText(marker).Trim(), volumeIdentity, StringComparison.Ordinal))
+        try
         {
-            throw new InvalidOperationException("FileStorage 持久卷身份缺失或不匹配。");
+            if (string.IsNullOrWhiteSpace(volumeIdentity)
+                || !File.Exists(marker)
+                || !string.Equals(File.ReadAllText(marker).Trim(), volumeIdentity, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("FileStorage 持久卷身份缺失或不匹配。");
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new IOException("FileStorage 无法读取持久卷身份。");
         }
     }
 

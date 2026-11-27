@@ -58,7 +58,7 @@ public sealed class DownloadGrantContentEndpoint(
                 return;
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            await using var stream = await s3.OpenResponseStreamAsync(response, ct);
             await SendContentAsync(content, stream, ct);
         }
         catch (Exception error) when (!ct.IsCancellationRequested && error is IOException or HttpRequestException)

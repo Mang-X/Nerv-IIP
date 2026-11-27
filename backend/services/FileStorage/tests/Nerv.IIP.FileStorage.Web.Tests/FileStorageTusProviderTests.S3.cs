@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -50,6 +51,9 @@ public sealed partial class FileStorageTusProviderTests
     [InlineData("SecretKey", null)]
     [InlineData("SecretKey", " ")]
     [InlineData("Region", "bad/region")]
+    [InlineData("ReadIdleTimeoutSeconds", "0")]
+    [InlineData("ReadIdleTimeoutSeconds", "3601")]
+    [InlineData("ReadIdleTimeoutSeconds", "invalid")]
     [InlineData("ForcePathStyle", "maybe")]
     [InlineData("KeyPrefix", "data/../private")]
     [InlineData("KeyPrefix", "data/%2e%2e/private")]
@@ -64,40 +68,103 @@ public sealed partial class FileStorageTusProviderTests
         AssertSanitized(error.Message);
     }
 
-    [Theory]
-    [InlineData(null, "internal-storage.test", "/files-bucket")]
-    [InlineData("false", "files-bucket.internal-storage.test", "/")]
-    public async Task S3_health_probes_bucket_without_affecting_liveness(
-        string? forcePathStyle, string expectedHost, string expectedPath)
+    [Fact]
+    public void Startup_rejects_prefix_without_room_for_a_generated_key()
     {
+        Startup_rejects_invalid_S3_configuration("KeyPrefix", new string('a', 1024));
+    }
+
+    [Theory]
+    [InlineData(true, "internal-storage.test:9443", "/files-bucket/production/files/org/a%20b%2B%E4%B8%AD%3F%23",
+        "973151c3134363497cf04705c1c0b67a1f010564494358b737afcdfaa9d9bbeb")]
+    [InlineData(false, "files-bucket.internal-storage.test:9443", "/production/files/org/a%20b%2B%E4%B8%AD%3F%23",
+        "b27925c13d7fdde262fd0911fe03993eaa0885939f88bc10b31905e617094179")]
+    public async Task S3_signs_escaped_keys_and_port_in_both_addressing_styles(
+        bool pathStyle, string expectedHost, string expectedPath, string expectedSignature)
+    {
+        // 固定向量由 AWS SDK for Python 的 botocore.auth.S3SigV4Auth 计算。
         using var s3 = new TestS3Handler();
         await using var factory = new FileStorageWebApplicationFactory();
-        await using var host = ConfigureStorage(factory, "s3", s3, change: values =>
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-11-27T02:03:04Z"));
+        await using var host = ConfigureStorage(factory, "s3", s3, clock: clock, change: values =>
         {
-            values["FileStorage:S3:ForcePathStyle"] = forcePathStyle;
-            values["FileStorage:S3:Region"] = forcePathStyle is null ? null : "us-west-2";
+            values["FileStorage:S3:Endpoint"] = "https://internal-storage.test:9443";
+            values["FileStorage:S3:ForcePathStyle"] = pathStyle.ToString();
         });
+
+        var store = host.Services.GetRequiredService<S3FinalFileStore>();
+        Assert.Null(await store.TryGetAsync("org/a b+中?#", CancellationToken.None));
+        Assert.Equal(expectedHost, s3.LastHost);
+        Assert.Equal(expectedPath, s3.LastPath);
+        Assert.Equal("AWS4-HMAC-SHA256 Credential=test-access-key/20261127/us-east-1/s3/aws4_request, "
+            + "SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=" + expectedSignature, s3.LastAuthorization);
+    }
+
+    [Theory]
+    [InlineData(5368709120L, true)]
+    [InlineData(5368709121L, false)]
+    public async Task S3_upload_session_enforces_single_put_size_limit(long bytes, bool allowed)
+    {
+        await using var factory = new FileStorageWebApplicationFactory();
+        await using var host = ConfigureStorage(factory, "s3");
         using var client = CreateInternalServiceClient(host);
+        using var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions",
+            CreateTextAttachmentRequest() with { ExpectedSizeBytes = bytes });
+        if (allowed)
+        {
+            response.EnsureSuccessStatusCode();
+        }
+        else
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("超出 S3 存储支持范围", await response.Content.ReadAsStringAsync());
+        }
+    }
 
-        using var ready = await client.GetAsync("/health/tus-volume");
-        Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
-        Assert.Equal("Healthy", await ready.Content.ReadAsStringAsync());
-        Assert.Equal(expectedHost, s3.LastHead!.Host);
-        Assert.Equal(expectedPath, s3.LastHead.AbsolutePath);
-        Assert.Contains(forcePathStyle is null ? "/us-east-1/s3/" : "/us-west-2/s3/", s3.LastAuthorization);
+    [Theory]
+    [InlineData("healthy", "0", true, HttpStatusCode.OK, "Healthy")]
+    [InlineData("healthy", "0", false, HttpStatusCode.ServiceUnavailable, "Unhealthy")]
+    [InlineData("missing-marker", "0", true, HttpStatusCode.ServiceUnavailable, "Unhealthy")]
+    [InlineData("healthy", "9223372036854775807", true, HttpStatusCode.OK, "Degraded")]
+    [InlineData("healthy", "9223372036854775807", false, HttpStatusCode.ServiceUnavailable, "Unhealthy")]
+    public async Task S3_readiness_combines_staging_volume_and_bucket(
+        string volume, string minimumFreeBytes, bool bucketAvailable, HttpStatusCode status, string body)
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var marker = Path.Combine(root, ".filestorage-volume-v1");
+            await File.WriteAllTextAsync(marker, "s3-staging-volume");
+            using var s3 = new TestS3Handler { BucketAvailable = bucketAvailable };
+            await using var factory = new FileStorageWebApplicationFactory();
+            await using var host = ConfigureStorage(factory, "s3", s3, root, change: values =>
+            {
+                values["FileStorage:Tus:VolumeIdentity"] = "s3-staging-volume";
+                values["FileStorage:Tus:MinimumFreeBytes"] = minimumFreeBytes;
+            });
+            using var client = CreateInternalServiceClient(host);
+            if (volume == "missing-marker")
+            {
+                File.Delete(marker);
+            }
 
-        s3.BucketAvailable = false;
-        using var unavailable = await client.GetAsync("/health/tus-volume");
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
-        Assert.Equal("Unhealthy", await unavailable.Content.ReadAsStringAsync());
+            using var ready = await client.GetAsync("/health/tus-volume");
+            Assert.Equal(status, ready.StatusCode);
+            Assert.Equal(body, await ready.Content.ReadAsStringAsync());
+            Assert.Equal("/files-bucket", s3.LastHead!.AbsolutePath);
 
-        using var live = await client.GetAsync("/health");
-        Assert.Equal(HttpStatusCode.OK, live.StatusCode);
-        Assert.Equal("Healthy", await live.Content.ReadAsStringAsync());
+            using var live = await client.GetAsync("/health");
+            Assert.Equal(HttpStatusCode.OK, live.StatusCode);
+            Assert.Equal("Healthy", await live.Content.ReadAsStringAsync());
 
-        using var reconcile = await client.GetAsync("/internal/file-storage/v1/diagnostics/reconcile");
-        Assert.Equal(HttpStatusCode.Conflict, reconcile.StatusCode);
-        Assert.Contains("unavailable in S3 mode", await reconcile.Content.ReadAsStringAsync());
+            using var reconcile = await client.GetAsync("/internal/file-storage/v1/diagnostics/reconcile");
+            Assert.Equal(HttpStatusCode.Conflict, reconcile.StatusCode);
+            Assert.Contains("unavailable in S3 mode", await reconcile.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(root);
+        }
     }
 
     [Theory]
@@ -212,6 +279,44 @@ public sealed partial class FileStorageTusProviderTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task S3_commit_after_precondition_failure_requires_matching_readback(bool conflict)
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            using var s3 = new TestS3Handler { ConcurrentPut = true, CorruptPut = conflict };
+            await using var factory = new FileStorageWebApplicationFactory();
+            await using var host = ConfigureStorage(factory, "s3", s3, root);
+            using var client = CreateInternalServiceClient(host);
+            var bytes = "hello"u8.ToArray();
+            var upload = await CreateTusUploadSessionAsync(client, bytes.Length, CreateTextAttachmentRequest());
+            using var request = CreateTusPatchRequest(upload.Upload.Url, 0, bytes);
+            using var response = await client.SendAsync(request);
+
+            Assert.Equal([HttpMethod.Get, HttpMethod.Put, HttpMethod.Get], s3.Requests);
+            var file = await ReadFileAsync(host, upload.FileId);
+            if (conflict)
+            {
+                Assert.False(response.IsSuccessStatusCode);
+                Assert.Null(file);
+                Assert.True(CreateTusStore(root).Exists(upload.UploadSessionId));
+            }
+            else
+            {
+                response.EnsureSuccessStatusCode();
+                Assert.Equal("sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", file!.Checksum);
+                Assert.False(CreateTusStore(root).Exists(upload.UploadSessionId));
+            }
+        }
+        finally
+        {
+            DeleteTempDirectory(root);
+        }
+    }
+
     [Fact]
     public async Task S3_GC_recovers_post_commit_staging_only_after_verifying_the_object()
     {
@@ -250,15 +355,29 @@ public sealed partial class FileStorageTusProviderTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task S3_GC_removes_expired_metadata_after_remote_delete_or_not_found(bool alreadyMissing)
+    [InlineData("deleted")]
+    [InlineData("missing")]
+    [InlineData("forbidden")]
+    [InlineData("stalled")]
+    public async Task S3_GC_removes_metadata_only_after_confirmed_remote_delete(string outcome)
     {
-        using var s3 = new TestS3Handler { ReturnNotFoundOnDelete = alreadyMissing };
+        using var stalled = new StalledS3Stream();
+        using var s3 = new TestS3Handler
+        {
+            DeleteStatus = outcome switch
+            {
+                "missing" => HttpStatusCode.NotFound,
+                "forbidden" => HttpStatusCode.Forbidden,
+                "stalled" => HttpStatusCode.OK,
+                _ => HttpStatusCode.NoContent
+            },
+            StalledDelete = outcome == "stalled" ? stalled : null
+        };
+        var clock = new FakeTimeProvider();
         await using var factory = new FileStorageWebApplicationFactory();
-        await using var host = ConfigureStorage(factory, "s3", s3);
+        await using var host = ConfigureStorage(factory, "s3", s3, clock: clock);
         const string key = "/files-bucket/production/files/org-001/file_expired";
-        if (!alreadyMissing)
+        if (outcome != "missing")
         {
             s3.Objects[key] = [1, 2, 3];
         }
@@ -273,9 +392,33 @@ public sealed partial class FileStorageTusProviderTests
         database.StoredFiles.Add(file);
         await database.SaveChangesAsync();
 
-        var result = await scope.ServiceProvider.GetRequiredService<PostgreSqlFileStorageGarbageCollector>()
-            .CollectAsync(CancellationToken.None);
+        var collector = scope.ServiceProvider.GetRequiredService<PostgreSqlFileStorageGarbageCollector>();
+        if (outcome is "forbidden" or "stalled")
+        {
+            if (outcome == "stalled")
+            {
+                await Assert.ThrowsAsync<IOException>(() =>
+                    ExpireStalledReadAsync(stalled, clock, collector.CollectAsync));
+            }
+            else
+            {
+                await Assert.ThrowsAsync<IOException>(() => collector.CollectAsync(CancellationToken.None));
+                Assert.True(s3.Objects.ContainsKey(key));
+            }
+            Assert.Equal(key, s3.LastDeletedPath);
+            Assert.NotNull(await ReadFileAsync(host, "file_expired"));
 
+            s3.DeleteStatus = HttpStatusCode.NotFound;
+            s3.StalledDelete = null;
+            using var retryScope = host.Services.CreateScope();
+            var retry = await retryScope.ServiceProvider.GetRequiredService<PostgreSqlFileStorageGarbageCollector>()
+                .CollectAsync(CancellationToken.None);
+            Assert.Equal(1, retry.FormalFilesPhysicallyDeleted);
+            Assert.Null(await ReadFileAsync(host, "file_expired"));
+            return;
+        }
+
+        var result = await collector.CollectAsync(CancellationToken.None);
         Assert.Equal(1, result.FormalFilesPhysicallyDeleted);
         Assert.False(s3.Objects.ContainsKey(key));
         Assert.Equal(key, s3.LastDeletedPath);
@@ -298,11 +441,11 @@ public sealed partial class FileStorageTusProviderTests
         return (await response.Content.ReadFromJsonAsync<DownloadGrantResponse>())!;
     }
 
-    private static async Task<HttpResponseMessage> DownloadAsync(HttpClient client, DownloadGrantResponse grant)
+    private static async Task<HttpResponseMessage> DownloadAsync(HttpClient client, DownloadGrantResponse grant, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
         AddTransferHeaders(request, grant.Download.Headers);
-        return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
 
     private static WebApplicationFactory<Program> ConfigureStorage(
@@ -311,7 +454,8 @@ public sealed partial class FileStorageTusProviderTests
         TestS3Handler? handler = null,
         string? root = null,
         TimeProvider? clock = null,
-        Action<Dictionary<string, string?>>? change = null) =>
+        Action<Dictionary<string, string?>>? change = null,
+        ILoggerProvider? logProvider = null) =>
         factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, config) =>
@@ -333,11 +477,19 @@ public sealed partial class FileStorageTusProviderTests
                 {
                     values["FileStorage:Tus:RootPath"] = root;
                 }
+                if (logProvider is not null)
+                {
+                    values["Logging:Serilog:Enabled"] = "false";
+                }
                 change?.Invoke(values);
                 config.AddInMemoryCollection(values);
             });
             builder.ConfigureServices(services =>
             {
+                if (logProvider is not null)
+                {
+                    services.AddSingleton(logProvider);
+                }
                 if (handler is not null)
                 {
                     services.AddHttpClient(S3FinalFileStore.ClientName)
@@ -353,6 +505,7 @@ public sealed partial class FileStorageTusProviderTests
     private static void AssertSanitized(string text)
     {
         Assert.DoesNotContain("internal-storage.test", text);
+        Assert.DoesNotContain("files-bucket", text);
         Assert.DoesNotContain("test-access-key", text);
         Assert.DoesNotContain("test-secret-key", text);
     }
@@ -362,7 +515,14 @@ public sealed partial class FileStorageTusProviderTests
         public Dictionary<string, byte[]> Objects { get; } = new(StringComparer.Ordinal);
         public bool BucketAvailable { get; set; } = true;
         public bool LosePutResponse { get; init; }
-        public bool ReturnNotFoundOnDelete { get; init; }
+        public HttpStatusCode DeleteStatus { get; set; } = HttpStatusCode.NoContent;
+        public StalledS3Stream? StalledGet { get; set; }
+        public StalledS3Stream? StalledDelete { get; set; }
+        public bool ConcurrentPut { get; init; }
+        public Action? OnGet { get; set; }
+        public List<HttpMethod> Requests { get; } = [];
+        public string? LastHost { get; private set; }
+        public string? LastPath { get; private set; }
         public bool FailGet { get; set; }
         public bool CorruptPut { get; init; }
         public Uri? LastHead { get; private set; }
@@ -372,11 +532,14 @@ public sealed partial class FileStorageTusProviderTests
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            const string sensitiveResponse = "internal-storage.test test-access-key test-secret-key";
+            const string sensitiveResponse = "internal-storage.test files-bucket test-access-key test-secret-key";
             LastAuthorization = Assert.Single(request.Headers.GetValues("Authorization"));
             Assert.StartsWith("AWS4-HMAC-SHA256 Credential=test-access-key/", LastAuthorization);
             var uri = request.RequestUri!;
             var path = uri.AbsolutePath;
+            Requests.Add(request.Method);
+            LastHost = request.Headers.Host;
+            LastPath = path;
             if (request.Method == HttpMethod.Head)
             {
                 LastHead = uri;
@@ -389,7 +552,7 @@ public sealed partial class FileStorageTusProviderTests
                 var content = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
                 Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(content)),
                     Assert.Single(request.Headers.GetValues("x-amz-content-sha256")));
-                if (!Objects.TryAdd(path, CorruptPut ? new byte[content.Length] : content))
+                if (!Objects.TryAdd(path, CorruptPut ? new byte[content.Length] : content) || ConcurrentPut)
                 {
                     return new(HttpStatusCode.PreconditionFailed);
                 }
@@ -402,17 +565,25 @@ public sealed partial class FileStorageTusProviderTests
             if (request.Method == HttpMethod.Delete)
             {
                 LastDeletedPath = path;
-                Objects.Remove(path);
-                return new(ReturnNotFoundOnDelete ? HttpStatusCode.NotFound : HttpStatusCode.NoContent);
+                if (DeleteStatus != HttpStatusCode.Forbidden)
+                {
+                    Objects.Remove(path);
+                }
+                return StalledDelete is null ? new(DeleteStatus) : StalledResponse(StalledDelete, 1);
             }
             Assert.Equal(HttpMethod.Get, request.Method);
+            OnGet?.Invoke();
             if (FailGet)
             {
                 return new(HttpStatusCode.Forbidden) { Content = new StringContent(sensitiveResponse) };
             }
-            return Objects.TryGetValue(path, out var bytes)
+            if (!Objects.TryGetValue(path, out var bytes))
+            {
+                return new(HttpStatusCode.NotFound) { Content = new StringContent(sensitiveResponse) };
+            }
+            return StalledGet is null
                 ? new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) }
-                : new(HttpStatusCode.NotFound) { Content = new StringContent(sensitiveResponse) };
+                : StalledResponse(StalledGet, bytes.Length);
         }
     }
 }

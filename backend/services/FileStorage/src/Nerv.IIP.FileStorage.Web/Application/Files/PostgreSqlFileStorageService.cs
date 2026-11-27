@@ -248,38 +248,50 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话已过期。");
             }
 
-            var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
-                session.Provider,
-                session.UploadSessionId,
-                session.ExpectedSizeBytes,
-                session.Checksum,
-                request,
-                tusStoreAccessor,
-                cancellationToken);
-            if (tusValidation is not null)
+            string? commitChecksum;
+            try
             {
-                return FileStorageResult<FileMetadataResponse>.Failure(
-                    tusValidation.StatusCode,
-                    tusValidation.Message);
-            }
-
-            if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
-                    session.FileName,
-                    session.ContentType,
+                var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
                     session.Provider,
                     session.UploadSessionId,
+                    session.ExpectedSizeBytes,
+                    session.Checksum,
+                    request,
                     tusStoreAccessor,
-                    cancellationToken))
-            {
-                return FileStorageResult<FileMetadataResponse>.BadRequest("上传内容与声明的文件类型不匹配。");
-            }
+                    cancellationToken);
+                if (tusValidation is not null)
+                {
+                    return FileStorageResult<FileMetadataResponse>.Failure(
+                        tusValidation.StatusCode,
+                        tusValidation.Message);
+                }
 
-            var commitChecksum = NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum);
-            if (commitChecksum is null && session.Provider == TusUploadProvider.Name
-                && tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var localStore)
-                && localStore.Exists(session.UploadSessionId))
+                if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
+                        session.FileName,
+                        session.ContentType,
+                        session.Provider,
+                        session.UploadSessionId,
+                        tusStoreAccessor,
+                        cancellationToken))
+                {
+                    return FileStorageResult<FileMetadataResponse>.BadRequest("上传内容与声明的文件类型不匹配。");
+                }
+
+                commitChecksum = NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum);
+                if (commitChecksum is null && session.Provider == TusUploadProvider.Name
+                    && tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var localStore)
+                    && localStore.Exists(session.UploadSessionId))
+                {
+                    commitChecksum = $"sha256:{await localStore.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken)}";
+                }
+            }
+            catch (Exception error) when (s3 is { IsEnabled: true } && error is IOException or UnauthorizedAccessException)
             {
-                commitChecksum = $"sha256:{await localStore.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken)}";
+                cancellationToken.ThrowIfCancellationRequested();
+                logger.LogWarning("FileStorage 无法读取上传暂存字节；UploadSessionId={UploadSessionId}。", uploadSessionId);
+                return FileStorageResult<FileMetadataResponse>.Failure(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "上传暂存字节暂不可用，请稍后重试。");
             }
 
             session.BeginCommit(NewId("cmt"), commitChecksum, now);

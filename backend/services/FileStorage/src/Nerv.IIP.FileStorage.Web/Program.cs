@@ -103,9 +103,16 @@ builder.Services.AddSingleton<VersionedArchiveService>();
 builder.Services.AddSingleton<UploadSessionGateRegistry>();
 builder.Services.AddSingleton<IUploadSessionMutationGate, UploadSessionMutationGate>();
 builder.Services.AddSingleton<S3FinalFileStore>();
+builder.Services.AddSingleton<S3HttpMeterFactory>();
 builder.Services.AddHttpClient(S3FinalFileStore.ClientName)
     .RemoveAllLoggers()
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ActivityHeadersPropagator = null,
+        MeterFactory = services.GetRequiredService<S3HttpMeterFactory>(),
+        MaxResponseDrainSize = 0
+    });
 builder.Services.AddSingleton<IUploadCommitStorage>(services =>
     services.GetRequiredService<S3FinalFileStore>().IsEnabled
         ? ActivatorUtilities.CreateInstance<S3TusUploadCommitStorage>(services)

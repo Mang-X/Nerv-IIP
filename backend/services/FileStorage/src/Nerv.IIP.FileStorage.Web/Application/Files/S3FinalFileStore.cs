@@ -56,13 +56,34 @@ public sealed class S3FinalFileStore(
     public async Task DeleteAsync(string objectKey, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(HttpMethod.Delete, objectKey, cancellationToken);
-        if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return;
+        }
+        if (!response.IsSuccessStatusCode)
         {
             throw Unavailable();
         }
+
+        await using var stream = await OpenResponseStreamAsync(response, cancellationToken);
+        await stream.CopyToAsync(Stream.Null, cancellationToken);
     }
 
     internal async Task<UploadCommitStorageResult> CommitAsync(
+        LocalUploadByteStore staging, UploadCommitIntent intent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CommitCoreAsync(staging, intent, cancellationToken);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("The S3 upload commit could not access the required bytes.");
+        }
+    }
+
+    private async Task<UploadCommitStorageResult> CommitCoreAsync(
         LocalUploadByteStore staging, UploadCommitIntent intent, CancellationToken cancellationToken)
     {
         if (!AcceptsKey(intent.ObjectKey) || intent.ExpectedChecksum is null)
@@ -119,22 +140,33 @@ public sealed class S3FinalFileStore(
         {
             return null;
         }
+
+        await using var stream = await OpenResponseStreamAsync(response, cancellationToken);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[64 * 1024];
+        long size = 0;
+        int read;
+        while ((read = await stream.ReadAsync(buffer, cancellationToken)) != 0)
+        {
+            hash.AppendData(buffer, 0, read);
+            size += read;
+        }
+        return UploadCommitStorageResult.Verified(size, $"sha256:{Convert.ToHexStringLower(hash.GetHashAndReset())}");
+    }
+
+    internal async Task<Stream> OpenResponseStreamAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var idleTimeout = TimeSpan.FromSeconds(options!.ReadIdleTimeoutSeconds);
+        using var timeout = new CancellationTokenSource(idleTimeout, clock);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
         try
         {
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            var buffer = new byte[64 * 1024];
-            long size = 0;
-            int read;
-            while ((read = await stream.ReadAsync(buffer, cancellationToken)) != 0)
-            {
-                hash.AppendData(buffer, 0, read);
-                size += read;
-            }
-            return UploadCommitStorageResult.Verified(size, $"sha256:{Convert.ToHexStringLower(hash.GetHashAndReset())}");
+            var stream = await response.Content.ReadAsStreamAsync(linked.Token);
+            return new IdleReadStream(stream, idleTimeout, clock);
         }
-        catch (Exception error) when (IsTransportFailure(error, cancellationToken))
+        catch (Exception error) when (IsTransportFailure(error))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             throw Unavailable();
         }
     }
@@ -184,8 +216,9 @@ public sealed class S3FinalFileStore(
         {
             return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (Exception error) when (IsTransportFailure(error, cancellationToken))
+        catch (Exception error) when (IsTransportFailure(error))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             throw Unavailable();
         }
     }
@@ -222,8 +255,46 @@ public sealed class S3FinalFileStore(
     private static byte[] Hmac(byte[] key, string value) =>
         HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(value));
 
-    private static bool IsTransportFailure(Exception error, CancellationToken ct) =>
-        !ct.IsCancellationRequested && error is HttpRequestException or IOException or OperationCanceledException;
+    private static bool IsTransportFailure(Exception error) =>
+        error is HttpRequestException or IOException or OperationCanceledException;
 
     private static IOException Unavailable() => new("The S3 object store is unavailable.");
+
+    private sealed class IdleReadStream(Stream inner, TimeSpan idleTimeout, TimeProvider clock) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            using var timeout = new CancellationTokenSource(idleTimeout, clock);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+            try
+            {
+                return await inner.ReadAsync(buffer, linked.Token);
+            }
+            catch (Exception error) when (IsTransportFailure(error))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw Unavailable();
+            }
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        // HttpResponseMessage owns the underlying stream.
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }
