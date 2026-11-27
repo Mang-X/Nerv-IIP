@@ -88,7 +88,6 @@ async function openVersionForm() {
   wrapper = mount(CodeRulesPage, { global: { stubs }, attachTo: document.body })
   await button('新建版本')!.trigger('click')
   await flushPromises()
-  await wrapper.get('#cr-by').setValue('张工')
   return wrapper
 }
 

@@ -82,6 +82,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
                 builder.UseSetting("Iam:Jwt:Issuer", "receipt-route-test");
                 builder.UseSetting("Iam:Jwt:Audience", "receipt-route-test");
                 builder.UseSetting("Security:Cors:AllowedOrigins", "http://receipt-route.test");
+                builder.UseSetting("Security:ForwardedHeaders:TrustedProxies", "127.0.0.1");
                 builder.ConfigureTestServices(services =>
                 {
                     // FastEndpoints 在同进程宿主间共享序列化选项；保留 ERP 的强类型 ID wire converter。
@@ -99,7 +100,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
                         .ConfigurePrimaryHttpMessageHandler(() => erp.Server.CreateHandler());
                 });
             });
-        using var gatewayClient = gateway.CreateClient();
+        using var gatewayClient = gateway.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         var now = TimeProvider.System.GetUtcNow().UtcDateTime;
         gatewayClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
             new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken("receipt-route-test", "receipt-route-test",

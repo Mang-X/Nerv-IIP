@@ -120,6 +120,7 @@ public sealed class ErpWorkOrderCostGatewaySeamTests
             builder.UseSetting("Iam:Jwt:Issuer", "cost-seam");
             builder.UseSetting("Iam:Jwt:Audience", "cost-seam");
             builder.UseSetting("Security:Cors:AllowedOrigins:0", "http://browser.test");
+            builder.UseSetting("Security:ForwardedHeaders:TrustedProxies", "127.0.0.1");
             foreach (var service in new[] { "Iam", "MasterData", "Inventory", "Quality", "ProductEngineering",
                 "DemandPlanning", "Erp", "Wms", "Approval", "BarcodeLabel", "Notification", "FileStorage",
                 "Mes", "Scheduling", "IndustrialTelemetry", "Maintenance", "AppHub" })

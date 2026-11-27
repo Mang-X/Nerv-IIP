@@ -54,7 +54,7 @@ public sealed class DemandChangePlannerInboxGatewaySeamTests
         await PublishAsync(notification, cancelled: true);
 
         await using var gateway = CreateGatewayFactory(iam, notification);
-        using var browser = gateway.CreateClient();
+        using var browser = gateway.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         foreach (var (userId, token) in new[] { (firstId, firstToken), (secondId, secondToken) })
         {
             foreach (var path in new[] { "messages", "tasks" })
@@ -120,6 +120,7 @@ public sealed class DemandChangePlannerInboxGatewaySeamTests
             builder.UseSetting("Iam:Jwt:Issuer", "planner-inbox");
             builder.UseSetting("Iam:Jwt:Audience", "planner-inbox");
             builder.UseSetting("Security:Cors:AllowedOrigins:0", "http://browser.test");
+            builder.UseSetting("Security:ForwardedHeaders:TrustedProxies", "127.0.0.1");
             foreach (var service in new[] { "Iam", "MasterData", "Inventory", "Quality", "ProductEngineering",
                 "DemandPlanning", "Erp", "Wms", "Approval", "BarcodeLabel", "Notification", "FileStorage",
                 "Mes", "Scheduling", "IndustrialTelemetry", "Maintenance", "AppHub" })
