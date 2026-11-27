@@ -118,7 +118,8 @@ public sealed class HttpBusinessErpCostingClient(HttpClient httpClient)
                 request.Reason),
             cancellationToken,
             configureRequest: message =>
-                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor),
+            acceptKnownExceptionCodeZero: true);
 
         if (!Guid.TryParse(response.WorkCenterMachineOverheadRateId, out var rateId) || rateId == Guid.Empty)
         {

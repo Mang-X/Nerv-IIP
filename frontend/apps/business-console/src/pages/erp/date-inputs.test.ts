@@ -64,7 +64,11 @@ const stubs = {
   NvDialogFooter: { template: '<footer><slot /></footer>' },
   NvDialogClose: { template: '<span><slot /></span>' },
   NvDataTable: true,
-  NvEntityPicker: input,
+  NvEntityPicker: {
+    ...input,
+    props: ['modelValue', 'invalid'],
+    template: `<input :value="modelValue" :aria-invalid="invalid || undefined" @input="$emit('update:modelValue', $event.target.value)" />`,
+  },
   DirectoryPicker: input,
   EntityMultiPicker: input,
   NvSelect: {
@@ -86,7 +90,10 @@ const cases = [
     open: '新建 RFQ',
     fields: { 'erp-rfq-suppliers': 'SUP-001', 'erp-rfq-sku': 'SKU-RM-001', 'erp-rfq-uom': 'EA' },
     dates: ['erp-rfq-date'],
-    payload: { supplierCodes: ['SUP-001'], lines: [{ ...line, requiredDate: '2026-06-19' }] },
+    payload: {
+      supplierCodes: ['SUP-001'],
+      lines: [{ ...line, siteCode: 'SITE-01', requiredDate: '2026-06-19' }],
+    },
   },
   {
     name: '采购报价承诺日期',
@@ -221,6 +228,13 @@ describe('ERP 日期输入', () => {
         expect(wrapper.find(`label[for="${id}"]`).exists()).toBe(true)
         await chooseDate(wrapper.get(`#${id}`))
         expect(wrapper.get(`#${id}`).text()).toBe('2026/6/19')
+      }
+      if (page === Rfqs) {
+        await wrapper.get('form').trigger('submit')
+        expect(state.save).not.toHaveBeenCalled()
+        expect(wrapper.get('[role="alert"]').text()).toContain('请选择工厂')
+        expect(wrapper.get('#erp-rfq-site').attributes('aria-invalid')).toBe('true')
+        await wrapper.get('#erp-rfq-site').setValue('SITE-01')
       }
       i18n.global.locale.value = 'en-US'
       await flushPromises()

@@ -8613,6 +8613,85 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_rfq_create_forwards_the_line_site_to_erp()
+    {
+        string? postedJson = null;
+        var downstream = new RecordingHandler(request =>
+        {
+            postedJson = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new { success = true, data = new { requestForQuotationId = "rfq-id" } });
+        });
+        using var downstreamHttp = new HttpClient(downstream) { BaseAddress = new Uri("http://erp.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(new HttpBusinessErpClient(downstreamHttp));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/erp/procurement/rfqs", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            supplierCodes = new[] { "SUP-001" },
+            lines = new[] { new { lineNo = "10", skuCode = "SKU-001", uomCode = "EA", quantity = 1, siteCode = "ST001", requiredDate = "2026-11-28" } },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("/api/business/v1/erp/rfqs", Assert.Single(downstream.Requests).RequestUri!.AbsolutePath);
+        using var body = JsonDocument.Parse(postedJson!);
+        Assert.Equal("ST001", body.RootElement.GetProperty("lines")[0].GetProperty("siteCode").GetString());
+    }
+
+    [Theory]
+    [InlineData("sales/sales-orders", "客户『CUST-00003』的信用额度主数据不可用，请先维护客户信用额度。")]
+    [InlineData("finance/work-center-machine-overhead-rates", "会计期间『2026-11』尚未开立，请先开立该期间。")]
+    public async Task Erp_write_facade_returns_readable_bad_request_for_known_business_rejection(string route, string message)
+    {
+        var downstream = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = false,
+            code = 0,
+            message,
+            data = (object?)null,
+        }));
+        using var downstreamHttp = new HttpClient(downstream) { BaseAddress = new Uri("http://erp.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(new HttpBusinessErpClient(downstreamHttp));
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(new HttpBusinessErpCostingClient(downstreamHttp));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        object request = route.StartsWith("sales/", StringComparison.Ordinal)
+            ? new BusinessConsoleCreateErpSalesOrderRequest("org-001", "env-dev", null, "QUO-001", "ST001")
+            : new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workCenterId = "WC-001",
+                accountingPeriodCode = "2026-11",
+                applicability = "applicable",
+                fixedOverheadBudget = 30000m,
+                variableOverheadBudget = 10000m,
+                normalCapacityMachineHours = 1000m,
+                currencyCode = "CNY",
+                reason = "月度预算",
+            };
+
+        var response = await client.PostAsJsonAsync($"/api/business-console/v1/erp/{route}", request);
+
+        Assert.Single(downstream.Requests);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(message, body.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Erp_sales_order_create_forwards_real_site_code()
     {
         var erp = new RecordingErpClient();

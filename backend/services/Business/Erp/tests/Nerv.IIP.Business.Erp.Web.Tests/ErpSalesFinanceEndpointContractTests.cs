@@ -661,9 +661,14 @@ public sealed class ErpSalesFinanceEndpointContractTests
             new ApproveQuotationCommand("org-001", "env-dev", "QUO-CREDIT-PASS"),
             CancellationToken.None);
 
-        var salesOrderId = await new CreateSalesOrderCommandHandler(
-                dbContext,
-                new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 250m, "CNY"))).Handle(
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.OK, """
+            {"success":true,"code":0,"data":{"organizationId":"org-001","environmentId":"env-dev","customerCode":"CUST-001","creditLimit":250,"currencyCode":"CNY","updatedAtUtc":"2026-11-28T00:00:00Z"}}
+            """, "application/json"))
+        {
+            BaseAddress = new Uri("http://masterdata.test"),
+        };
+        var creditReader = new HttpCustomerCreditProfileReader(httpClient, new TestInternalServiceTokenProvider());
+        var salesOrderId = await new CreateSalesOrderCommandHandler(dbContext, creditReader).Handle(
                 new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-PASS", "QUO-CREDIT-PASS", "SITE-001"),
                 CancellationToken.None);
 

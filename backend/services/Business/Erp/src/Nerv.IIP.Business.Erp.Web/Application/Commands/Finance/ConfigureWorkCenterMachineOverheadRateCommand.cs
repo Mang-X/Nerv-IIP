@@ -77,7 +77,7 @@ public sealed class ConfigureWorkCenterMachineOverheadRateCommandHandler(
         if (!periodExists)
         {
             throw new KnownException(
-                $"未找到会计期间『{allocation.Scope.OrganizationId}·{allocation.Scope.EnvironmentId}·{allocation.AccountingPeriod.Value}』。");
+                $"会计期间『{allocation.AccountingPeriod.Value}』尚未开立，请先开立该期间。");
         }
 
         var rate = request.Applicability switch

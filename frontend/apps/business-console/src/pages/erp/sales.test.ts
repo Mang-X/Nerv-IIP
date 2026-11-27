@@ -463,9 +463,16 @@ describe('ERP sales quotation page', () => {
 describe('ERP sales order and delivery pages', () => {
   // MAN-700 / #1289 的实测受害点：报价转订单的 400 曾被整条吞成
   // 「创建销售订单失败，请稍后重试。」，后端说的「报价单未审批通过」根本到不了用户眼前。
-  it('surfaces the service domain message when converting a quotation to a sales order fails', async () => {
+  it.each([
+    { detail: '报价单未审批通过，不能转订单', title: 'Bad Request', status: 400 },
+    {
+      message: '客户『CUST-00003』的信用额度主数据不可用，请先维护客户信用额度。',
+      success: false,
+      code: 400,
+    },
+  ])('surfaces a rejected sales order conversion: %j', async (error) => {
     state.createSalesOrder = vi.fn(async () => {
-      throw { title: 'Bad Request', status: 400, detail: '报价单未审批通过，不能转订单' }
+      throw error
     })
     const wrapper = mount(OrdersPage, {
       global: { stubs: { ...layoutStub, ...orderDialogStubs } },
@@ -478,7 +485,9 @@ describe('ERP sales order and delivery pages', () => {
     await flushPromises()
 
     expect(state.createSalesOrder).toHaveBeenCalledTimes(1)
-    expect(state.toastError).toHaveBeenCalledWith('创建销售订单失败：报价单未审批通过，不能转订单')
+    expect(state.toastError).toHaveBeenCalledWith(
+      `创建销售订单失败：${error.message ?? error.detail}`,
+    )
     expect(state.toastSuccess).not.toHaveBeenCalled()
   })
 

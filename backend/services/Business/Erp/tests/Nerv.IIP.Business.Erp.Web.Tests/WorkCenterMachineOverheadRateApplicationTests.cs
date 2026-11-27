@@ -106,7 +106,7 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(ApplicableCommand("2026-06", 30_000m), CancellationToken.None));
 
-        Assert.Contains("会计期间", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("会计期间『2026-06』尚未开立，请先开立该期间。", exception.Message);
         Assert.Empty(await db.WorkCenterMachineOverheadRates.ToListAsync());
     }
 

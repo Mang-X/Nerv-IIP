@@ -168,6 +168,7 @@ export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpLi
         skuCode: string
         uomCode: string
         quantity: number
+        siteCode: string
         requiredDate: string
       }[]
     }) =>

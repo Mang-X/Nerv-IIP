@@ -2,7 +2,11 @@
 import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpRequestsForQuotation } from '@/composables/erp/useBusinessErp'
-import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/erp/useErpPickerCatalog'
+import {
+  useErpItemCatalog,
+  useErpPartnerCatalog,
+  useErpSiteCatalog,
+} from '@/composables/erp/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
@@ -56,6 +60,7 @@ definePage({
 const rfqs = useErpRequestsForQuotation()
 // 询价对象与物料从主数据目录里选；供应商是多选，用应用侧的多选组合件。
 const { supplierOptions, partnersPending } = useErpPartnerCatalog()
+const { siteOptions, sitesPending } = useErpSiteCatalog()
 const { uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
 // 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
 const { resolvePartnerLabel } = useBusinessPartnerNames()
@@ -127,6 +132,7 @@ const rfqCells = computed<NvMetricStripCell[]>(() => [
 const open = shallowRef(false)
 const form = reactive({
   suppliers: '',
+  siteCode: '',
   skuCode: '',
   uomCode: '',
   quantity: '1',
@@ -147,6 +153,7 @@ const supplierCodeList = computed(() =>
 )
 const invalid = computed(() => ({
   suppliers: supplierCodeList.value.length === 0,
+  siteCode: !form.siteCode.trim(),
   skuCode: !form.skuCode.trim(),
   uomCode: !form.uomCode.trim(),
   requiredDate: !form.requiredDate,
@@ -156,6 +163,7 @@ const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
   form.suppliers = ''
+  form.siteCode = ''
   form.skuCode = ''
   form.uomCode = ''
   form.quantity = '1'
@@ -178,6 +186,7 @@ async function submit() {
           skuCode: form.skuCode.trim(),
           uomCode: form.uomCode.trim(),
           quantity,
+          siteCode: form.siteCode.trim(),
           requiredDate: form.requiredDate,
         },
       ],
@@ -281,6 +290,25 @@ async function submit() {
               />
             </NvField>
             <NvField>
+              <NvFieldLabel for="erp-rfq-site">
+                工厂 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvEntityPicker
+                id="erp-rfq-site"
+                v-model="form.siteCode"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择询价工厂"
+                empty-text="暂无工厂，请先在「基础数据 · 工厂」维护"
+                :loading="sitesPending"
+                aria-label="工厂"
+                :invalid="showErrors && invalid.siteCode"
+                :aria-describedby="
+                  showErrors && invalid.siteCode ? 'erp-rfq-form-error' : undefined
+                "
+              />
+            </NvField>
+            <NvField>
               <NvFieldLabel for="erp-rfq-sku">
                 物料 <span class="text-destructive">*</span>
               </NvFieldLabel>
@@ -335,8 +363,13 @@ async function submit() {
               />
             </NvField>
           </NvFieldGroup>
-          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请选择供应商、物料、单位，填写需求日期，并给出正数数量。
+          <p
+            v-if="showErrors && !canSubmit"
+            id="erp-rfq-form-error"
+            class="text-sm text-destructive"
+            role="alert"
+          >
+            请选择工厂、供应商、物料和单位，填写需求日期及正数数量。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

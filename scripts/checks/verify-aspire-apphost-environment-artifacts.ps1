@@ -257,6 +257,12 @@ try {
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName
         $composeText = [IO.File]::ReadAllText($composePath)
+        $postgresService = [regex]::Match($composeText, '(?m)^  postgres:\s*\r?\n(?:^    .*\r?\n)*')
+        if (-not $postgresService.Success) { throw 'Published Compose artifact must define postgres.' }
+        $hasDevelopmentConnectionLimit = $postgresService.Value.Contains('max_connections=300', [StringComparison]::Ordinal)
+        if ($hasDevelopmentConnectionLimit -ne ($environmentName -ceq 'Development')) {
+            throw "Published $environmentName PostgreSQL command has incorrect Development connection limit."
+        }
         if ($composeText -notmatch '(?m)^\s+- type: "volume"\s*\n\s+target: "/home/app"\s*\n\s+source: "nerv-iip-file-storage"' -and
             $composeText -notmatch '(?m)^\s+- "nerv-iip-file-storage:/home/app"') {
             throw 'Published FileStorage service must mount the nerv-iip-file-storage volume at /home/app.'
