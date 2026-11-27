@@ -4454,11 +4454,7 @@ public sealed record BusinessConsoleResolveApprovalStepRequest(
     string ActorRef,
     string Decision,
     string? Comment,
-    string? TargetStepId = null)
-{
-    [System.Text.Json.Serialization.JsonIgnore]
-    internal ApprovalRoutingMembership? RoutingMembership { get; init; }
-}
+    string? TargetStepId = null);
 
 public sealed record BusinessConsoleResolveApprovalStepResponse(string DecisionId);
 

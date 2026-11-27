@@ -32,7 +32,10 @@ public abstract class ApprovalEndpoint<TRequest, TResponse> : Endpoint<TRequest,
         }
 
         Tags("Business Approval");
-        Policies(contract.AuthorizationPolicy);
+        if (contract.AuthorizationPolicy is { } policy)
+        {
+            Policies(policy);
+        }
     }
 }
 
@@ -126,14 +129,10 @@ public sealed record ListApprovalDecisionsRequest(
 public sealed record ResolveApprovalStepRequest(
     string OrganizationId,
     string EnvironmentId,
-    ApprovalChainId ChainId,
-    int StepNo,
-    string ActorType,
-    string ActorRef,
+    [property: RouteParam] string ChainId,
+    [property: RouteParam] int StepNo,
     string Decision,
     string? Comment,
-    string? RoleRefs = null,
-    string? DepartmentRef = null,
     string? TargetStepId = null);
 
 public sealed record ResolveApprovalStepResponse(ApprovalDecisionId DecisionId);
@@ -373,28 +372,49 @@ public sealed class ListApprovalDecisionsEndpoint(ISender sender)
     }
 }
 
-public sealed class ResolveApprovalStepEndpoint(ISender sender)
+public sealed class ResolveApprovalStepEndpoint(ISender sender, ResolveApprovalStepAuthority authority)
     : ApprovalEndpoint<ResolveApprovalStepRequest, ResponseData<ResolveApprovalStepResponse>>
 {
     public override void Configure()
     {
         ConfigureApprovalContract(ApprovalEndpointContracts.Get<ResolveApprovalStepEndpoint>());
+        // IAM verifies the end-principal bearer before dispatching the command.
+        AllowAnonymous();
     }
 
     public override async Task HandleAsync(ResolveApprovalStepRequest req, CancellationToken ct)
     {
+        var stepNo = Route<int>("stepNo");
+        var targetId = Guid.Empty;
+        if (!Guid.TryParse(Route<string>("chainId"), out var chainGuid) || chainGuid == Guid.Empty || stepNo <= 0
+            || (req.TargetStepId is not null && (!Guid.TryParse(req.TargetStepId, out targetId) || targetId == Guid.Empty))
+            || string.IsNullOrWhiteSpace(req.OrganizationId) || string.IsNullOrWhiteSpace(req.EnvironmentId))
+        {
+            await WriteErrorAsync(StatusCodes.Status400BadRequest, "审批目标或组织环境无效。", ct);
+            return;
+        }
+
+        var chainId = new ApprovalChainId(chainGuid);
+        var (status, actor) = await authority.ResolveAsync(
+            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct);
+        if (actor is null)
+        {
+            await WriteErrorAsync(status, "无法授权当前审批裁决。", ct);
+            return;
+        }
+
         var decisionId = await sender.Send(new ResolveApprovalStepCommand(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.ChainId,
-            req.StepNo,
-            req.ActorType,
-            req.ActorRef,
+            actor.OrganizationId,
+            actor.EnvironmentId,
+            chainId,
+            stepNo,
+            actor.Type,
+            actor.Id,
             req.Decision,
             req.Comment,
-            req.RoleRefs,
-            req.DepartmentRef,
-            req.TargetStepId), ct);
+            actor.RoleRefs,
+            actor.DepartmentRef,
+            targetId == Guid.Empty ? null : new ApprovalStepId(targetId)), ct);
         if (decisionId is null)
         {
             await Send.NotFoundAsync(ct);
@@ -402,6 +422,12 @@ public sealed class ResolveApprovalStepEndpoint(ISender sender)
         }
 
         await Send.OkAsync(new ResolveApprovalStepResponse(decisionId).AsResponseData(), cancellation: ct);
+    }
+
+    private Task WriteErrorAsync(int status, string message, CancellationToken ct)
+    {
+        HttpContext.Response.StatusCode = status;
+        return HttpContext.Response.WriteAsJsonAsync(new ResponseData(false, message, status, []), ct);
     }
 }
 
@@ -561,7 +587,7 @@ public sealed record ApprovalEndpointContract(
     string HttpMethod,
     string Route,
     string PermissionCode,
-    string AuthorizationPolicy,
+    string? AuthorizationPolicy,
     string OperationId);
 
 public static class ApprovalEndpointContracts
@@ -576,7 +602,7 @@ public static class ApprovalEndpointContracts
         new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listPendingApprovalTasks"),
         new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "checkOverdueApprovalSteps"),
         new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDecisions"),
-        new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "resolveApprovalStep"),
+        new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, null, "resolveApprovalStep"),
         new(typeof(WithdrawApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/withdraw", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "withdrawApprovalChain"),
         new(typeof(ResubmitApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/resubmit", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "resubmitApprovalChain"),
         new(typeof(AddApprovalStepSignerEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "addApprovalStepSigner"),
