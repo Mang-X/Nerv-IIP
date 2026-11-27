@@ -515,3 +515,13 @@ describe('PlanningWorkbench', () => {
     expect(wrapper.text()).not.toContain('未承接工单，暂不能排产')
   })
 })
+
+it('采购申请入口仅展示采购类 MRP 建议', async () => {
+  resetPlanningWorkbench()
+  planningRoute.query = { suggestionType: 'planned-purchase' }
+  const wrapper = mount(PlanningWorkbench)
+  await flushPromises()
+  const types = wrapper.findAll('.cell-suggestionType').map((cell) => cell.text())
+  expect(types.length).toBeGreaterThan(0)
+  expect(new Set(types)).toEqual(new Set(['采购建议']))
+})

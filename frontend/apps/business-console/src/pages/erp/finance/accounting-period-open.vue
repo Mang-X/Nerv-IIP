@@ -2,8 +2,8 @@
 import { openBusinessConsoleErpAccountingPeriodMutationOptions } from '@nerv-iip/api-client'
 import { useMutation } from '@pinia/colada'
 import { NvButton, NvField, NvFieldGroup, NvFieldLabel, NvInput, NvPageHeader } from '@nerv-iip/ui'
-import { computed, reactive, shallowRef } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import FoundationReturnContext from '@/components/erp/FoundationReturnContext.vue'
 import { queryText } from '@/components/erp/costRecovery'
@@ -20,8 +20,21 @@ definePage({
 })
 const route = useRoute()
 const context = useBusinessContextStore()
-const date = queryText(route.query, 'date') || today()
-const draft = reactive({ periodCode: '', startDate: date, endDate: date })
+const sourceDate = queryText(route.query, 'date')
+const date = /^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(sourceDate) ? sourceDate : today()
+const month = date.slice(0, 7)
+const monthEnd = new Date(`${month}-01T00:00:00Z`)
+monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0)
+const draft = reactive({
+  periodCode: queryText(route.query, 'periodCode'),
+  startDate: `${month}-01`,
+  endDate: monthEnd.toISOString().slice(0, 10),
+})
+const openedPeriod = shallowRef<typeof draft>()
+const scope = computed(() => [context.organizationId, context.environmentId].join('/'))
+watch(scope, () => {
+  openedPeriod.value = undefined
+})
 const mutation = useMutation(openBusinessConsoleErpAccountingPeriodMutationOptions())
 const ready = computed(() => Boolean(context.organizationId && context.environmentId))
 const showErrors = shallowRef(false)
@@ -33,16 +46,19 @@ const invalid = computed(() => ({
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 async function submit() {
   showErrors.value = true
-  if (!canSubmit.value) return
+  if (!canSubmit.value || !ready.value || mutation.isLoading.value) return
+  const submittedScope = scope.value
+  const period = { ...draft, periodCode: draft.periodCode.trim() }
   try {
     await mutation.mutateAsync({
       body: {
         organizationId: context.organizationId,
         environmentId: context.environmentId,
-        ...draft,
+        ...period,
       },
     })
-    notifySuccess('会计期间已开立，请返回准备检查核对覆盖结果')
+    if (scope.value === submittedScope) openedPeriod.value = period
+    notifySuccess('会计期间已开立')
   } catch (error) {
     notifyOperationFailure('开立会计期间', error, '会计期间未能开立，请核对期间编码与日期')
   }
@@ -52,9 +68,29 @@ async function submit() {
   <BusinessLayout>
     <NvPageHeader title="开立会计期间" :breadcrumbs="[{ label: '财务' }]" />
     <FoundationReturnContext />
-    <p class="text-sm text-muted-foreground">
-      准备检查需要唯一覆盖
-      {{ date }} 的会计期间。请财务填写实际期间编码及起止日期；日期重叠或既有期间问题需由财务核对。
+    <NvButton
+      v-if="queryText(route.query, 'fromMachineRate') === '1'"
+      as-child
+      size="sm"
+      variant="outline"
+    >
+      <RouterLink
+        :to="{
+          path: '/erp/finance/machine-overhead-rates',
+          query: {
+            workCenterId: queryText(route.query, 'workCenterId'),
+            periodCode: queryText(route.query, 'periodCode'),
+          },
+        }"
+        >返回机器制造费用率</RouterLink
+      >
+    </NvButton>
+    <p v-if="openedPeriod" role="status" class="text-sm">
+      已开立 {{ openedPeriod.periodCode }}，覆盖 {{ openedPeriod.startDate }} 至
+      {{ openedPeriod.endDate }}。
+    </p>
+    <p v-if="sourceDate" class="text-sm text-muted-foreground">
+      来源业务日期为 {{ date }}。请填写期间编码，并核对期间起止日期。
     </p>
     <form
       novalidate

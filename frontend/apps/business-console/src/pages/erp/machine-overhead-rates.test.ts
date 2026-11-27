@@ -1,4 +1,7 @@
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
+vi.mock('vue-router', () => ({
+  RouterLink: { template: '<a><slot /></a>' },
+  useRoute: () => ({ query: {} }),
+}))
 import type {
   BusinessConsoleErpWorkCenterMachineOverheadRateItem,
   BusinessConsoleErpWorkCenterMachineOverheadRateListResponse,
@@ -250,4 +253,21 @@ describe('机器制造费用率', () => {
     expect(empty.text()).toContain('请联系财务维护人员录入')
     expect(empty.text()).not.toContain('新增修订')
   })
+})
+
+it.each([400, 500])('费用率保存收到 %s 时，仅已确认的缺期间提供开立入口', async (status) => {
+  const data = createState([rate(1)])
+  state.current = data
+  state.permissionCodes = ['business.erp.finance.read', 'business.erp.finance.manage']
+  const wrapper = render()
+  await openSheet(wrapper)
+  await wrapper.get('#erp-mor-reason').setValue('月度核算')
+  data.addRevision.mockRejectedValueOnce({
+    response: { status },
+    message: `会计期间『${data.accountingPeriodCode.value}』尚未开立，请先开立该期间。`,
+  })
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(wrapper.get('.sheet').text().includes('开立会计期间')).toBe(status === 400)
+  expect(wrapper.get<HTMLInputElement>('#erp-mor-reason').element.value).toBe('月度核算')
 })

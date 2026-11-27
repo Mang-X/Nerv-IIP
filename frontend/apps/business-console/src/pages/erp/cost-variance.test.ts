@@ -239,3 +239,17 @@ describe('工单成本差异', () => {
     expect(wrapper.text()).not.toContain('工单成本读取失败，请重试。')
   })
 })
+
+it('工单成本差异独立提示范围未就绪与尚未查询工单', async () => {
+  const data = createState()
+  state.current = data
+  data.workOrder.id = ''
+  data.workOrderData.value = undefined
+  data.ready.value = false
+  const wrapper = render()
+  expect(wrapper.text()).toContain('请选择业务范围。')
+  data.ready.value = true
+  await flushPromises()
+  expect(wrapper.text()).toContain('选择工单后，点击「查询工单」。')
+  expect(wrapper.text()).not.toContain('请选择业务范围。')
+})

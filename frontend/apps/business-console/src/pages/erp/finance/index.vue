@@ -219,9 +219,7 @@ function refreshAll() {
       <div>
         <p class="text-sm font-medium text-destructive-strong">财务摘要读取失败</p>
         <p class="mt-1 text-sm text-muted-foreground">
-          没有取到应收、应付与待入账成本，现在无法判断余额，上面的金额一律显「—」。{{
-            inlineErrorMessage(summaryError)
-          }}
+          没有取到应收、应付与待入账成本，当前无法判断余额。{{ inlineErrorMessage(summaryError) }}
         </p>
       </div>
       <NvButton size="sm" type="button" variant="outline" @click="refreshSummary">
@@ -230,7 +228,7 @@ function refreshAll() {
       </NvButton>
     </NvCard>
 
-    <NvMetricStrip :cells="summaryCells" />
+    <NvMetricStrip v-if="!summaryError" :cells="summaryCells" />
 
     <section aria-label="最近凭证">
       <div class="mb-2 flex items-center justify-between gap-4">

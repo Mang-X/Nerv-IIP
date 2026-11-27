@@ -68,6 +68,7 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
 }))
 
 const state = vi.hoisted(() => ({
+  quotationNo: '',
   createQuotation: vi.fn(async (_body: unknown) => undefined),
   quotations: [] as Array<Record<string, unknown>>,
   deliveries: [] as Array<Record<string, unknown>>,
@@ -89,8 +90,11 @@ vi.mock('@nerv-iip/ui', async (importOriginal) => ({
   },
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.erp.sales.manage'] } }),
+}))
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: { keyword: 'SO-DEMO-001' } }),
+  useRoute: () => ({ query: { keyword: 'SO-DEMO-001', quotationNo: state.quotationNo } }),
   useRouter: () => ({ replace: vi.fn() }),
   RouterLink: { props: ['to'], template: '<a :href="String(to)"><slot /></a>' },
 }))
@@ -271,6 +275,7 @@ const rowActionStubs = {
 const creditDialogStubs = dialogShellStubs
 
 beforeEach(() => {
+  state.quotationNo = ''
   // 履约追踪 Sheet 里的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
   setActivePinia(createPinia())
   state.createQuotation = vi.fn(async (_body: unknown) => undefined)
@@ -697,4 +702,37 @@ describe('ERP sales order and delivery pages', () => {
     expect(wrapper.find('[aria-label="发货关键字"]').exists()).toBe(true)
     expect(wrapper.findAll('select')).toHaveLength(0)
   })
+})
+
+it('来自已批准报价的链接预选报价并等待确认履约工厂', async () => {
+  state.quotationNo = 'QUO-READY'
+  const wrapper = mount(OrdersPage, { global: { stubs: { ...layoutStub, ...orderDialogStubs } } })
+  await flushPromises()
+  expect((wrapper.get('#erp-so-quotation').element as HTMLInputElement).value).toBe('QUO-READY')
+  await wrapper.get('form').trigger('submit')
+  expect(state.createSalesOrder).not.toHaveBeenCalled()
+  await wrapper.get('[data-testid="site-picker"]').trigger('click')
+  await wrapper.get('form').trigger('submit')
+  expect(state.createSalesOrder).toHaveBeenCalledWith(
+    expect.objectContaining({ quotationNo: 'QUO-READY' }),
+  )
+})
+
+it('只为已批准、有效且未转出的报价显示转单入口', async () => {
+  state.quotations = [
+    { quotationNo: 'QUO-READY', status: 'Approved', expiresOn: '2099-12-31' },
+    { quotationNo: 'QUO-EXPIRED', status: 'Approved', expiresOn: '2000-01-01' },
+    {
+      quotationNo: 'QUO-DONE',
+      status: 'Approved',
+      expiresOn: '2099-12-31',
+      convertedSalesOrderNo: 'SO-EXISTING',
+    },
+    { quotationNo: 'QUO-DRAFT', status: 'Draft', expiresOn: '2099-12-31' },
+  ]
+  const wrapper = mount(QuotationsPage, { global: { stubs: layoutStub } })
+  await flushPromises()
+  const rows = wrapper.findAll('tbody tr').filter((row) => row.text().includes('转为销售订单'))
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.text()).toContain('QUO-READY')
 })

@@ -8,6 +8,7 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRouter: () => ({ replace: vi.fn() }),
 }))
 
+import FinancePage from './finance/index.vue'
 import ArApPage from './finance/ar-ap.vue'
 import CostCandidatesPage from './finance/cost-candidates.vue'
 import VouchersPage from './finance/vouchers.vue'
@@ -61,6 +62,10 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
 })
 
 const state = vi.hoisted(() => ({
+  summaryError: undefined as Error | undefined,
+  payableError: undefined as Error | undefined,
+  refreshSummary: vi.fn(),
+  refreshPayables: vi.fn(),
   receivables: [] as Array<Record<string, unknown>>,
   payables: [] as Array<Record<string, unknown>>,
   vouchers: [] as Array<Record<string, unknown>>,
@@ -97,9 +102,9 @@ vi.mock('@/composables/erp/useBusinessErp', () => ({
       costCandidateAmount: 1_387_052.5,
       postedVoucherCount: 5590,
     })),
-    summaryError: shallowRef(undefined),
+    summaryError: computed(() => state.summaryError),
     summaryPending: shallowRef(false),
-    refreshSummary: vi.fn(),
+    refreshSummary: state.refreshSummary,
   }),
   useErpReceivables: () => ({
     ...listShape(() => state.receivables),
@@ -109,6 +114,8 @@ vi.mock('@/composables/erp/useBusinessErp', () => ({
   }),
   useErpPayables: () => ({
     ...listShape(() => state.payables),
+    error: computed(() => state.payableError),
+    refresh: state.refreshPayables,
     createPayable: vi.fn(),
     createPayablePending: shallowRef(false),
     createPayableError: shallowRef(undefined),
@@ -168,6 +175,10 @@ const selectStubs = {
 }
 
 beforeEach(() => {
+  state.summaryError = undefined
+  state.payableError = undefined
+  state.refreshSummary.mockClear()
+  state.refreshPayables.mockClear()
   state.receivables = []
   state.payables = []
   state.vouchers = []
@@ -289,4 +300,33 @@ describe('ERP finance voucher and cost pages', () => {
       currencyCode: 'CNY',
     })
   })
+})
+
+it('摘要失败隐藏指标且可单独重试', async () => {
+  state.summaryError = new Error('Internal Server Error')
+  const wrapper = mount(FinancePage, { global: { stubs: { ...layoutStub, RouterLink: true } } })
+  expect(wrapper.get('[role="alert"]').text()).toContain('财务摘要读取失败')
+  expect(wrapper.text()).not.toContain('14,853,060')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === '重试')!
+    .trigger('click')
+  expect(state.refreshSummary).toHaveBeenCalledTimes(1)
+})
+
+it('应付失败时保留应收数据，并允许仅重试应付', async () => {
+  state.receivables = [{ receivableNo: 'AR-001', amount: 300, status: 'open' }]
+  state.payables = [{ payableNo: 'AP-STALE', amount: 500 }]
+  state.payableError = new Error('Internal Server Error')
+  const wrapper = mount(ArApPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('AR-001')
+  expect(wrapper.text()).not.toContain('AP-STALE')
+  expect(wrapper.text()).toContain('应付账款读取失败')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === '重新加载')!
+    .trigger('click')
+  expect(state.refreshPayables).toHaveBeenCalledTimes(1)
+  expect(state.refreshSummary).not.toHaveBeenCalled()
 })
