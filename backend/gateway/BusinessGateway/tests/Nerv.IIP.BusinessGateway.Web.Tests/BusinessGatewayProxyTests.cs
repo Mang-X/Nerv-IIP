@@ -7221,7 +7221,7 @@ public sealed class BusinessGatewayProxyTests
         var client = new HttpBusinessFileStorageClient(new HttpClient(handler)
         {
             BaseAddress = new Uri("http://file-storage.local"),
-        });
+        }, FileStorageClientTestConfiguration.Create());
 
         var ticket = await client.AuthorizeSopFileDownloadAsync(
             "internal-test-token",

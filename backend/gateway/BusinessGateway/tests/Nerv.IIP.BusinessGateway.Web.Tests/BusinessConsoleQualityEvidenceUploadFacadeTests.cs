@@ -196,9 +196,9 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
         {
             var http = new HttpClient(handler) { BaseAddress = new Uri("http://downstream.test") };
             services.RemoveAll<IBusinessFileStorageClient>();
-            services.AddSingleton<IBusinessFileStorageClient>(new HttpBusinessFileStorageClient(http));
+            services.AddSingleton<IBusinessFileStorageClient>(new HttpBusinessFileStorageClient(http, FileStorageClientTestConfiguration.Create()));
             services.RemoveAll<IBusinessFileTransferClient>();
-            services.AddSingleton<IBusinessFileTransferClient>(new HttpBusinessFileTransferClient(http));
+            services.AddSingleton<IBusinessFileTransferClient>(new HttpBusinessFileTransferClient(http, FileStorageClientTestConfiguration.Create()));
             services.RemoveAll<IBusinessQualityClient>();
             services.AddSingleton<IBusinessQualityClient>(new HttpBusinessQualityClient(http));
             services.RemoveAll<IInternalServiceTokenProvider>();

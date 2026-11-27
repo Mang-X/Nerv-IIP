@@ -15,13 +15,14 @@ namespace Nerv.IIP.FileStorage.Web.Tests;
 public sealed class FileStorageWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string databaseName = $"filestorage-web-{Guid.NewGuid():N}";
+    private readonly string tusRoot = Path.Combine(Path.GetTempPath(), $"filestorage-web-{Guid.NewGuid():N}");
     private readonly InMemoryDatabaseRoot databaseRoot = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("FileStorage:TemplateAssetRetirement:Secret", "ZmlsZXN0b3JhZ2UtcmV0aXJlbWVudC10ZXN0LWtleS0zMDQ0");
         builder.UseSetting("Persistence:Provider", "PostgreSQL");
-        builder.UseSetting("FileStorage:UploadProvider", "server-proxy");
+        builder.UseSetting("FileStorage:Tus:RootPath", tusRoot);
         builder.UseSetting(
             "ConnectionStrings:FileStorageDb",
             "Host=localhost;Database=filestorage_web_tests;Username=nerv;Password=not-used");
@@ -38,6 +39,15 @@ public sealed class FileStorageWebApplicationFactory : WebApplicationFactory<Pro
 
     protected override IHost CreateHost(IHostBuilder builder) =>
         FileStorageTestHostStartupGate.Build(() => base.CreateHost(builder));
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing && Directory.Exists(tusRoot))
+        {
+            Directory.Delete(tusRoot, recursive: true);
+        }
+    }
 }
 
 /// <summary>
@@ -49,7 +59,6 @@ internal sealed class FileStorageUnconfiguredWebApplicationFactory : WebApplicat
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting("FileStorage:UploadProvider", "server-proxy");
         builder.UseSetting("FileStorage:TemplateAssetRetirement:Secret", "ZmlsZXN0b3JhZ2UtcmV0aXJlbWVudC10ZXN0LWtleS0zMDQ0");
     }
 

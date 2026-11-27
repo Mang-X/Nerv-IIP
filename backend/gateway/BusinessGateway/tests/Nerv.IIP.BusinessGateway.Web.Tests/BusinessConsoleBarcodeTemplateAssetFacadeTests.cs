@@ -299,7 +299,7 @@ public sealed class BusinessConsoleBarcodeTemplateAssetFacadeTests
         });
 
     private static HttpBusinessFileStorageClient CreateClient(StubHandler handler) =>
-        new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") });
+        new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") }, FileStorageClientTestConfiguration.Create());
 
     private static HttpResponseMessage Json<T>(T payload) =>
         new(HttpStatusCode.OK) { Content = JsonContent.Create(payload) };

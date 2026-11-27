@@ -139,7 +139,7 @@ public sealed record BusinessFileDownloadTicket
 /// 字节面不共用这条管线，见 <see cref="IBusinessFileTransferClient"/> 与 ADR 0015。
 /// </summary>
 public sealed class HttpBusinessFileStorageClient(
-    HttpClient httpClient, IConfiguration? configuration = null, IHostEnvironment? environment = null)
+    HttpClient httpClient, IConfiguration configuration, IHostEnvironment? environment = null)
     : BusinessServiceHttpClient(httpClient), IBusinessFileStorageClient
 {
     // FileStorage 的错误载体是裸 FileStorageError{Code,Message}，不套平台 ResponseData envelope。
@@ -535,13 +535,8 @@ public static class FileStorageRoutes
 {
     public const string DownstreamTusPrefix = "/api/files/v1/tus/";
     public static string ResolveDownloadBearerToken(
-        IConfiguration? configuration, IHostEnvironment? environment, string internalBearerToken)
+        IConfiguration configuration, IHostEnvironment? environment, string internalBearerToken)
     {
-        if (configuration is null)
-        {
-            return internalBearerToken;
-        }
-
         var token = configuration["FileStorage:DownloadBearerToken"]
             ?? (environment?.IsDevelopment() == true ? "local-file-download-business-gateway" : null);
         if (string.IsNullOrWhiteSpace(token) || token == internalBearerToken)

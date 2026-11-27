@@ -160,7 +160,7 @@ public sealed class BusinessConsoleSopFileDownloadFacadeTests
         var files = new RecordingBusinessFileStorageClient();
         var handler = new LeakProbeHandler();
         var transfer = new HttpBusinessFileTransferClient(
-            new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") });
+            new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") }, FileStorageClientTestConfiguration.Create());
         await using var lease = LeaseHost(auth, files, transfer);
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);

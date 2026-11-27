@@ -78,7 +78,7 @@
 | FileVersion | 文件版本 | File Storage | 某个 StoredFile 的具体对象内容版本，内部保存 provider、bucket、objectKey、checksum 和 size。 |
 | UploadSession | 上传会话 | File Storage | 一次受控上传过程，约束上传主体、用途、大小、content type、有效期、幂等键、uploadMode 和 provider。 |
 | UploadInstructions | 上传指令 | File Storage | File Storage 为客户端生成的短期上传说明，例如 tus endpoint、S3 multipart presigned urls 或平台中转地址。 |
-| UploadProvider | 上传实现策略 | File Storage | 屏蔽 tus、S3 multipart、server-proxy 等协议差异的基础设施扩展点，不拥有文件领域事实。 |
+| UploadProvider | 上传实现策略 | File Storage | 签发上传指令的基础设施接口，当前实现为 tus。 |
 | tus | tus 断点续传协议 | File Storage | 可选上传 provider，适合大文件和断点续传场景；领域模型仍以 UploadSession 与 StoredFile 为准。 |
 | S3MultipartUploadProvider | S3 分片上传策略 | File Storage | 对接 MinIO/S3 multipart upload 的 provider，负责生成短期分片上传指令和完成校验。 |
 | FilePurposePolicy | 文件用途策略 | File Storage | 按文件用途定义大小限制、content type allowlist、扩展名、保留策略和配额口径。 |

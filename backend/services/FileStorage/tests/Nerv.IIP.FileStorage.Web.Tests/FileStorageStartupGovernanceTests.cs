@@ -138,6 +138,24 @@ public sealed class FileStorageStartupGovernanceTests
     }
 
     [Theory]
+    [InlineData("server-proxy")]
+    [InlineData("s3-multipart")]
+    [InlineData("tuss")]
+    [InlineData("")]
+    public void Unsupported_upload_provider_fails_fast(string provider)
+    {
+        using var factory = CreateFactory(
+            "Development",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
+            storageSettings: new Dictionary<string, string?> { ["FileStorage:UploadProvider"] = provider });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("FileStorage:UploadProvider only supports tus", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(null, "<missing>")]
     [InlineData("", "<missing>")]
     [InlineData("data/tus", "<relative>")]
@@ -268,15 +286,29 @@ public sealed class FileStorageStartupGovernanceTests
     [Fact]
     public void Production_postgresql_with_connection_and_automigrate_disabled_starts()
     {
-        using var factory = CreateFactory(
-            "Production",
-            provider: "PostgreSQL",
-            connectionString: PostgreSqlConnectionString,
-            autoMigrate: false);
+        var root = Directory.CreateTempSubdirectory("filestorage-startup-");
+        try
+        {
+            const string identity = "startup-test-volume";
+            File.WriteAllText(Path.Combine(root.FullName, ".filestorage-volume-v1"), identity);
+            using var factory = CreateFactory(
+                "Production",
+                provider: "PostgreSQL",
+                connectionString: PostgreSqlConnectionString,
+                autoMigrate: false,
+                storageSettings: new Dictionary<string, string?>
+                {
+                    ["FileStorage:Tus:RootPath"] = root.FullName,
+                    ["FileStorage:Tus:VolumeIdentity"] = identity
+                });
 
-        using var client = factory.CreateClient();
-
-        Assert.NotNull(client);
+            using var client = factory.CreateClient();
+            Assert.NotNull(client);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Theory]
@@ -327,6 +359,7 @@ public sealed class FileStorageStartupGovernanceTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment(environment);
+                builder.UseSetting("FileStorage:Tus:RootPath", Path.Combine(Path.GetTempPath(), $"filestorage-startup-{Guid.NewGuid():N}"));
                 builder.UseSetting("Persistence:Provider", provider);
                 builder.UseSetting("Persistence:AutoMigrate", autoMigrate.ToString());
                 builder.UseSetting("ConnectionStrings:FileStorageDb", connectionString ?? string.Empty);

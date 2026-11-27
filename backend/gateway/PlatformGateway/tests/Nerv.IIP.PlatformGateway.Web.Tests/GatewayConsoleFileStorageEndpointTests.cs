@@ -342,7 +342,7 @@ public sealed class GatewayConsoleFileStorageEndpointTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("hello") });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
         await using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {

@@ -63,7 +63,8 @@ public sealed partial class FileStorageRestartPersistenceTests
         string uploadSessionId;
         string grantId;
 
-        await using (var firstFactory = CreateFactory(LaneConnectionString, autoMigrate: true))
+        using var staging = new TusTestStaging();
+        await using (var firstFactory = CreateFactory(LaneConnectionString, autoMigrate: true, staging.RootPath))
         {
             using var client = CreateClient(firstFactory);
             using (var migrationScope = firstFactory.Services.CreateScope())
@@ -130,7 +131,7 @@ public sealed partial class FileStorageRestartPersistenceTests
 
                 var recoveryService = FileStorageServiceTestFactory.Create(
                     migrationDb,
-                    new ServerProxyUploadProvider(),
+                    new TusUploadProvider(),
                     configuration: migrationScope.ServiceProvider.GetRequiredService<IConfiguration>(),
                     timeProvider: migrationScope.ServiceProvider.GetRequiredService<TimeProvider>(),
                     commitStorage: new FileStorageServiceTestFactory.NoFinalActionCommitStorage(),
@@ -149,6 +150,8 @@ public sealed partial class FileStorageRestartPersistenceTests
                 Assert.NotNull(retainedOrphan.StorageActionStartedAtUtc);
             }
 
+            var bytes = TusTestStaging.ZipBytes(4096);
+            var checksum = TusTestStaging.Checksum(bytes);
             var createdResponse = await client.PostAsJsonAsync(
                 "/api/files/v1/upload-sessions",
                 new CreateUploadSessionRequest(
@@ -159,18 +162,21 @@ public sealed partial class FileStorageRestartPersistenceTests
                     "restart.zip",
                     "application/zip",
                     4096,
-                    "sha256:restart"));
+                    checksum));
             createdResponse.EnsureSuccessStatusCode();
             var created = await createdResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
             Assert.NotNull(created);
             fileId = created.FileId;
             uploadSessionId = created.UploadSessionId;
 
+            await TusTestStaging.StageAsync(
+                firstFactory.Services.GetRequiredService<ILocalTusFileStoreAccessor>(), uploadSessionId, bytes);
+
             var completeRequest = new CompleteUploadSessionRequest(
                 "org-restart",
                 "production",
                 "application-package",
-                "sha256:restart",
+                checksum,
                 4096);
             var completions = await Task.WhenAll(
                 client.PostAsJsonAsync($"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete", completeRequest),
@@ -240,9 +246,11 @@ public sealed partial class FileStorageRestartPersistenceTests
         var storage = new BlockingRealPostgresCommitStorage();
         var configuration = firstScope.ServiceProvider.GetRequiredService<IConfiguration>();
         var clock = firstScope.ServiceProvider.GetRequiredService<TimeProvider>();
+        using var staging = new TusTestStaging();
+        var accessor = staging.CreateAccessor();
         var first = FileStorageServiceTestFactory.Create(
             firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new ServerProxyUploadProvider(),
+            tusStoreAccessor: accessor,
             configuration: configuration,
             timeProvider: clock,
             commitStorage: storage,
@@ -250,13 +258,14 @@ public sealed partial class FileStorageRestartPersistenceTests
             executionLeaseManager: firstScope.ServiceProvider.GetRequiredService<UploadCommitExecutionLeaseManager>());
         var second = FileStorageServiceTestFactory.Create(
             secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new ServerProxyUploadProvider(),
+            tusStoreAccessor: accessor,
             configuration: configuration,
             timeProvider: clock,
             commitStorage: storage,
             gateRegistry: new UploadSessionGateRegistry(),
             executionLeaseManager: secondScope.ServiceProvider.GetRequiredService<UploadCommitExecutionLeaseManager>());
-        var checksum = $"sha256:{new string('c', 64)}";
+        var bytes = TusTestStaging.ZipBytes(4096);
+        var checksum = TusTestStaging.Checksum(bytes);
         var created = (await first.CreateUploadSessionAsync(
             new CreateUploadSessionRequest(
                 "org-owner",
@@ -268,6 +277,7 @@ public sealed partial class FileStorageRestartPersistenceTests
                 4096,
                 checksum),
             CancellationToken.None)).Value!;
+        await TusTestStaging.StageAsync(accessor, created.UploadSessionId, bytes);
         var request = new CompleteUploadSessionRequest(
             "org-owner",
             "production",
@@ -542,12 +552,13 @@ public sealed partial class FileStorageRestartPersistenceTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool autoMigrate)
+    private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool autoMigrate, string? tusRoot = null)
     {
         return new FileStorageUnconfiguredWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Development");
+                builder.UseSetting("FileStorage:Tus:RootPath", tusRoot ?? Path.Combine(Path.GetTempPath(), $"filestorage-restart-{Guid.NewGuid():N}"));
                 builder.UseSetting("Persistence:Provider", "PostgreSQL");
                 builder.UseSetting("Persistence:AutoMigrate", autoMigrate.ToString());
                 builder.UseSetting("ConnectionStrings:FileStorageDb", connectionString);
@@ -581,7 +592,7 @@ public sealed partial class FileStorageRestartPersistenceTests
             Interlocked.Increment(ref attempts);
             return Task.FromResult(UploadCommitStorageResult.Verified(
                 intent.ExpectedSizeBytes,
-                $"sha256:{new string('c', 64)}"));
+                intent.ExpectedChecksum!));
         }
     }
 
@@ -602,7 +613,7 @@ public sealed partial class FileStorageRestartPersistenceTests
             await release.Task.WaitAsync(cancellationToken);
             return UploadCommitStorageResult.Verified(
                 intent.ExpectedSizeBytes,
-                $"sha256:{new string('c', 64)}");
+                intent.ExpectedChecksum!);
         }
     }
 

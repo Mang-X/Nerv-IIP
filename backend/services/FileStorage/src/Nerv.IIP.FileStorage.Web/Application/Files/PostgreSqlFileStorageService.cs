@@ -11,6 +11,8 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex
 {
+    private const string DownloadTransferMode = "server-proxy";
+
     private readonly ApplicationDbContext dbContext;
     private readonly IFileStorageUploadProvider uploadProvider;
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
@@ -605,7 +607,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             file.FileId,
             file.OrganizationId,
             file.EnvironmentId,
-            ServerProxyUploadProvider.Name,
+            DownloadTransferMode,
             now,
             now.AddMinutes(10),
             caller);
@@ -620,7 +622,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 $"/api/files/v1/download-grants/{grant.DownloadGrantId}/content",
                 new Dictionary<string, string>
                 {
-                    ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name,
+                    ["x-nerv-download-mode"] = DownloadTransferMode,
                     [FileStorageTransferHeaders.OrganizationId] = file.OrganizationId,
                     [FileStorageTransferHeaders.EnvironmentId] = file.EnvironmentId
                 })));

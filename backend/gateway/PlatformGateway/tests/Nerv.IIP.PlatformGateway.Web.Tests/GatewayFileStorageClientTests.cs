@@ -31,7 +31,7 @@ public sealed class GatewayFileStorageClientTests
                 [FileMetadata()]))
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
 
         var response = await files.ListFilesAsync(
             new ListFilesRequest(
@@ -62,7 +62,7 @@ public sealed class GatewayFileStorageClientTests
     {
         var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
         var httpContext = new DefaultHttpContext();
 
         await files.ProxyTusHeadAsync("upload-session-001", "org-001", "env-dev", httpContext.Response, CancellationToken.None);
@@ -80,7 +80,7 @@ public sealed class GatewayFileStorageClientTests
     {
         var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Method = "PATCH";
         httpContext.Request.Body = new MemoryStream([1, 2, 3]);
@@ -115,7 +115,7 @@ public sealed class GatewayFileStorageClientTests
         {
             BaseAddress = new Uri("http://files.local")
         };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
 
         var response = await files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None);
 
@@ -127,8 +127,10 @@ public sealed class GatewayFileStorageClientTests
         Assert.Equal("internal-test-token", request.Authorization.Parameter);
     }
 
-    [Fact]
-    public async Task File_storage_http_client_rejects_absolute_transfer_urls()
+    [Theory]
+    [InlineData("https://files.example.test/direct/upload-session-001")]
+    [InlineData("/api/files/v1/upload-sessions/upload-session-001/content")]
+    public async Task File_storage_http_client_rejects_unproxyable_upload_urls(string url)
     {
         var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -138,10 +140,10 @@ public sealed class GatewayFileStorageClientTests
                 "tus",
                 "tus",
                 DateTimeOffset.UtcNow.AddMinutes(15),
-                new TransferInstructions("https://files.example.test/direct/upload-session-001", new Dictionary<string, string>())))
+                new TransferInstructions(url, new Dictionary<string, string>())))
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
 
         var exception = await Assert.ThrowsAsync<GatewayAuthException>(
             () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
@@ -163,7 +165,7 @@ public sealed class GatewayFileStorageClientTests
                 new TransferInstructions("//files.example.test/direct/upload-session-001", new Dictionary<string, string>())))
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
 
         var exception = await Assert.ThrowsAsync<GatewayAuthException>(
             () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
@@ -181,7 +183,7 @@ public sealed class GatewayFileStorageClientTests
             Content = new StringContent(payload)
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
 
         var exception = await Assert.ThrowsAsync<GatewayAuthException>(
             () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
@@ -207,7 +209,7 @@ public sealed class GatewayFileStorageClientTests
             Content = new StringContent("downstream error")
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
 
         var exception = await Assert.ThrowsAsync<GatewayAuthException>(
             () => files.CreateUploadSessionAsync(CreateUploadSessionRequest(), CancellationToken.None));
@@ -240,14 +242,16 @@ public sealed class GatewayFileStorageClientTests
             return downstream;
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
         var context = new DefaultHttpContext();
         await using var body = new MemoryStream();
         context.Response.Body = body;
 
         await files.StreamFileContentAsync("file-001", "org-001", "env-dev", context.Response, CancellationToken.None);
 
+        Assert.Equal(FileStorageClientTestConfiguration.DownloadToken, handler.Requests[0].Authorization?.Parameter);
         var byteRequest = handler.Requests[1];
+        Assert.Equal(FileStorageClientTestConfiguration.DownloadToken, byteRequest.Authorization?.Parameter);
         Assert.Equal("/api/files/v1/download-grants/download-grant-001/content", byteRequest.RequestUri.AbsolutePath);
         Assert.Equal("org-001", byteRequest.Headers["X-Organization-Id"]);
         Assert.Equal("env-dev", byteRequest.Headers["X-Environment-Id"]);
@@ -280,7 +284,7 @@ public sealed class GatewayFileStorageClientTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("bytes") });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
         var context = new DefaultHttpContext();
         await using var body = new MemoryStream();
         context.Response.Body = body;
@@ -308,7 +312,7 @@ public sealed class GatewayFileStorageClientTests
             Content = JsonContent.Create(GrantFor(url))
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
-        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
+        var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"), FileStorageClientTestConfiguration.Create());
         var context = new DefaultHttpContext();
         await using var body = new MemoryStream();
         context.Response.Body = body;
