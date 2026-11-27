@@ -34,7 +34,8 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
             await client.PostAsJsonAsync("/api/files/v1/files/file-missing/download-grants", new CreateDownloadGrantRequest("org-001", "prod")),
             await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "/api/files/v1/tus/ups-missing")),
             await client.SendAsync(patchRequest),
-            await client.GetAsync("/api/files/v1/download-grants/grant-missing/content")
+            await client.GetAsync("/api/files/v1/download-grants/grant-missing/content"),
+            await client.GetAsync("/internal/file-storage/v1/diagnostics/reconcile")
         };
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode));

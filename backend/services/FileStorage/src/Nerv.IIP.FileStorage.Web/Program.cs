@@ -1,6 +1,7 @@
 using FastEndpoints;
 using tusdotnet;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Minio;
 using Nerv.IIP.Caching;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -68,6 +69,8 @@ if (hasStorageConfiguration && !useMinio)
 }
 
 builder.Services.AddFastEndpoints();
+builder.Services.AddHealthChecks().AddCheck<TusVolumeHealthCheck>("tus-volume");
+builder.Services.AddScoped<TusFinalReconciliation>();
 builder.Services.AddSingleton(TemplateAssetRetirementOptions.Load(builder.Configuration));
 builder.Services.AddSingleton<TemplateAssetRetirementProof>();
 builder.Services.AddScoped<TemplateAssetRetirementStore>();
@@ -165,6 +168,10 @@ app.Use(async (context, next) =>
     }
 });
 app.UseFastEndpoints();
+app.MapHealthChecks("/health/tus-volume", new HealthCheckOptions
+{
+    Predicate = registration => registration.Name == "tus-volume"
+});
 app.MapTus("/api/files/v1/tus", TusTransport.CreateConfigurationAsync)
     .RequireAuthorization(InternalServiceAuthorizationPolicy.Name);
 app.Run();

@@ -129,8 +129,13 @@ public sealed class LocalUploadByteStore
     private string GetFinalPath(string objectKey)
     {
         VerifyVolume(required: false);
-        return Path.Combine(rootPath, $"{FinalPrefix}{Hash(objectKey)}.bin");
+        return Path.Combine(rootPath, GetFinalFileName(objectKey));
     }
+
+    internal static string GetFinalFileName(string objectKey) => $"{FinalPrefix}{Hash(objectKey)}.bin";
+
+    internal IEnumerable<string> EnumerateFinalFileNames() =>
+        Directory.EnumerateFiles(rootPath, $"{FinalPrefix}*.bin").Select(path => Path.GetFileName(path));
 
     public long GetOffset(string uploadSessionId)
     {

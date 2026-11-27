@@ -19446,6 +19446,14 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
 
     public string? LastAuthorizedEnvironmentId { get; private set; }
 
+    public Task<BusinessFileDownloadTicket> AuthorizeQualityEvidenceDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<BusinessFileDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
         string internalBearerToken,
         string fileId,

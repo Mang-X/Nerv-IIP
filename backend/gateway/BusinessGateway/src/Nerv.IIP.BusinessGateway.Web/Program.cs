@@ -232,7 +232,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy(BusinessConsoleCorsPolicy, policy =>
         policy.WithOrigins(allowedCorsOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod());
+            .AllowAnyMethod()
+            .WithExposedHeaders("Content-Disposition"));
 });
 builder.Services.AddRateLimiter(options =>
 {
