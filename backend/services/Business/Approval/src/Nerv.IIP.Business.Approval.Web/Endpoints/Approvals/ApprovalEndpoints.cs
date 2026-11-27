@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Approval.Web.Application.Commands.Templates;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Chains;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Delegations;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Templates;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Approval.Web.Endpoints.Approvals;
@@ -390,6 +391,12 @@ public sealed class CheckOverdueApprovalStepsEndpoint(ISender sender)
 
     public override async Task HandleAsync(CheckOverdueApprovalStepsRequest req, CancellationToken ct)
     {
+        if (!CheckOverdueApprovalStepsAuthorization.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var marked = await sender.Send(new CheckOverdueApprovalStepsCommand(req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(new CheckOverdueApprovalStepsResponse(marked).AsResponseData(), cancellation: ct);
     }
@@ -790,7 +797,7 @@ public static class ApprovalEndpointContracts
         new(typeof(StartApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Manage, CreateApprovalChainAuthorization.PolicyName, "startApprovalChain"),
         new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, GetApprovalChainAuthorization.PolicyName, "getApprovalChain"),
         new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadCollections.PolicyName, "listPendingApprovalTasks"),
-        new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "checkOverdueApprovalSteps"),
+        new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", NervIipPermissionCodes.InternalApprovalTasksCheckOverdue, CheckOverdueApprovalStepsAuthorization.PolicyName, "checkOverdueApprovalSteps"),
         new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadCollections.PolicyName, "listApprovalDecisions"),
         new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, null, "resolveApprovalStep"),
         new(typeof(WithdrawApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/withdraw", ApprovalPermissionCodes.Manage, null, "withdrawApprovalChain"),

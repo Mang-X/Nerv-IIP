@@ -96,6 +96,12 @@
 3. 确认所有 Gateway 实例完成切换后，将 `AllowLegacyBearer` 设为 `false`，确认授权列表继续可用且共享凭据调用 Approval 委托列表时收到 `401`。
 4. 如需回滚，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。
 
+### Approval 超时人工检查凭据
+
+- `POST /api/business/v1/approvals/tasks/overdue/check` 保留为内部运维入口。先保持 `Approval:OverdueCheck:HttpAuthorization:AllowLegacyBearer=true`（默认值），在 Approval 服务配置 `Approval:OverdueCheck:HttpAuthorization:ScopedCallers:Profiles`。每个 profile 填写唯一的 `Name`、独立的 `BearerToken`、`Subject=approval-overdue-operator`、`Permissions:0=internal.approval-tasks.check-overdue` 及对应的 `OrganizationId` 和 `EnvironmentId`。通过部署的 secret 注入机制提供 token，每组范围使用独立凭据。
+- 将人工调用方迁移到对应范围的凭据。验证请求返回 `200` 和 `markedCount`，匹配凭据但超出范围的请求返回 `403`。全部迁移完成后，将 `AllowLegacyBearer` 设为 `false`，共享凭据应收到 `401`。严格模式要求在启用前配置有效 profile。需要回滚时，先恢复 `AllowLegacyBearer=true`，再恢复旧调用方。
+- 后台扫描由 `Approval:OverdueCheck:Enabled`、`Scopes` 和 `Interval` 控制。打开扫描并配置范围后，服务启动时扫描一次，随后按间隔扫描，默认间隔 15 分钟。后台直接派发应用命令，无需 HTTP 凭据。手动调用只检查本次请求涵盖的范围。
+
 ### FileStorage tus 字节落点
 
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：

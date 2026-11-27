@@ -252,7 +252,7 @@
       "route": "/api/business/v1/approvals/tasks/overdue/check",
       "operationId": "checkOverdueApprovalSteps",
       "classification": "internal",
-      "rationale": "Internal server-clock overdue scheduler endpoint invoked by the Approval OverdueCheck background scanner (#488); not a user action."
+      "rationale": "Manual overdue check for a scoped internal Approval operator. The Approval OverdueCheck background scanner dispatches the application command directly."
     },
     {
       "service": "Approval",

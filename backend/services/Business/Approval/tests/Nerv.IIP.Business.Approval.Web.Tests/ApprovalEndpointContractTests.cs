@@ -70,8 +70,8 @@ public sealed class ApprovalEndpointContractTests
             && x.OperationId == "listPendingApprovalTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/tasks/overdue/check"
-            && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.PermissionCode == "internal.approval-tasks.check-overdue"
+            && x.AuthorizationPolicy == "Approval.CheckOverdue"
             && x.OperationId == "checkOverdueApprovalSteps");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/decisions"
@@ -1828,7 +1828,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Equal("user", step.ApproverType);
     }
 
-    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    internal sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
     {
         public Task PublishAsync<T>(T integrationEvent, CancellationToken cancellationToken) where T : notnull =>
             Task.CompletedTask;

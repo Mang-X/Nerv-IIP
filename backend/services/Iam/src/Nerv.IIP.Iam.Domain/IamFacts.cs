@@ -126,6 +126,7 @@ public static class NervIipSeedPermissions
         "internal.approval-templates.read-gateway",
         "internal.approval-templates.write-gateway",
         "internal.approval-delegations.list-gateway",
+        "internal.approval-tasks.check-overdue",
         "internal.gateway-cache.invalidate",
         "iam.users.read",
         "iam.users.manage",
