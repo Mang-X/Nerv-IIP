@@ -89,7 +89,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/resubmit"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "resubmitApprovalChain");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer"
@@ -99,7 +99,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "transferApprovalStep");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/delegations"
@@ -447,6 +447,8 @@ public sealed class ApprovalEndpointContractTests
 
         clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:00:00Z");
         await new ResubmitApprovalChainCommandHandler(dbContext, clock).Handle(new ResubmitApprovalChainCommand(
+            chain.OrganizationId,
+            chain.EnvironmentId,
             chain.Id,
             "user",
             "u-requester",
@@ -459,6 +461,8 @@ public sealed class ApprovalEndpointContractTests
 
         clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:05:00Z");
         await new TransferApprovalStepCommandHandler(dbContext, clock).Handle(new TransferApprovalStepCommand(
+            chain.OrganizationId,
+            chain.EnvironmentId,
             chain.Id,
             1,
             "user",
@@ -508,7 +512,7 @@ public sealed class ApprovalEndpointContractTests
 
         var clock = new FixedApprovalClock(DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
         await Assert.ThrowsAsync<KnownException>(() => new ResubmitApprovalChainCommandHandler(dbContext, clock).Handle(
-            new ResubmitApprovalChainCommand(chain.Id, "user", "u-requester", "retry"),
+            new ResubmitApprovalChainCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, "user", "u-requester", "retry"),
             CancellationToken.None));
         chain.ResolveStep(1, "user", "u-engineering", "approve", "ok");
         chain.ResolveStep(2, "user", "u-quality", "approve", "ok");
@@ -521,7 +525,7 @@ public sealed class ApprovalEndpointContractTests
             new AddApprovalStepSignerCommand(chain.Id, 1, "user", "u-finance", "user", "u-engineering", "late"),
             CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => new TransferApprovalStepCommandHandler(dbContext, clock).Handle(
-            new TransferApprovalStepCommand(chain.Id, 2, "user", "u-not-current", "user", "u-backup", "user", "u-manager", "invalid"),
+            new TransferApprovalStepCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, 2, "user", "u-not-current", "user", "u-backup", "user", "u-manager", "invalid"),
             CancellationToken.None));
     }
 
@@ -1411,14 +1415,22 @@ public sealed class ApprovalEndpointContractTests
         Assert.Equal("user", decision.ActorType);
     }
 
-    [Fact]
-    public async Task Withdraw_uses_verified_user_in_a_scope_other_than_the_default()
+    [Theory]
+    [InlineData(ApprovalDecisions.Withdraw)]
+    [InlineData(ApprovalDecisions.Resubmit)]
+    [InlineData(ApprovalDecisions.Transfer)]
+    public async Task Chain_action_uses_verified_user_in_a_scope_other_than_the_default(string action)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var template = ApprovalTemplate.Create("org-001", "env-dev", "purchase", "purchase-order", 1, true,
             [new ApprovalTemplateStepDefinition(1, "Review", null, "user", "u-reviewer", 24)]);
         var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null), "u-requester");
+        if (action == ApprovalDecisions.Resubmit)
+        {
+            chain.Withdraw("user", "u-original", null, DateTimeOffset.Parse("2026-11-27T00:00:00Z"));
+        }
+
         var iam = new ApprovalAuthorityHandler(request =>
         {
             if (request.Headers.Authorization?.Parameter == "expired-session")
@@ -1491,8 +1503,14 @@ public sealed class ApprovalEndpointContractTests
             await db.SaveChangesAsync();
         }
 
-        var route = $"/api/business/v1/approvals/chains/{chain.Id}/withdraw";
-        var request = new { organizationId = "org-001", environmentId = "env-dev", reason = "duplicate" };
+        var route = $"/api/business/v1/approvals/chains/{chain.Id}/"
+            + (action == ApprovalDecisions.Transfer ? "steps/1/transfer" : action);
+        var request = new
+        {
+            organizationId = "org-001", environmentId = "env-dev", reason = "duplicate",
+            fromActorType = "user", fromActorRef = "u-reviewer",
+            toActorType = "user", toActorRef = "u-backup",
+        };
 
         client.DefaultRequestHeaders.Authorization = new("Bearer", "expired-session");
         using var unauthorized = await client.PostAsJsonAsync(route, request);
@@ -1516,13 +1534,17 @@ public sealed class ApprovalEndpointContractTests
         Assert.Empty(masterData.Paths);
         using var persistedScope = factory.Services.CreateScope();
         var dbContext = persistedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var stored = await dbContext.ApprovalChains.Include(x => x.Decisions).SingleAsync();
-        Assert.Equal(ApprovalChainStatuses.Withdrawn, stored.Status);
-        var decision = Assert.Single(stored.Decisions);
-        Assert.Equal(ApprovalDecisions.Withdraw, decision.Decision);
+        var stored = await dbContext.ApprovalChains.Include(x => x.Decisions).Include(x => x.Steps).SingleAsync();
+        Assert.Equal(action == ApprovalDecisions.Withdraw ? ApprovalChainStatuses.Withdrawn : ApprovalChainStatuses.Pending,
+            stored.Status);
+        Assert.Equal(action == ApprovalDecisions.Resubmit ? 2 : 1, stored.Decisions.Count);
+        var decision = Assert.Single(stored.Decisions, x => x.Decision == action);
         Assert.Equal("u-requester", decision.ActorRef);
         Assert.Equal("user", decision.ActorType);
         Assert.Equal("duplicate", decision.Comment);
+        var step = Assert.Single(stored.Steps);
+        Assert.Equal(action == ApprovalDecisions.Transfer ? "u-backup" : "u-reviewer", step.ApproverRef);
+        Assert.Equal("user", step.ApproverType);
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

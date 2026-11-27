@@ -30,19 +30,16 @@ public sealed class WithdrawApprovalChainCommandHandler(ApplicationDbContext dbC
 {
     public async Task Handle(WithdrawApprovalChainCommand request, CancellationToken cancellationToken)
     {
-        var chain = await dbContext.ApprovalChains
-            .Include(x => x.Steps)
-            .Include(x => x.Decisions)
-            .SingleOrDefaultAsync(x => x.Id == request.ChainId
-                && x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId, cancellationToken)
-            ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
+        var chain = await ApprovalActionCommandHelpers.LoadScopedChainAsync(
+            dbContext, request.ChainId, request.OrganizationId, request.EnvironmentId, cancellationToken);
 
         ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Withdraw(request.ActorType, request.ActorRef, request.Reason, clock.UtcNow));
     }
 }
 
 public sealed record ResubmitApprovalChainCommand(
+    string OrganizationId,
+    string EnvironmentId,
     ApprovalChainId ChainId,
     string ActorType,
     string ActorRef,
@@ -52,6 +49,8 @@ public sealed class ResubmitApprovalChainCommandValidator : AbstractValidator<Re
 {
     public ResubmitApprovalChainCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
         RuleFor(x => x.ChainId).NotEmpty();
         RuleFor(x => x.ActorType).RequiredApprovalCode(50);
         RuleFor(x => x.ActorRef).RequiredApprovalCode(150);
@@ -64,7 +63,8 @@ public sealed class ResubmitApprovalChainCommandHandler(ApplicationDbContext dbC
 {
     public async Task Handle(ResubmitApprovalChainCommand request, CancellationToken cancellationToken)
     {
-        var chain = await ApprovalActionCommandHelpers.LoadChainAsync(dbContext, request.ChainId, cancellationToken);
+        var chain = await ApprovalActionCommandHelpers.LoadScopedChainAsync(
+            dbContext, request.ChainId, request.OrganizationId, request.EnvironmentId, cancellationToken);
         ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Resubmit(request.ActorType, request.ActorRef, request.Reason, clock.UtcNow));
     }
 }
@@ -112,6 +112,8 @@ public sealed class AddApprovalStepSignerCommandHandler(ApplicationDbContext dbC
 }
 
 public sealed record TransferApprovalStepCommand(
+    string OrganizationId,
+    string EnvironmentId,
     ApprovalChainId ChainId,
     int StepNo,
     string FromActorType,
@@ -126,6 +128,8 @@ public sealed class TransferApprovalStepCommandValidator : AbstractValidator<Tra
 {
     public TransferApprovalStepCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
         RuleFor(x => x.ChainId).NotEmpty();
         RuleFor(x => x.StepNo).GreaterThan(0);
         RuleFor(x => x.FromActorType).RequiredApprovalCode(50);
@@ -143,7 +147,8 @@ public sealed class TransferApprovalStepCommandHandler(ApplicationDbContext dbCo
 {
     public async Task Handle(TransferApprovalStepCommand request, CancellationToken cancellationToken)
     {
-        var chain = await ApprovalActionCommandHelpers.LoadChainAsync(dbContext, request.ChainId, cancellationToken);
+        var chain = await ApprovalActionCommandHelpers.LoadScopedChainAsync(
+            dbContext, request.ChainId, request.OrganizationId, request.EnvironmentId, cancellationToken);
         ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Transfer(
             request.StepNo,
             request.FromActorType,
@@ -168,6 +173,22 @@ file static class ApprovalActionCommandHelpers
             .Include(x => x.Steps)
             .Include(x => x.Decisions)
             .SingleOrDefaultAsync(x => x.Id == chainId, cancellationToken)
+            ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
+    }
+
+    public static async Task<ApprovalChain> LoadScopedChainAsync(
+        ApplicationDbContext dbContext,
+        ApprovalChainId chainId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.ApprovalChains
+            .Include(x => x.Steps)
+            .Include(x => x.Decisions)
+            .SingleOrDefaultAsync(x => x.Id == chainId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId, cancellationToken)
             ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
     }
 
