@@ -2,6 +2,7 @@
 #   Category: verify
 #   SideEffects:
 #     - Builds and publishes two temporary Aspire Docker Compose artifacts
+#     - Validates Production Compose internal service port isolation
 #     - Validates environment-gated BarcodeLabel printer configuration and its FileStorage endpoint
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
@@ -24,6 +25,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/ProductionComposePorts.ps1')
 
 function Get-ComposeProjectEnvironments {
     param([Parameter(Mandatory)][string] $ComposePath)
@@ -194,6 +196,9 @@ try {
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName
         $composeText = [IO.File]::ReadAllText($composePath)
+        if ($environmentName -ceq 'Production') {
+            Assert-ProductionComposeInternalPorts -ServiceBlocks (Get-ComposeServiceBlocks -ComposeText $composeText)
+        }
         if ($composeText -notmatch '(?m)^\s+- type: "volume"\s*\n\s+target: "/home/app"\s*\n\s+source: "nerv-iip-file-storage"' -and
             $composeText -notmatch '(?m)^\s+- "nerv-iip-file-storage:/home/app"') {
             throw 'Published FileStorage service must mount the nerv-iip-file-storage volume at /home/app.'
@@ -202,7 +207,7 @@ try {
             throw 'Published Compose artifact must declare the nerv-iip-file-storage volume.'
         }
     }
-    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, and FileStorage endpoint profiles.'
+    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, and FileStorage endpoint profiles. Production Compose keeps IAM and internal business services off host ports.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }
