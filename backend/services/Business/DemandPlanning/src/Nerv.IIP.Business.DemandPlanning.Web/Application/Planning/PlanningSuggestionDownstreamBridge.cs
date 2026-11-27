@@ -350,6 +350,15 @@ internal static class PlanningSuggestionDownstreamDiagnostics
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         if (root.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.False)
         {
+            var message = root.TryGetProperty("message", out var messageElement) && messageElement.ValueKind == JsonValueKind.String
+                ? messageElement.GetString()
+                : null;
+            if (!string.IsNullOrWhiteSpace(message) &&
+                message.Contains("MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("计划建议下游依赖服务暂不可用。");
+            }
+
             if (root.TryGetProperty("code", out var code) &&
                 code.ValueKind == JsonValueKind.Number &&
                 code.TryGetInt32(out var number) && number is 0 or 400 or 409 or 422)

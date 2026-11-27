@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { listBusinessConsoleMasterDataSkus } from '@nerv-iip/api-client'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
   NvDatePicker,
@@ -43,10 +45,36 @@ const props = defineProps<{
 }>()
 
 const mpsOpen = defineModel<View['mpsOpen']>('mpsOpen', { required: true })
+const businessContext = useBusinessContextStore()
+let skuLookupGeneration = 0
+
 function selectSku(code: string) {
   if (code === props.mpsForm.skuCode) return
   props.mpsForm.skuCode = code
-  props.mpsForm.uomCode = props.baseUomBySku.get(code.trim()) ?? ''
+  const trimmed = code.trim()
+  const cachedUom = props.baseUomBySku.get(trimmed)
+  if (cachedUom) {
+    skuLookupGeneration += 1
+    props.mpsForm.uomCode = cachedUom
+    return
+  }
+  props.mpsForm.uomCode = ''
+  if (!trimmed) return
+  const generation = ++skuLookupGeneration
+  const { organizationId, environmentId } = businessContext
+  if (!organizationId || !environmentId) return
+  void listBusinessConsoleMasterDataSkus({
+    query: { organizationId, environmentId, keyword: trimmed, take: 20 },
+    throwOnError: false,
+  })
+    .then((response) => {
+      if (generation !== skuLookupGeneration || props.mpsForm.skuCode.trim() !== trimmed) return
+      if (props.mpsForm.uomCode) return
+      const items = response.data?.data?.items ?? []
+      const exact = items.find((item) => item.code?.trim() === trimmed)
+      if (exact?.baseUomCode) props.mpsForm.uomCode = exact.baseUomCode
+    })
+    .catch(() => {})
 }
 </script>
 
