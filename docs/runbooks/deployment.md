@@ -53,11 +53,25 @@
 
 ### FileStorage tus 字节落点
 
-FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：
+FileStorage 的 tus 根目录同时承载已完成文件的字节。生产部署须使用绝对路径和持久挂载，并在首次启动前写入与部署配置一致的卷身份。
 
-1. `FileStorage__UploadProvider=tus` 与 `FileStorage__Tus__RootPath` 由 AppHost 一起下发；生成的 Compose 产物把该路径放在 `nerv-iip-file-storage` 命名卷的挂载点内，legacy overlay 有对应的同名卷。
-2. 只设 provider 不设 root path、或 root path 不是绝对路径时，服务在启动阶段拒绝并给出脱敏诊断（诊断只输出 `<missing>` / `<relative>`，不回显路径值）。[ADR 0024](../adr/2026-08-17-0024-filestorage-storage-provider-and-local-production-semantics.md) §5 还要求该位置**持久**——系统临时目录与容器可写层不合规，但持久性当前不由启动校验判定（归 #1012），配错仍能启动，需要部署方自己保证。
-3. 更换该卷或该路径等同于更换文件存储后端：已 complete 的文件元数据仍在数据库，但字节会读不到。迁移按 [`file-storage-offline-migration.md`](file-storage-offline-migration.md) 执行，不要靠重挂空卷绕过。
+| 用途 | AppHost 进程输入 | Aspire 生成的 Compose 输入 | Legacy Compose 输入 |
+| --- | --- | --- | --- |
+| 卷身份 | `Parameters__file-storage-volume-identity` | `FILE_STORAGE_VOLUME_IDENTITY` | `NERV_IIP_FILE_STORAGE_VOLUME_IDENTITY` |
+| PlatformGateway 下载令牌 | `Parameters__file-storage-platform-gateway-download-token` | `FILE_STORAGE_PLATFORM_GATEWAY_DOWNLOAD_TOKEN` | `NERV_IIP_FILE_STORAGE_PLATFORM_GATEWAY_DOWNLOAD_TOKEN` |
+| BusinessGateway 下载令牌 | `Parameters__file-storage-business-gateway-download-token` | `FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN` | `NERV_IIP_FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN` |
+
+两枚下载令牌由部署方分别生成，通过 secret manager 或受限的部署环境注入。两枚令牌必须彼此不同，也必须与 `InternalService__BearerToken` 不同。FileStorage 接收两枚令牌，每个网关只接收自己的令牌。
+
+1. 从目标 Compose 产物核对实际卷名、挂载点和 `FileStorage__Tus__RootPath`。默认 Aspire 命名卷挂到 `/home/app`，卷内相对路径为 `nerv-iip/file-storage/tus`。legacy overlay 挂到 `/var/lib/nerv-iip/filestorage`，卷内相对路径为 `tus`。使用 AppHost 直接启动进程时，按当前 AppHost 解析的宿主机路径准备目录。
+2. 确认目标卷已挂载，按需在卷内创建 tus 根目录，并确保 FileStorage 运行账户可写根目录、可读标记。对 Docker 命名卷，在可访问该卷的 Docker 主机或挂载同一卷的 PowerShell 7 运维容器执行下列命令。将 `$tusRoot` 设为该执行环境中已核实的根目录绝对路径，将 `$volumeIdentity` 设为上表对应部署输入的同一稳定标识。初始化已有数据的卷前先核对其来源和备份。
+
+   ```powershell
+   pwsh -NoProfile -File ./scripts/install/initialize-file-storage-volume.ps1 -TusRoot $tusRoot -VolumeIdentity $volumeIdentity
+   ```
+
+   脚本只在指定目录写入 `.filestorage-volume-v1`，也可从当前进程的 `NERV_IIP_FILE_STORAGE_VOLUME_IDENTITY` 读取身份。成功日志为 `FileStorage 卷标记校验通过。`。使用同一身份重跑会保留已有标记。标记不匹配时停止发布，核对卷挂载、卷来源和输入，禁止覆盖标记。
+3. 初始化成功后再启动 FileStorage 和网关。FileStorage 在非 Development 环境启动时检查标记；缺失或不匹配会拒绝启动。更换卷或根目录前按 [FileStorage 停服离线迁移运行手册](file-storage-offline-migration.md) 迁移字节并保留原卷供回滚。
 
 ### MES 安灯超时升级
 

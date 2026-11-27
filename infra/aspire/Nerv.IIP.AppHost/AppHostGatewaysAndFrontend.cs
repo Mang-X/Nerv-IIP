@@ -156,6 +156,12 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessMaintenance)
             .WaitFor(redis);
 
+        if (platformGatewayDownloadToken is not null && businessGatewayDownloadToken is not null)
+        {
+            gateway.WithEnvironment("FileStorage__DownloadBearerToken", platformGatewayDownloadToken);
+            businessGateway.WithEnvironment("FileStorage__DownloadBearerToken", businessGatewayDownloadToken);
+        }
+
         if (fullStackEphemeral)
         {
             var templateAssetRetirementProofIssuer = builder.AddParameter("template-asset-retirement-proof-issuer");

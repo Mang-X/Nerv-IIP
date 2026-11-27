@@ -17,6 +17,9 @@ internal sealed partial class AppHostComposition
     private readonly IResourceBuilder<ParameterResource> iamEnterpriseIdentityMfaCode;
     private readonly IResourceBuilder<ParameterResource> schedulingTimeContextSigningKey;
     private readonly IResourceBuilder<ParameterResource> internalServiceBearerToken;
+    private readonly IResourceBuilder<ParameterResource>? fileStorageVolumeIdentity;
+    private readonly IResourceBuilder<ParameterResource>? platformGatewayDownloadToken;
+    private readonly IResourceBuilder<ParameterResource>? businessGatewayDownloadToken;
     private readonly IResourceBuilder<ParameterResource> minioRootUser;
     private readonly IResourceBuilder<ParameterResource> minioRootPassword;
     private readonly IResourceBuilder<ParameterResource> redisPassword;
@@ -82,6 +85,13 @@ internal sealed partial class AppHostComposition
         iamEnterpriseIdentityMfaCode = builder.AddParameter("iam-enterprise-identity-mfa-code", secret: true);
         schedulingTimeContextSigningKey = builder.AddParameter("scheduling-time-context-signing-key", new GenerateParameterDefault { MinLength = 64 }, secret: true);
         internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
+        if (!localDevelopmentAppHost)
+        {
+            fileStorageVolumeIdentity = builder.AddParameter("file-storage-volume-identity");
+            platformGatewayDownloadToken = builder.AddParameter("file-storage-platform-gateway-download-token", secret: true);
+            businessGatewayDownloadToken = builder.AddParameter("file-storage-business-gateway-download-token", secret: true);
+        }
+
         minioRootUser = builder.AddParameter("minio-root-user", secret: true);
         minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
         redisPassword = builder.AddParameter("redis-password", secret: true);

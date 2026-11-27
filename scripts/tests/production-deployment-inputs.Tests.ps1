@@ -145,6 +145,32 @@ $serviceBlocks = @{}
 foreach ($match in [regex]::Matches($platformText, '(?ms)^  (?<name>[a-z0-9-]+):\r?\n(?<body>.*?)(?=^  [a-z0-9-]+:|^\S|\z)')) {
     $serviceBlocks[$match.Groups['name'].Value] = $match.Groups['body'].Value
 }
+$fileStorageBindings = @(
+    @('file-storage', 'FileStorage__Tus__VolumeIdentity', 'VOLUME_IDENTITY'),
+    @('file-storage', 'FileStorage__DownloadCallers__platform-gateway__BearerToken', 'PLATFORM_GATEWAY_DOWNLOAD_TOKEN'),
+    @('file-storage', 'FileStorage__DownloadCallers__business-gateway__BearerToken', 'BUSINESS_GATEWAY_DOWNLOAD_TOKEN'),
+    @('gateway', 'FileStorage__DownloadBearerToken', 'PLATFORM_GATEWAY_DOWNLOAD_TOKEN'),
+    @('business-gateway', 'FileStorage__DownloadBearerToken', 'BUSINESS_GATEWAY_DOWNLOAD_TOKEN')
+)
+$expectedReferences = @{}
+foreach ($binding in $fileStorageBindings) {
+    $service, $key, $suffix = $binding
+    $variable = "NERV_IIP_FILE_STORAGE_$suffix"
+    $reference = '${' + $variable
+    $entry = $key + ': ' + $reference + ':?set ' + $variable + '}'
+    Assert-ContainsOrdinal -Text $serviceBlocks[$service] -Expected $entry -Message "服务 $service 缺少必填的 $key。"
+    Assert-ContainsOrdinal -Text $environmentExampleText -Expected "$variable=" -Message "生产环境样例缺少 $variable。"
+    $expectedReferences[$reference]++
+}
+foreach ($reference in $expectedReferences.Keys) {
+    if ([regex]::Matches($platformText, [regex]::Escape($reference)).Count -ne $expectedReferences[$reference]) {
+        throw "部署输入 $reference 的引用数量不匹配，检查是否泄漏到其它服务。"
+    }
+}
+foreach ($gateway in @('gateway', 'business-gateway')) {
+    Assert-ContainsOrdinal -Text $serviceBlocks[$gateway] -Expected 'FileStorage__BaseUrl: http://file-storage:8080' -Message "网关 $gateway 缺少容器内 FileStorage 路由。"
+}
+
 foreach ($service in @('business-master-data', 'business-product-engineering', 'business-quality')) {
     Assert-ContainsOrdinal -Text $serviceBlocks[$service] -Expected 'Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?' -Message "服务 $service 缺少必填 JWKS。"
     if ($serviceBlocks[$service] -match 'PrivateKey') { throw "服务 $service 不得接收 IAM 私钥。" }
