@@ -34,7 +34,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         CancellationToken cancellationToken,
         JsonSerializerOptions? jsonOptions = null,
         Action<HttpRequestMessage>? configureRequest = null,
-        bool failClosedOnFailureEnvelope = false)
+        bool failClosedOnFailureEnvelope = false,
+        bool acceptKnownExceptionCodeZero = false)
     {
         using var response = await SendRequestAsync(
             internalBearerToken,
@@ -50,7 +51,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 response,
                 jsonOptions ?? JsonOptions,
                 cancellationToken,
-                failClosedOnFailureEnvelope);
+                failClosedOnFailureEnvelope,
+                acceptKnownExceptionCodeZero);
         }
         catch (JsonException ex)
         {
@@ -207,7 +209,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         HttpResponseMessage response,
         JsonSerializerOptions jsonOptions,
         CancellationToken cancellationToken,
-        bool failClosedOnFailureEnvelope)
+        bool failClosedOnFailureEnvelope,
+        bool acceptKnownExceptionCodeZero)
     {
         var content = response.Content
             ?? throw new InvalidOperationException("Platform API returned an empty response.");
@@ -223,17 +226,16 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             root.TryGetProperty("success", out var success) &&
             success.ValueKind == JsonValueKind.False)
         {
-            var statusCode = ReadFailureEnvelopeStatus(root);
-            if (failClosedOnFailureEnvelope || statusCode is not (0 or 400 or 403 or 404 or 409 or 422))
+            var statusCode = ReadFailureEnvelopeStatus(root, acceptKnownExceptionCodeZero);
+            if (failClosedOnFailureEnvelope || statusCode is not (400 or 403 or 404 or 409 or 422))
             {
                 throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                     HttpStatusCode.BadGateway,
                     "downstream-invalid-response");
             }
 
-            var mappedStatusCode = statusCode == 0 ? HttpStatusCode.BadRequest : (HttpStatusCode)statusCode;
             throw BusinessServiceProxyException.FromDownstreamBusinessMessage(
-                mappedStatusCode, DownstreamEnvelopeMessage(root));
+                (HttpStatusCode)statusCode, DownstreamEnvelopeMessage(root));
         }
 
         var payload = root.TryGetProperty("data", out var data)
@@ -249,7 +251,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             ?? throw new InvalidOperationException("Platform API returned an empty response data payload.");
     }
 
-    private static int ReadFailureEnvelopeStatus(JsonElement root)
+    private static int ReadFailureEnvelopeStatus(JsonElement root, bool acceptKnownExceptionCodeZero)
     {
         if (!root.TryGetProperty("code", out var code))
         {
@@ -258,7 +260,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         return code.ValueKind switch
         {
-            JsonValueKind.Number when code.TryGetInt32(out var number) => number,
+            JsonValueKind.Number when code.TryGetInt32(out var number) =>
+                acceptKnownExceptionCodeZero && number == 0 ? (int)HttpStatusCode.BadRequest : number,
             JsonValueKind.String when int.TryParse(code.GetString(), System.Globalization.NumberStyles.None,
                 System.Globalization.CultureInfo.InvariantCulture, out var number) => number,
             _ => -1,

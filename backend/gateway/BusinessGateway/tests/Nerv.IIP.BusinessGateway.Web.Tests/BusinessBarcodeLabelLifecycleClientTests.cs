@@ -81,7 +81,7 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
     public async Task Detail_by_idempotency_key_returns_no_batch_for_the_scoped_not_found_result()
     {
         var handler = new RecordingResponseHandler(
-            """{"success":false,"data":null,"message":"未找到打印批次。","code":0}""");
+            """{"success":false,"data":null,"message":"未找到打印批次。","code":400}""");
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
         var client = new HttpBusinessBarcodeLabelClient(httpClient);
 
@@ -96,11 +96,18 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
         Assert.Null(response);
     }
 
-    [Fact]
-    public async Task Detail_by_idempotency_key_rejects_a_scoped_failure_with_invalid_envelope_code()
+    [Theory]
+    [InlineData("")]
+    [InlineData(",\"code\":0")]
+    [InlineData(",\"code\":\"0\"")]
+    [InlineData(",\"code\":null")]
+    [InlineData(",\"code\":200")]
+    [InlineData(",\"code\":500")]
+    [InlineData(",\"code\":\"invalid\"")]
+    public async Task Detail_by_idempotency_key_rejects_a_scoped_failure_with_invalid_envelope_code(string codeProperty)
     {
         var handler = new RecordingResponseHandler(
-            """{"success":false,"data":null,"message":"未找到打印批次。","code":200}""");
+            $$"""{"success":false,"data":null,"message":"未找到打印批次。"{{codeProperty}}}""");
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
         var client = new HttpBusinessBarcodeLabelClient(httpClient);
 
