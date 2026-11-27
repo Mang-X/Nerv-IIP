@@ -1229,6 +1229,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/wms/picking-tasks", "get", "listBusinessConsoleWmsPickingTasks");
         AssertOperationId(paths, "/api/business-console/v1/wms/picking-tasks/{warehouseTaskId}/assignment", "post", "assignBusinessConsoleWmsPickingTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/complete", "post", "completeBusinessConsoleWmsOutboundOrder");
+        AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry", "post", "retryBusinessConsoleWmsInboundInventoryPosting");
         AssertOperationId(paths, "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry", "post", "retryBusinessConsoleWmsOutboundInventoryPosting");
         AssertOperationId(paths, "/api/business-console/v1/wms/count-executions", "post", "createBusinessConsoleWmsCountExecution");
         AssertOperationId(paths, "/api/business-console/v1/wms/count-executions", "get", "listBusinessConsoleWmsCountExecutions");

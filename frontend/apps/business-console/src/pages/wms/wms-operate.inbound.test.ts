@@ -9,6 +9,33 @@ import InboundPage from './inbound.vue'
 describe('WMS operate actions', () => {
   beforeEach(resetFixture)
 
+  it('只为授权用户的明确失败单据提交原单过账重试', async () => {
+    wms.inboundStatus = 'InventoryPostingFailed'
+    const label = 'button[aria-label="重试库存过账 IB-1"]'
+    wms.permissionCodes = ['business.wms.receipts.read']
+    const readOnly = mount(InboundPage, { global: { stubs: layoutStub } })
+    expect(readOnly.find(label).exists()).toBe(false)
+    readOnly.unmount()
+
+    wms.permissionCodes.push('business.wms.receipts.manage')
+    wms.retryInboundPosting.mockResolvedValueOnce({
+      data: { success: true, data: { requestId: 'retry-request' } },
+    })
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await wrapper.get(label).trigger('click')
+    await flushPromises()
+
+    expect(wms.retryInboundPosting).toHaveBeenCalledOnce()
+    expect(wms.retryInboundPosting).toHaveBeenCalledWith({
+      path: { inboundOrderId: 'ib-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { scopeKind: 'self', scopeId: 'emp049', idempotencyKey: expect.any(String) },
+      throwOnError: false,
+    })
+    expect(wms.refreshInboundOrders).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('completes an inbound order after confirmation', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()

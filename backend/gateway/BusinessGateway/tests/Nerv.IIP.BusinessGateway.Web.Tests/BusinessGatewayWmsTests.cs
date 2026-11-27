@@ -814,6 +814,21 @@ public sealed partial class BusinessGatewayWmsTests
                 },
             },
         });
+        const string retryRoute = "/api/business-console/v1/wms/inbound-orders/inbound-order-001/inventory-posting/retry?organizationId=org-001&environmentId=env-dev";
+        var outsideScope = await client.PostAsJsonAsync(retryRoute, new
+        {
+            idempotencyKey = "retry-in-outside-scope",
+            scopeKind = "site",
+            scopeId = "FORGED-SITE",
+        });
+        var retryInbound = await client.PostAsJsonAsync(retryRoute, new
+        {
+            idempotencyKey = "retry-in-001",
+            scopeKind = "self",
+            scopeId = "user-admin",
+            actorPrincipalId = "forged-user",
+            authorizedSiteCodes = new[] { "FORGED-SITE" },
+        });
         var count = await client.PostAsJsonAsync("/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev", new
         {
             organizationId = "org-001",
@@ -838,6 +853,11 @@ public sealed partial class BusinessGatewayWmsTests
         Assert.Equal(HttpStatusCode.OK, inbound.StatusCode);
         Assert.Equal(HttpStatusCode.OK, putaway.StatusCode);
         Assert.Equal(HttpStatusCode.OK, completeInbound.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, outsideScope.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retryInbound.StatusCode);
+        Assert.Equal("user-admin", wms.LastRetryInboundRequest!.ActorPrincipalId);
+        Assert.Equal(["S1"], wms.LastRetryInboundRequest.AuthorizedSiteCodes);
+        Assert.Equal("retry-in-001", wms.LastRetryInboundRequest.IdempotencyKey);
         Assert.Equal(HttpStatusCode.OK, count.StatusCode);
         Assert.Equal(HttpStatusCode.OK, completeCount.StatusCode);
         var completeInboundResponse = await completeInbound.Content.ReadFromJsonAsync<JsonElement>();
@@ -847,11 +867,13 @@ public sealed partial class BusinessGatewayWmsTests
                 BusinessGatewayPermissions.WmsReceiptsManage,
                 BusinessGatewayPermissions.WmsReceiptsManage,
                 BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
                 BusinessGatewayPermissions.InventoryCountsManage,
                 BusinessGatewayPermissions.InventoryCountsManage,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
-        Assert.Equal(["create-inbound", "create-putaway", "complete-inbound", "create-count", "complete-count"], wms.Calls);
+        Assert.Equal(["create-inbound", "create-putaway", "complete-inbound", "retry-inbound", "create-count", "complete-count"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("IN-NEW", wms.LastCreateInboundRequest!.IdempotencyKey);
         var createInboundLine = Assert.Single(wms.LastCreateInboundRequest.Lines);
@@ -1076,7 +1098,9 @@ public sealed partial class BusinessGatewayWmsTests
         Assert.Equal("self", wms.LastCompleteOutboundRequest.ScopeKind);
         Assert.Equal("user-admin", wms.LastCompleteOutboundRequest.ScopeId);
         Assert.Equal(3, wms.LastCompleteOutboundRequest.ExpectedVersion);
-        Assert.Equal("outbound-order-001", wms.LastRetryOutboundRequest!.OutboundOrderId);
+        Assert.Equal("user-admin", wms.LastRetryOutboundRequest!.ActorPrincipalId);
+        Assert.Equal("self", wms.LastRetryOutboundRequest.ScopeKind);
+        Assert.Equal(["S1"], wms.LastRetryOutboundRequest.AuthorizedSiteCodes);
         Assert.Equal("retry-out-001", wms.LastRetryOutboundRequest.IdempotencyKey);
     }
 
@@ -3075,8 +3099,8 @@ public sealed partial class BusinessGatewayWmsTests
             true,
             "complete-out-001");
 
-    private static BusinessConsoleRetryWmsOutboundInventoryPostingRequest ValidRetryOutboundRequest() =>
-        new("outbound-order-001", "org-001", "env-dev", "retry-out-001");
+    private static BusinessWmsRetryInventoryPostingRequest ValidRetryOutboundRequest() =>
+        new("org-001", "env-dev", "user-admin", ["S1"], "self", "user-admin", "retry-out-001");
 
     private static BusinessConsoleCreateWmsCountExecutionRequest ValidCreateCountRequest() =>
         new("org-001", "env-dev", "SKU-001", "EA", "S1", "BIN-01", 1, "create-count-001", LotNo: "LOT-COUNT-01");
@@ -3256,7 +3280,8 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
 
     public BusinessWmsCompleteOutboundOrderRequest? LastCompleteOutboundRequest { get; private set; }
 
-    public BusinessConsoleRetryWmsOutboundInventoryPostingRequest? LastRetryOutboundRequest { get; private set; }
+    public BusinessWmsRetryInventoryPostingRequest? LastRetryInboundRequest { get; private set; }
+    public BusinessWmsRetryInventoryPostingRequest? LastRetryOutboundRequest { get; private set; }
 
     public BusinessConsoleCreateWmsCountExecutionRequest? LastCreateCountRequest { get; private set; }
 
@@ -3442,10 +3467,22 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-out-001", "movement-out-001"));
     }
 
+    public Task<BusinessConsoleCompleteWmsMovementResponse> RetryInboundInventoryPostingAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessWmsRetryInventoryPostingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRetryInboundRequest = request;
+        Calls.Add("retry-inbound");
+        return Task.FromResult(new BusinessConsoleCompleteWmsMovementResponse("request-out-retry-001", null));
+    }
+
     public Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
         string internalBearerToken,
         string outboundOrderId,
-        BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
+        BusinessWmsRetryInventoryPostingRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

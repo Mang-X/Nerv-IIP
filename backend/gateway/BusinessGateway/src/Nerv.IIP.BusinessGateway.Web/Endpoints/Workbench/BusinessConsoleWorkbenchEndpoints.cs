@@ -20,6 +20,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Workbench;
 public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessApprovalClient approval,
+    IBusinessMasterDataClient masterData,
     IBusinessNotificationClient notification,
     IBusinessQualityClient quality,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
@@ -52,24 +53,26 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
             BusinessGatewayPermissions.InventoryLedgerRead,
             "global-inventory-workbench-summary-not-connected");
 
-        await AddApprovalAsync(req, bearerToken, take, sourceStatuses, todos, ct);
+        var approvalTotal = await AddApprovalAsync(req, bearerToken, take, sourceStatuses, todos, ct);
+        var approvalPreviewCount = todos.Count;
         await AddNotificationAsync(req, bearerToken, take, sourceStatuses, messages, todos, ct);
         await AddQualityAsync(req, bearerToken, MaxTake, sourceStatuses, kpis, ct);
         await AddIndustrialTelemetryAsync(req, bearerToken, take, sourceStatuses, alerts, ct);
         await AddMesAsync(req, bearerToken, MaxTake, sourceStatuses, kpis, ct);
 
+        var todoTotal = approvalTotal + todos.Count - approvalPreviewCount;
         var response = new BusinessConsoleWorkbenchSummaryResponse(
             req.OrganizationId,
             req.EnvironmentId,
             kpis.OrderBy(x => x.Source, StringComparer.Ordinal).ThenBy(x => x.Key, StringComparer.Ordinal).ToArray(),
-            new BusinessConsoleWorkbenchTodoSummary(SummaryStatus(todos.Count, sourceStatuses, "BusinessApproval", "Notification"), todos.Count, todos.Take(take).ToArray()),
+            new BusinessConsoleWorkbenchTodoSummary(SummaryStatus(todoTotal, sourceStatuses, "BusinessApproval", "Notification"), todoTotal, todos.Take(take).ToArray()),
             new BusinessConsoleWorkbenchMessageSummary(SummaryStatus(messages.Count, sourceStatuses, "Notification"), messages.Count, messages.Count(x => x.Status == "unread"), messages.Take(take).ToArray()),
             new BusinessConsoleWorkbenchAlertSummary(SummaryStatus(alerts.Count, sourceStatuses, "IndustrialTelemetry"), alerts.Count, alerts.Count(x => x.Severity == "critical"), alerts.Take(take).ToArray()),
             sourceStatuses.Values.OrderBy(x => x.Source, StringComparer.Ordinal).ToArray());
         await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status200OK, response, ct);
     }
 
-    private async Task AddApprovalAsync(
+    private async Task<int> AddApprovalAsync(
         BusinessConsoleWorkbenchSummaryRequest request,
         string bearerToken,
         int take,
@@ -87,22 +90,25 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
             cancellationToken);
         if (authorization is null)
         {
-            return;
+            return 0;
         }
 
         if (!authorization.IsAllowed)
         {
             sourceStatuses["BusinessApproval"] = SourceStatus.Forbidden("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
-            return;
+            return 0;
         }
 
         try
         {
             var principalId = authorization.PrincipalId ?? authorization.LoginName ?? string.Empty;
             var principalType = authorization.PrincipalType ?? "user";
+            var membership = await ApprovalRoutingMembership.LoadAsync(masterData, tokenProvider.BearerToken,
+                request.OrganizationId, request.EnvironmentId, authorization, cancellationToken);
             var response = await approval.ListPendingTasksAsync(
                 tokenProvider.BearerToken,
-                new BusinessConsoleApprovalTaskListRequest(request.OrganizationId, request.EnvironmentId, principalType, principalId),
+                new BusinessConsoleApprovalTaskListRequest(request.OrganizationId, request.EnvironmentId, principalType, principalId, Take: take)
+                { RoutingMembership = membership },
                 cancellationToken);
             todos.AddRange(response.Items
                 .Take(take)
@@ -114,6 +120,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                     item.DocumentId,
                     item.DueAtUtc)));
             sourceStatuses["BusinessApproval"] = SourceAvailable("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
+            return response.Total;
         }
         catch (BusinessServiceProxyException)
         {
@@ -123,6 +130,8 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         {
             sourceStatuses["BusinessApproval"] = SourceUnavailable("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
         }
+
+        return 0;
     }
 
     private async Task AddNotificationAsync(
@@ -374,7 +383,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         CancellationToken cancellationToken) =>
         auth.CheckAsync(
             bearerToken,
-            new BusinessGatewayPermissionRequirement(permissionCode, organizationId, environmentId, null, null),
+            new BusinessGatewayPermissionRequirement(permissionCode, organizationId, environmentId, null, null, IncludePrincipalContext: permissionCode == BusinessGatewayPermissions.ApprovalsRead),
             cancellationToken);
 
     private async Task<BusinessGatewayAuthorizationResult?> TryCheckSourceAsync(

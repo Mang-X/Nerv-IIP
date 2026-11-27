@@ -155,6 +155,8 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
                 ("environmentId", request.EnvironmentId),
                 ("actorType", request.ActorType),
                 ("actorRef", request.ActorRef),
+                ("roleRefs", request.RoutingMembership?.RoleRefs),
+                ("departmentRef", request.RoutingMembership?.DepartmentRef),
                 ("skip", request.Skip),
                 ("take", request.Take)),
             null,
@@ -189,7 +191,13 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}/steps/{request.StepNo.ToString(CultureInfo.InvariantCulture)}/resolve",
-            request,
+            new
+            {
+                request.OrganizationId, request.EnvironmentId, request.ChainId, request.StepNo,
+                request.ActorType, request.ActorRef, request.Decision, request.Comment, request.TargetStepId,
+                RoleRefs = request.RoutingMembership?.RoleRefs,
+                DepartmentRef = request.RoutingMembership?.DepartmentRef,
+            },
             cancellationToken);
 
     public Task<BusinessConsoleApprovalDelegationListResponse> ListDelegationsAsync(

@@ -32,6 +32,7 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleErpPurchaseOrderMutationOptions: vi.fn(() => ({ mutation: vi.fn() })),
+  reviseBusinessConsoleErpPurchaseOrderMutationOptions: vi.fn(() => ({ mutation: vi.fn() })),
   recordBusinessConsoleErpPurchaseReceiptMutationOptions: vi.fn(() => ({ mutation: vi.fn() })),
   configureBusinessConsoleErpWorkCenterCostRateMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),

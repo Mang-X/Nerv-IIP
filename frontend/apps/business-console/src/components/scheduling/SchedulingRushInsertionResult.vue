@@ -14,6 +14,7 @@ const props = defineProps<{
   pending?: boolean
   failed?: boolean
   saving?: boolean
+  saveError?: string
   selected?: boolean
 }>()
 const emit = defineEmits<{ retry: []; select: [] }>()
@@ -187,7 +188,13 @@ const columns: NvDataTableColumn<BusinessConsoleSchedulingInsertionOrderImpact>[
         </ol>
       </details>
       <SchedulingPreviewResult v-if="candidate" :plan="candidate" />
-      <div class="flex items-center justify-between gap-3">
+      <div v-if="saveError" class="flex items-center justify-between gap-3">
+        <p role="alert" class="text-sm text-destructive">{{ saveError }}</p>
+        <NvButton type="button" variant="outline" :disabled="pending" @click="emit('retry')">
+          重新计算候选
+        </NvButton>
+      </div>
+      <div v-else class="flex items-center justify-between gap-3">
         <p class="text-sm text-muted-foreground">计算完成尚未发布，选定后保存修订，再确认发布。</p>
         <NvButton
           type="button"

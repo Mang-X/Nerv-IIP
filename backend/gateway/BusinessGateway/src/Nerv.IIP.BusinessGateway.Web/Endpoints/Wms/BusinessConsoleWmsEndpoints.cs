@@ -1531,30 +1531,73 @@ public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
 }
 
 [Tags("Business Console WMS")]
+[HttpPost("/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry")]
+[BusinessGatewayOperationId("retryBusinessConsoleWmsInboundInventoryPosting")]
+public sealed class RetryBusinessConsoleWmsInboundInventoryPostingEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleRetryWmsInboundInventoryPostingRequest, BusinessConsoleCompleteWmsMovementResponse>(
+        auth,
+        trustedContextResolver,
+        BusinessGatewayPermissions.WmsReceiptsManage)
+{
+    protected override string OrganizationId(BusinessConsoleRetryWmsInboundInventoryPostingRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRetryWmsInboundInventoryPostingRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
+        BusinessConsoleRetryWmsInboundInventoryPostingRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inboundOrderId = Route<string>("inboundOrderId") ?? request.InboundOrderId;
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
+        return await wms.RetryInboundInventoryPostingAsync(
+            tokenProvider.BearerToken,
+            inboundOrderId,
+            new BusinessWmsRetryInventoryPostingRequest(
+                request.OrganizationId, request.EnvironmentId,
+                trusted.ActorPrincipalId, trusted.AuthorizedSiteCodes,
+                scope.ScopeKind, scope.ScopeId, request.IdempotencyKey),
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console WMS")]
 [HttpPost("/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry")]
 [BusinessGatewayOperationId("retryBusinessConsoleWmsOutboundInventoryPosting")]
 public sealed class RetryBusinessConsoleWmsOutboundInventoryPostingEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessWmsClient wms,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRetryWmsOutboundInventoryPostingRequest, BusinessConsoleCompleteWmsMovementResponse>(
+    IInternalServiceTokenProvider tokenProvider,
+    WmsTrustedRequestContextResolver trustedContextResolver)
+    : BusinessConsoleWmsTrustedProxyEndpoint<BusinessConsoleRetryWmsOutboundInventoryPostingRequest, BusinessConsoleCompleteWmsMovementResponse>(
         auth,
+        trustedContextResolver,
         BusinessGatewayPermissions.WmsShipmentsManage)
 {
     protected override string OrganizationId(BusinessConsoleRetryWmsOutboundInventoryPostingRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleRetryWmsOutboundInventoryPostingRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleCompleteWmsMovementResponse> ForwardAsync(
         BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var outboundOrderId = Route<string>("outboundOrderId") ?? request.OutboundOrderId;
-        return wms.RetryOutboundInventoryPostingAsync(
+        var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
+        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
+        return await wms.RetryOutboundInventoryPostingAsync(
             tokenProvider.BearerToken,
             outboundOrderId,
-            request with { OutboundOrderId = outboundOrderId },
+            new BusinessWmsRetryInventoryPostingRequest(
+                request.OrganizationId, request.EnvironmentId,
+                trusted.ActorPrincipalId, trusted.AuthorizedSiteCodes,
+                scope.ScopeKind, scope.ScopeId, request.IdempotencyKey),
             cancellationToken);
     }
 }
@@ -2046,6 +2089,15 @@ public sealed class BusinessConsoleCreateWmsPickingTaskRequestValidator
         RuleFor(x => x.FromLocationCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ToLocationCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
+    }
+}
+
+public sealed class BusinessConsoleRetryWmsInboundInventoryPostingRequestValidator
+    : Validator<BusinessConsoleRetryWmsInboundInventoryPostingRequest>
+{
+    public BusinessConsoleRetryWmsInboundInventoryPostingRequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 

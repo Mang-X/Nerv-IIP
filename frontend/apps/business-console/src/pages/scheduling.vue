@@ -100,6 +100,7 @@ const {
   publishCandidateBlockedReason,
   publishCandidateDisabledReason,
   publishConfirmOpen,
+  publishTargetChanged,
   publishTargetPlanId,
   refreshPlans,
   refreshUrgency,
@@ -266,10 +267,7 @@ const {
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
           <NvButton
             type="button"
-            :disabled="
-              Boolean(publishCandidateBlockedReason) ||
-              draft.model.value?.meta.planId !== publishTargetPlanId
-            "
+            :disabled="Boolean(publishCandidateBlockedReason) || publishTargetChanged"
             @click="publishCandidate"
             >确认发布</NvButton
           >

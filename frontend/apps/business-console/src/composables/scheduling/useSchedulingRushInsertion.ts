@@ -17,6 +17,7 @@ interface Options {
 export function useSchedulingRushInsertion(options: Options) {
   const task = useSchedulingInsertionPreview(options.enabled)
   const message = shallowRef('')
+  const saveError = shallowRef('')
   const request = shallowRef<BusinessConsoleSchedulingInsertionPreviewRequest>()
   let generation = 0
   function reset() {
@@ -24,6 +25,7 @@ export function useSchedulingRushInsertion(options: Options) {
     task.reset()
     request.value = undefined
     message.value = ''
+    saveError.value = ''
   }
   watch(
     () => [toValue(options.context).organizationId, toValue(options.context).environmentId],
@@ -32,6 +34,7 @@ export function useSchedulingRushInsertion(options: Options) {
   async function retry() {
     if (!request.value || !options.enabled.value) return
     const current = generation
+    saveError.value = ''
     message.value = '正在受理插单候选'
     try {
       await task.start(request.value)
@@ -63,6 +66,7 @@ export function useSchedulingRushInsertion(options: Options) {
   }
   return {
     task,
+    saveError,
     reset,
     message: computed(() =>
       task.error.value

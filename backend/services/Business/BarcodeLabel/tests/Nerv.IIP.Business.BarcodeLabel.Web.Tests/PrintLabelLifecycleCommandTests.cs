@@ -27,7 +27,8 @@ public sealed class PrintLabelLifecycleCommandTests
     [Fact]
     public void Attempt_recorder_exposes_an_explicit_best_effort_task_contract()
     {
-        var methods = typeof(ILabelPrintAttemptRecorder).GetMethods();
+        var methods = typeof(ILabelPrintAttemptRecorder).GetMethods()
+            .Where(method => method.Name.StartsWith("TryRecord", StringComparison.Ordinal)).ToArray();
 
         Assert.Equal(2, methods.Length);
         Assert.All(methods, method => Assert.Equal(typeof(Task), method.ReturnType));
@@ -53,7 +54,7 @@ public sealed class PrintLabelLifecycleCommandTests
     }
 
     [Fact]
-    public async Task Dispatch_and_reprint_compile_the_same_frozen_item_to_identical_bytes()
+    public async Task Dispatch_replay_sends_once_and_explicit_reprint_uses_the_same_frozen_item()
     {
         await using var dbContext = CreateDbContext();
         var (batch, template) = CreateReplayableBatch(2);
@@ -63,14 +64,12 @@ public sealed class PrintLabelLifecycleCommandTests
         var assetPort = ValidAssetPort();
         var recorder = new RecordingAttemptRecorder();
 
-        await new ScopedDispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer, recorder)
-            .Handle(
-                new ScopedDispatchLabelPrintBatchCommand(
-                    batch.Id,
-                    "org-001",
-                    "env-dev",
-                    "printer-01"),
-                CancellationToken.None);
+        var dispatch = new ScopedDispatchLabelPrintBatchCommandHandler(dbContext, assetPort, printer, recorder);
+        var intent = new ScopedDispatchLabelPrintBatchCommand(batch.Id, "org-001", "env-dev", "printer-01");
+        Assert.Equal(batch.Id, await dispatch.Handle(intent, CancellationToken.None));
+        Assert.Equal(batch.Id, await dispatch.Handle(intent, CancellationToken.None));
+        Assert.Single(printer.Calls);
+
         await new ScopedReprintLabelCommandHandler(dbContext, assetPort, printer, recorder)
             .Handle(
                 new ScopedReprintLabelCommand(
@@ -398,6 +397,9 @@ public sealed class PrintLabelLifecycleCommandTests
 
     private sealed class RecordingAttemptRecorder : ILabelPrintAttemptRecorder
     {
+        public Task<bool> TryClaimDispatchAsync(LabelPrintBatch batch, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+
         public List<(LabelPrintBatchId BatchId, LabelPrinterDispatchResult Result)> DispatchAttempts { get; } = [];
 
         public Task TryRecordDispatchCanceledAsync(

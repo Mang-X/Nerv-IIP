@@ -272,6 +272,8 @@ public sealed class ScopedReprintLabelCommandHandler(
 
 public interface ILabelPrintAttemptRecorder
 {
+    Task<bool> TryClaimDispatchAsync(LabelPrintBatch batch, CancellationToken cancellationToken);
+
     Task TryRecordDispatchCanceledAsync(
         string organizationId,
         string environmentId,
@@ -291,6 +293,30 @@ public interface ILabelPrintAttemptRecorder
 public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory scopeFactory)
     : ILabelPrintAttemptRecorder
 {
+    public async Task<bool> TryClaimDispatchAsync(LabelPrintBatch batch, CancellationToken cancellationToken)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // 先提交占位。即使发送后请求取消或事务回滚，后续请求也不会再次发送。
+        if (dbContext.Database.IsRelational())
+        {
+            return await dbContext.LabelPrintBatches
+                .Where(x => x.Id == batch.Id && x.Status == batch.Status && x.CompletedAtUtc == batch.CompletedAtUtc)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, LabelPrintBatch.DeliveryUnknown),
+                    cancellationToken) == 1;
+        }
+
+        var target = await dbContext.LabelPrintBatches.FirstOrDefaultAsync(
+            x => x.Id == batch.Id && x.Status == batch.Status && x.CompletedAtUtc == batch.CompletedAtUtc,
+            cancellationToken);
+        if (target is null)
+            return false;
+
+        dbContext.Entry(target).Property(x => x.Status).CurrentValue = LabelPrintBatch.DeliveryUnknown;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task TryRecordDispatchCanceledAsync(
         string organizationId,
         string environmentId,
@@ -306,15 +332,12 @@ public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory sc
             organizationId,
             environmentId,
             CancellationToken.None);
-        try
-        {
-            batch.EnsureCanBeDispatched();
-        }
-        catch (LabelPrintLifecycleRejectedException)
+        if (batch.Status != LabelPrintBatch.DeliveryUnknown)
         {
             return;
         }
 
+        independentDbContext.Entry(batch).Property(x => x.Status).CurrentValue = LabelPrintBatch.ReadyToPrint;
         LabelPrintLifecycle.ApplyResult(batch, printerId, result);
         await independentDbContext.SaveChangesAsync(CancellationToken.None);
     }
@@ -455,6 +478,12 @@ internal static class LabelPrintLifecycle
         string printerId,
         CancellationToken cancellationToken)
     {
+        if (batch.Status is LabelPrintBatch.SentToPrinter or LabelPrintBatch.Printed
+            && string.Equals(batch.PrinterId, printerId, StringComparison.Ordinal))
+        {
+            return batch.Id;
+        }
+
         try
         {
             batch.EnsureCanBeDispatched();
@@ -469,6 +498,11 @@ internal static class LabelPrintLifecycle
             templateAssetPort,
             batch,
             cancellationToken);
+        if (!await attemptRecorder.TryClaimDispatchAsync(batch, cancellationToken))
+        {
+            throw new KnownException("打印批次已由其他请求下发，请刷新查看派发结果。");
+        }
+
         LabelPrinterDispatchResult result;
         try
         {
@@ -487,10 +521,13 @@ internal static class LabelPrintLifecycle
         catch (Exception exception) when (
             exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            result = LabelPrinterDispatchResult.Failed("打印服务暂时不可用，请稍后重试。");
+            result = LabelPrinterDispatchResult.DeliveryUnknown(
+                $"dispatch-{batch.Id.Id:N}", "未能确认打印机交付结果，请现场核对。");
         }
 
         ApplyResult(batch, printerId, result);
+        // 失败后重试仍可能得到相同状态，显式覆盖已提交的占位状态。
+        dbContext.Entry(batch).Property(x => x.Status).IsModified = true;
         return batch.Id;
     }
 

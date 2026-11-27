@@ -174,18 +174,41 @@ describe('pda useBusinessMes composables', () => {
     ])
   })
 
-  it('forwards the caller-supplied key when creating a material issue request', async () => {
+  it('creates a keyed material issue and reads back the original work-order application', async () => {
     const { createIssue } = useMesMaterialIssue()
 
-    await createIssue('wo-7', { materialId: 'mat-1', quantity: 5, idempotencyKey: 'op-issue-1' })
+    const mutate = coladaState.mutateById.get('createBusinessConsoleMesMaterialIssueRequest')!
+    mutate.mockResolvedValue({
+      success: true,
+      data: { accepted: true, downstreamDocumentId: 'MIR-001' },
+    })
+    const original = {
+      requestId: 'MIR-001',
+      workOrderId: 'wo-7',
+      requestedQuantity: 5,
+      uomCode: 'KG',
+    }
+    vi.mocked(getBusinessConsoleMesMaterialIssueRequest).mockResolvedValueOnce({
+      data: { success: true, data: original },
+    } as never)
+    await expect(
+      createIssue('wo-7', {
+        materialId: 'mat-1',
+        uomCode: '',
+        quantity: 5,
+        idempotencyKey: 'op-issue-1',
+      }),
+    ).resolves.toEqual(original)
 
     expect(createBusinessConsoleMesMaterialIssueRequestMutationOptions).toHaveBeenCalled()
-    const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesMaterialIssueRequest')
-    const payload = mutateAsync!.mock.calls[0][0]
+    const payload = mutate.mock.calls[0][0]
     expect(payload.path).toEqual({ workOrderId: 'wo-7' })
     expect(payload.query).toMatchObject({ organizationId: 'org-001', environmentId: 'env-dev' })
-    expect(payload.body).toMatchObject({ materialId: 'mat-1', quantity: 5 })
+    expect(payload.body).toMatchObject({ materialId: 'mat-1', quantity: 5, uomCode: '' })
     expect(payload.body.idempotencyKey).toBe('op-issue-1')
+    expect(getBusinessConsoleMesMaterialIssueRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { requestId: 'MIR-001' }, query: payload.query }),
+    )
   })
 
   it('replays a keyed line-side receipt and reads back only the original issue request', async () => {

@@ -299,12 +299,22 @@ export function useMesMaterialIssue() {
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? requestsQuery.refetch() : Promise.resolve()),
-    createIssue: (workOrderId: string, body: CreateIssueInput) =>
-      createMutation.mutateAsync({
+    createIssue: async (workOrderId: string, body: CreateIssueInput) => {
+      const scope = scopeQuery(filters)
+      const response = await createMutation.mutateAsync({
         path: { workOrderId },
-        query: scopeQuery(filters),
+        query: scope,
         body: { ...body } satisfies BusinessConsoleMesCreateMaterialIssueRequest,
-      }),
+      })
+      const reference = response?.data?.downstreamDocumentId?.trim()
+      if (!response?.success || response.data?.accepted !== true || !reference) {
+        throw new Error(response?.message || '尚未取得领料申请回执，请重试原提交。')
+      }
+
+      const current = await readMaterialIssue(reference, workOrderId, scope)
+      if (!current) throw new Error('领料已受理，暂未读到原申请，请重试核实。')
+      return current
+    },
     receiveScopeIdentity,
     confirmLineSideReceipt: async (
       requestId: string,

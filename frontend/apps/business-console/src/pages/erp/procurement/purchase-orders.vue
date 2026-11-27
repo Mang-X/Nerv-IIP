@@ -14,6 +14,9 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { i18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { RouterLink } from 'vue-router'
 import {
   NvButton,
   NvDataTable,
@@ -27,6 +30,7 @@ import {
   NvDialogTitle,
   NvEntityPicker,
   NvField,
+  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -63,6 +67,10 @@ definePage({
 })
 
 const orders = useErpPurchaseOrders()
+const auth = useAuthStore()
+const permissions = computed(() => auth.principal?.permissionCodes ?? [])
+const canManage = computed(() => permissions.value.includes('business.erp.procurement.manage'))
+const canReadApprovals = computed(() => permissions.value.includes(P.approvalsRead))
 // 供应商 / 工厂 / 物料 / 单位一律从主数据目录里选，手输编码只会在提交时才发现敲错。
 const { supplierOptions, partnersPending } = useErpPartnerCatalog()
 const { siteOptions, sitesPending } = useErpSiteCatalog()
@@ -89,6 +97,7 @@ const rows = computed(() =>
       supplierName: resolvePartner(order.supplierCode),
       siteCode: order.siteCode ?? '-',
       status: order.status ?? '-',
+      order,
       receiptReadiness: order.receiptReadiness ?? '-',
       lineNo: line.lineNo ?? '-',
       skuCode: line.skuCode ?? '-',
@@ -132,6 +141,7 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'status', header: '订单状态', width: 'w-28' },
   { key: 'receiptReadiness', header: '收货状态', width: 'w-28' },
   { key: 'amount', header: '金额', align: 'end', width: 'w-32' },
+  { key: 'actions', header: '审批', align: 'end' },
 ]
 
 const readState = computed(() =>
@@ -237,6 +247,81 @@ async function submit() {
     )
   }
 }
+
+const revisionOpen = shallowRef(false)
+const revisionError = shallowRef('')
+const revisionOrderNo = shallowRef('')
+const revisionLines = reactive<
+  {
+    lineNo: string
+    skuCode: string
+    orderedQuantity: number | string
+    unitPrice: number | string
+    promisedDate: string
+  }[]
+>([])
+
+function openRevision(order: BusinessConsoleErpPurchaseOrderItem) {
+  if (!canManage.value || !order.canReviseBeforeApproval || !order.purchaseOrderNo) return
+  revisionOrderNo.value = order.purchaseOrderNo
+  revisionLines.splice(
+    0,
+    revisionLines.length,
+    ...(order.lines ?? []).map((line) => ({
+      lineNo: line.lineNo ?? '',
+      skuCode: line.skuCode ?? '',
+      orderedQuantity: line.orderedQuantity ?? 0,
+      unitPrice: line.unitPrice ?? 0,
+      promisedDate: line.promisedDate ?? '',
+    })),
+  )
+  revisionError.value = ''
+  revisionOpen.value = true
+}
+
+watch([orders.organizationId, orders.environmentId], () => {
+  revisionOpen.value = false
+})
+
+async function submitRevision() {
+  if (!canManage.value || orders.revisePurchaseOrderPending.value) return
+  const order = orders.items.value.find((item) => item.purchaseOrderNo === revisionOrderNo.value)
+  if (!order?.canReviseBeforeApproval) return
+
+  const lines = revisionLines
+    .map((line) => ({
+      lineNo: line.lineNo,
+      orderedQuantity: Number(line.orderedQuantity),
+      unitPrice: Number(line.unitPrice),
+      promisedDate: line.promisedDate,
+    }))
+    .filter((line) => {
+      const original = order.lines?.find((item) => item.lineNo === line.lineNo)
+      return (
+        original?.orderedQuantity !== line.orderedQuantity ||
+        original?.unitPrice !== line.unitPrice ||
+        original?.promisedDate !== line.promisedDate
+      )
+    })
+  if (
+    lines.length === 0 ||
+    lines.some((line) => !(line.orderedQuantity > 0) || !(line.unitPrice > 0) || !line.promisedDate)
+  ) {
+    revisionError.value = '请至少修改一行，数量与单价须大于 0，并填写交期。'
+    return
+  }
+
+  try {
+    revisionError.value = ''
+    const result = await orders.revisePurchaseOrder(revisionOrderNo.value, lines)
+    revisionOpen.value = false
+    notifySuccess(
+      `采购单已重提审批${result?.approvalChainId ? `（${result.approvalChainId}）` : ''}`,
+    )
+  } catch (error) {
+    notifyOperationFailure('采购单重提失败', error, '采购单重提失败，请稍后重试。')
+  }
+}
 </script>
 
 <template>
@@ -323,14 +408,105 @@ async function submit() {
       <template #cell-openQuantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.openQuantity) }}</span></template
       >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge
+          :value="row.status"
+          :label="row.order.canReviseBeforeApproval ? '待修订' : undefined"
+        />
+      </template>
       <template #cell-receiptReadiness="{ row }"
         ><NvStatusBadge :value="row.receiptReadiness"
       /></template>
       <template #cell-amount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.amount) }}</span></template
       >
+      <template #cell-actions="{ row }">
+        <div
+          v-if="row.lineNo === row.order.lines?.[0]?.lineNo"
+          class="flex items-center justify-end gap-2"
+        >
+          <RouterLink
+            v-if="
+              canReadApprovals && (row.order.approvalChainId || row.order.canReviseBeforeApproval)
+            "
+            class="text-sm text-primary underline"
+            :to="{
+              path: '/approval',
+              query: {
+                documentType: 'purchase-order',
+                documentId: row.purchaseOrderNo,
+                sourceService: 'business-erp',
+              },
+            }"
+            >审批记录</RouterLink
+          >
+          <NvButton
+            v-if="canManage && row.order.canReviseBeforeApproval"
+            size="sm"
+            variant="outline"
+            @click="openRevision(row.order)"
+          >
+            修订并重提
+          </NvButton>
+        </div>
+      </template>
     </NvDataTable>
+
+    <NvDialog v-model:open="revisionOpen">
+      <NvDialogContent class="sm:max-w-2xl">
+        <NvDialogHeader>
+          <NvDialogTitle>修订采购单 {{ revisionOrderNo }}</NvDialogTitle>
+          <NvDialogDescription>修改采购明细后提交新一轮审批。</NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitRevision">
+          <fieldset
+            v-for="(line, index) in revisionLines"
+            :key="line.lineNo"
+            class="grid gap-3 sm:grid-cols-3"
+          >
+            <legend class="mb-2 text-sm font-medium">{{ line.lineNo }} · {{ line.skuCode }}</legend>
+            <NvField>
+              <NvFieldLabel :for="`revision-quantity-${index}`">数量</NvFieldLabel>
+              <NvInput
+                :id="`revision-quantity-${index}`"
+                v-model="line.orderedQuantity"
+                type="number"
+                step="any"
+                required
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel :for="`revision-price-${index}`">单价</NvFieldLabel>
+              <NvInput
+                :id="`revision-price-${index}`"
+                v-model="line.unitPrice"
+                type="number"
+                step="any"
+                required
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel :for="`revision-date-${index}`">交期</NvFieldLabel>
+              <NvInput
+                :id="`revision-date-${index}`"
+                v-model="line.promisedDate"
+                type="date"
+                required
+              />
+            </NvField>
+          </fieldset>
+          <NvFieldError v-if="revisionError" :errors="[revisionError]" />
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="orders.revisePurchaseOrderPending.value"
+              >提交审批</NvButton
+            >
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
 
     <NvDialog v-model:open="open">
       <NvDialogContent>

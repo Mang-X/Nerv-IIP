@@ -45,8 +45,8 @@ export interface WmsOutboundListFilters extends WmsListFilters {
 export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilters> = {}) {
   const auth = useAuthStore()
   const filters = defaultFilters<WmsOutboundListFilters>(initialFilters)
-  const outboundOrdersQuery = useQuery(() =>
-    withWmsListScopeEnabled(
+  const outboundOrdersQuery = useQuery(() => ({
+    ...withWmsListScopeEnabled(
       listBusinessConsoleWmsOutboundOrdersQueryOptions({
         query: {
           ...baseQuery(filters),
@@ -56,7 +56,11 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
       }),
       filters,
     ),
-  )
+    autoRefetch: (state: { data?: BusinessConsoleWmsOutboundOrderListEnvelope }) =>
+      state.data?.data?.items?.some((order) => order.inventoryPostingStatus === 'pending')
+        ? 10_000
+        : false,
+  }))
   const outboundOrdersScopeReady = computed(() => listScopeReady(filters))
   const outboundOrdersResponse = useScopeBoundListResponse(
     () => outboundOrdersQuery.data.value,

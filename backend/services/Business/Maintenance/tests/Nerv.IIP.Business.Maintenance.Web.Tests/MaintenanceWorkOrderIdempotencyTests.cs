@@ -134,7 +134,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
     }
 
     [Fact]
-    public async Task Alarm_sourced_work_order_replays_only_the_same_key_and_full_payload()
+    public async Task Alarm_sourced_work_order_reuses_the_binding_and_retains_key_conflict_validation()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var handler = new CreateMaintenanceWorkOrderCommandHandler(db);
@@ -145,12 +145,11 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         db.ChangeTracker.Clear();
 
         Assert.Equal(first, await handler.Handle(command, CancellationToken.None));
-        var differentKey = await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(command with { IdempotencyKey = "alarm-create-002" }, CancellationToken.None));
+        Assert.Equal(first, await handler.Handle(
+            command with { IdempotencyKey = "alarm-create-002" }, CancellationToken.None));
         await Assert.ThrowsAsync<MaintenanceIdempotencyConflictException>(() =>
             handler.Handle(command with { Priority = "critical" }, CancellationToken.None));
 
-        Assert.Equal("source-alarm-already-bound-to-a-different-create-intent", differentKey.Message);
         Assert.Equal(1, await db.MaintenanceWorkOrders.CountAsync());
     }
 

@@ -32,7 +32,7 @@
 | Approval | 16 | 11 | 4 | 1 |
 | BarcodeLabel | 23 | 17 | 2 | 4 |
 | DemandPlanning | 23 | 23 | 0 | 0 |
-| Erp | 72 | 54 | 13 | 5 |
+| Erp | 72 | 55 | 12 | 5 |
 | IndustrialTelemetry | 35 | 33 | 0 | 2 |
 | Inventory | 27 | 21 | 0 | 6 |
 | Maintenance | 34 | 30 | 1 | 3 |
@@ -41,7 +41,7 @@
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 49 | 38 | 10 | 1 |
 | Scheduling | 36 | 33 | 1 | 2 |
-| Wms | 57 | 47 | 5 | 5 |
-| **Total** | **546** | **467** | **40** | **39** |
+| Wms | 57 | 48 | 4 | 5 |
+| **Total** | **546** | **469** | **38** | **39** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->

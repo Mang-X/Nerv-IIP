@@ -638,14 +638,39 @@ public sealed class WmsInventoryBoundaryTests
         inbound.MarkInventoryPostingFailed();
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var retryResult = await new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
-            new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-target-001"),
-            CancellationToken.None);
+        var retry = new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-target-001",
+            new("org-001", "env-dev", inbound.AssignedOperatorUserId, [inbound.SiteCode],
+                "self", inbound.AssignedOperatorUserId, "", "", "", null, null));
+        var handler = new RetryInboundInventoryPostingCommandHandler(dbContext);
+        await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            handler.Handle(retry with { Execution = retry.Execution! with { EnvironmentId = "env-other" } },
+                CancellationToken.None));
+        var retryResult = await handler.Handle(retry, CancellationToken.None);
 
         var retryRequest = Assert.Single(
             dbContext.InventoryMovementRequests.Local,
             x => x.Id == retryResult.RequestId);
         Assert.Equal("LOC-TARGET", retryRequest.LocationCode);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(retryResult, await handler.Handle(retry, CancellationToken.None));
+
+        var query = new ListInboundOrdersQuery("org-001", "env-dev", InboundOrderId: inbound.Id,
+            AssignedOperatorUserIds: [inbound.AssignedOperatorUserId!], SiteCodes: [inbound.SiteCode]);
+        var readback = new ListInboundOrdersQueryHandler(dbContext);
+        Assert.Equal("pending", Assert.Single((await readback.Handle(query, CancellationToken.None)).Items).InventoryPostingStatus);
+        await new MarkInventoryMovementRequestPostedCommandHandler(dbContext).Handle(
+            new("org-001", "env-dev", "inbound", inbound.InboundOrderNo, "LINE-001", retryRequest.IdempotencyKey, "MOV-IN-RETRY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var item = Assert.Single((await readback.Handle(query, CancellationToken.None)).Items);
+        Assert.Equal(inbound.Id, item.InboundOrderId);
+        Assert.Equal("posted", item.InventoryPostingStatus);
+        Assert.Equal(["test failure"], item.PostingFailureHistory);
+        Assert.Equal(["MOV-IN-RETRY"], item.InventoryMovementIds);
+        Assert.Equal("MOV-IN-RETRY", (await handler.Handle(retry, CancellationToken.None)).InventoryMovementId);
+        Assert.Equal(2, await dbContext.InventoryMovementRequests.CountAsync());
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            handler.Handle(retry with { IdempotencyKey = "new-retry" }, CancellationToken.None));
     }
 
     [Fact]
@@ -1506,8 +1531,10 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(4m, release.Quantity);
     }
 
-    [Fact]
-    public async Task Inventory_posting_failed_releases_outbound_reservation_and_keeps_order_retryable()
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task Inventory_posting_failed_releases_outbound_reservation_and_keeps_order_retryable(int requestedQuantity)
     {
         await using var dbContext = CreateContext();
         var outbound = OutboundOrder.Create(
@@ -1517,7 +1544,7 @@ public sealed class WmsInventoryBoundaryTests
             "sales-delivery",
             "SO-001",
             "SITE-01",
-            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", requestedQuantity, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
         dbContext.OutboundOrders.Add(outbound);
         var inventory = new FakeWmsInventoryReservationClient("res-001", "res-002");
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1532,7 +1559,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteOutboundOrderCommandHandler(dbContext, inventory).Handle(
             new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
@@ -1554,9 +1581,14 @@ public sealed class WmsInventoryBoundaryTests
                 "negative stock"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new RetryOutboundInventoryPostingCommandHandler(dbContext, inventory).Handle(
-            new RetryOutboundInventoryPostingCommand(outbound.Id, "idem-out-retry-001"),
-            CancellationToken.None);
+        var retry = new RetryOutboundInventoryPostingCommand(outbound.Id, "idem-out-retry-001",
+            new("org-001", "env-dev", outbound.AssignedOperatorUserId, [outbound.SiteCode],
+                "self", outbound.AssignedOperatorUserId, "", "", "", null, null));
+        var handler = new RetryOutboundInventoryPostingCommandHandler(dbContext, inventory);
+        await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            handler.Handle(retry with { Execution = retry.Execution! with { AuthorizedSiteCodes = ["OTHER-SITE"] } },
+                CancellationToken.None));
+        var result = await handler.Handle(retry, CancellationToken.None);
 
         Assert.Equal("InventoryPostingPending", outbound.Status.ToString());
         Assert.Equal("res-002", outbound.Lines.Single().InventoryReservationId);
@@ -1568,9 +1600,38 @@ public sealed class WmsInventoryBoundaryTests
                 Assert.Equal(InventoryMovementRequestStatus.Pending, retried.Status);
                 Assert.Equal(OutboundRetry001V2Key, retried.IdempotencyKey);
                 Assert.Equal("res-002", retried.InventoryReservationId);
+                Assert.Equal(4m, retried.Quantity);
             });
-        Assert.Equal("res-001", Assert.Single(inventory.ReleaseRequests).ReservationId);
+        var expectedReleases = requestedQuantity == 4 ? 1 : 2;
+        Assert.Equal(expectedReleases, inventory.ReleaseRequests.Count);
+        Assert.Equal("res-001", inventory.ReleaseRequests.Last().ReservationId);
+        Assert.Equal(4m, inventory.Requests.Last().Quantity);
         Assert.Equal(["res-001", "res-002"], inventory.ReservationResults);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(result, await handler.Handle(retry, CancellationToken.None));
+        await new MarkInventoryMovementRequestFailedCommandHandler(dbContext, inventory).Handle(
+            new("org-001", "env-dev", "outbound", outbound.OutboundOrderNo, "LINE-001",
+                persistedRequest.IdempotencyKey, "NEGATIVE_ON_HAND", "negative stock"),
+            CancellationToken.None);
+        Assert.Equal(expectedReleases, inventory.ReleaseRequests.Count);
+
+        var retried = await dbContext.InventoryMovementRequests.SingleAsync(x => x.Id == result.RequestId);
+        await new MarkInventoryMovementRequestPostedCommandHandler(dbContext).Handle(
+            new("org-001", "env-dev", "outbound", outbound.OutboundOrderNo, "LINE-001", retried.IdempotencyKey, "MOV-OUT-RETRY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var readback = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
+            new ListOutboundOrdersQuery("org-001", "env-dev", OutboundOrderId: outbound.Id,
+                AssignedOperatorUserIds: [outbound.AssignedOperatorUserId!], SiteCodes: [outbound.SiteCode]),
+            CancellationToken.None);
+        var item = Assert.Single(readback.Items);
+        Assert.Equal(outbound.Id, item.OutboundOrderId);
+        Assert.Equal("Completed", item.Status);
+        Assert.Equal("MOV-OUT-RETRY", Assert.Single(item.Lines).InventoryMovementId);
+        Assert.Equal("negative stock", persistedRequest.FailureMessage);
+        Assert.Equal(2, await dbContext.InventoryMovementRequests.CountAsync());
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            handler.Handle(retry with { IdempotencyKey = "new-retry" }, CancellationToken.None));
     }
 
     [Fact]

@@ -170,10 +170,16 @@ public interface IBusinessWmsClient
         BusinessWmsCompleteOutboundOrderRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleCompleteWmsMovementResponse> RetryInboundInventoryPostingAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessWmsRetryInventoryPostingRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
         string internalBearerToken,
         string outboundOrderId,
-        BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
+        BusinessWmsRetryInventoryPostingRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateWmsCountExecutionResponse> CreateCountExecutionAsync(
@@ -625,10 +631,22 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             $"/api/business-console/v1/wms/outbound-orders?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&scopeKind={Uri.EscapeDataString(request.ScopeKind)}&scopeId={Uri.EscapeDataString(request.ScopeId)}&outboundOrderId={Uri.EscapeDataString(outboundOrderId)}",
             cancellationToken);
 
+    public Task<BusinessConsoleCompleteWmsMovementResponse> RetryInboundInventoryPostingAsync(
+        string internalBearerToken,
+        string inboundOrderId,
+        BusinessWmsRetryInventoryPostingRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCompleteWmsMovementResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/wms/inbound-orders/{Uri.EscapeDataString(inboundOrderId)}/inventory-posting/retry",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleCompleteWmsMovementResponse> RetryOutboundInventoryPostingAsync(
         string internalBearerToken,
         string outboundOrderId,
-        BusinessConsoleRetryWmsOutboundInventoryPostingRequest request,
+        BusinessWmsRetryInventoryPostingRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCompleteWmsMovementResponse>(
             internalBearerToken,

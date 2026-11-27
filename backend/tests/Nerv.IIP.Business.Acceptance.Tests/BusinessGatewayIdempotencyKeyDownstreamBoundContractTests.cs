@@ -1088,6 +1088,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // "wms-key-v2:<64 hex>"；此后进 Inventory 预留键与 InventoryMovementRequests 的都是那个**定长**派生值，
         // 对原始键零约束（#3290 幽灵权威），故沿途各列一概不登记。
         // 命令校验器 MaximumLength(150) 是这一处**唯一**的下游权威。
+        [typeof(BusinessConsoleRetryWmsInboundInventoryPostingRequest)] =
+            [Command<RetryInboundInventoryPostingCommand>()],
         [typeof(BusinessConsoleRetryWmsOutboundInventoryPostingRequest)] =
             [Command<RetryOutboundInventoryPostingCommand>()],
 

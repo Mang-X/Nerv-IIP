@@ -10,6 +10,33 @@ import OutboundPage from './outbound.vue'
 describe('WMS operate actions', () => {
   beforeEach(resetFixture)
 
+  it('只为授权用户的明确失败单据提交原单过账重试', async () => {
+    wms.outboundStatus = 'InventoryPostingFailed'
+    const label = 'button[aria-label="重试库存过账 OB-1"]'
+    wms.permissionCodes = ['business.wms.shipments.read']
+    const readOnly = mount(OutboundPage, { global: { stubs: layoutStub } })
+    expect(readOnly.find(label).exists()).toBe(false)
+    readOnly.unmount()
+
+    wms.permissionCodes.push('business.wms.shipments.manage')
+    wms.retryOutboundPosting.mockResolvedValueOnce({
+      data: { success: true, data: { requestId: 'retry-request' } },
+    })
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await wrapper.get(label).trigger('click')
+    await flushPromises()
+
+    expect(wms.retryOutboundPosting).toHaveBeenCalledOnce()
+    expect(wms.retryOutboundPosting).toHaveBeenCalledWith({
+      path: { outboundOrderId: 'ob-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { scopeKind: 'self', scopeId: 'emp049', idempotencyKey: expect.any(String) },
+      throwOnError: false,
+    })
+    expect(wms.refreshOutboundOrders).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('completes outbound review without asking for a pack review number (#3848)', async () => {
     const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
     await flushPromises()

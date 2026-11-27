@@ -63,7 +63,7 @@ public sealed class MaintenanceDeadLetterReplayPostgresTests
             {
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var order = Assert.Single(await db.MaintenanceWorkOrders.AsNoTracking().ToListAsync());
-                Assert.Equal(("org-replay", "env-replay", "DEV-REPLAY", "ALARM-ORIGINAL"),
+                Assert.Equal(("org-replay", "env-replay", "DEV-REPLAY", "alarm-event"),
                     (order.OrganizationId, order.EnvironmentId, order.DeviceAssetId, order.SourceAlarmId));
                 Assert.Equal("OVER_TEMP", order.FailureModeCode);
                 Assert.False(order.AlarmCleared);

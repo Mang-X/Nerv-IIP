@@ -17,6 +17,7 @@ import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/wms'
 import { useInventoryScopeDefaults } from '@/composables/inventory/useInventoryScope'
 import { usePagedList } from '@/composables/shared/usePagedList'
+import { useWmsPostingRetry } from '@/composables/wms/useWmsPostingRetry'
 import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
@@ -258,6 +259,12 @@ async function submitCreate() {
     notifyOperationFailure('创建入库单失败', error, '创建入库单失败，请稍后重试。')
   }
 }
+
+const { retry: retryPosting, pending: retryPostingPending } = useWmsPostingRetry(
+  'inbound',
+  filters,
+  refreshInboundOrders,
+)
 
 function canComplete(row: InboundRow) {
   return statusActionGate({
@@ -558,12 +565,31 @@ function formatDateTime(value?: string | null) {
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
       @retry="refreshAll"
     >
-      <template #cell-status="{ row }"
-        ><NvStatusBadge
-          :value="row.status"
-          :label="statusLabel(row.status)"
-          :tone="wmsStatusTone(row.status)"
-      /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge
+          :value="row.inventoryPostingStatus === 'pending' ? 'InventoryPostingPending' : row.status"
+          :label="row.inventoryPostingStatus === 'pending' ? '库存过账中' : statusLabel(row.status)"
+          :tone="
+            wmsStatusTone(
+              row.inventoryPostingStatus === 'pending' ? 'InventoryPostingPending' : row.status,
+            )
+          "
+        />
+        <p
+          v-for="reason in row.postingFailureHistory"
+          :key="reason"
+          class="text-sm text-muted-foreground"
+        >
+          历史过账失败：{{ reason }}
+        </p>
+        <p
+          v-for="movementId in row.inventoryMovementIds"
+          :key="movementId"
+          class="text-sm text-muted-foreground"
+        >
+          库存流水 {{ movementId }}
+        </p>
+      </template>
       <template #cell-quality="{ row }">
         <WmsReceivingQualityFlow
           v-if="row.inboundOrderNo"
@@ -583,6 +609,22 @@ function formatDateTime(value?: string | null) {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-2">
+          <NvButton
+            v-if="
+              canManageReceipts &&
+              contextReady &&
+              row.status === 'InventoryPostingFailed' &&
+              row.inboundOrderId
+            "
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`重试库存过账 ${row.inboundOrderNo ?? ''}`"
+            :disabled="retryPostingPending"
+            @click="retryPosting(row.inboundOrderId)"
+          >
+            重试库存过账
+          </NvButton>
           <NvButton size="sm" type="button" variant="ghost" as-child>
             <RouterLink :to="scanRecordRoute(row)">扫码记录</RouterLink>
           </NvButton>

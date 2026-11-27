@@ -318,7 +318,9 @@ public sealed record PurchaseOrderResponse(
     string SiteCode,
     string Status,
     decimal TotalAmount,
-    IReadOnlyCollection<PurchaseOrderLineResponse> Lines);
+    IReadOnlyCollection<PurchaseOrderLineResponse> Lines,
+    string? ApprovalChainId = null,
+    bool CanReviseBeforeApproval = false);
 
 public sealed record PurchaseOrderLineResponse(
     string LineNo,
@@ -398,7 +400,10 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
                                 source.PurchaseRequisitionLineNo,
                                 source.Quantity))
                             .ToArray()))
-                    .ToArray()))
+                    .ToArray(),
+                x.ApprovalChainId,
+                x.Status == Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus.PendingApproval
+                    && x.ApprovalChainId == null))
             .ToArrayAsync(cancellationToken);
 
         return new ListPurchaseOrdersResponse(orders, total);

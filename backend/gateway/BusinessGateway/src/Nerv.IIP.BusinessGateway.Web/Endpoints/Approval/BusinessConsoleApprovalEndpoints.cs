@@ -137,20 +137,29 @@ public sealed class GetBusinessConsoleApprovalChainEndpoint(
 public sealed class ListBusinessConsoleApprovalTasksEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessApprovalClient approval,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleApprovalTaskListRequest, BusinessConsoleApprovalTaskListResponse>(
         auth,
         BusinessGatewayPermissions.ApprovalsRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleApprovalTaskListRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleApprovalTaskListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleApprovalTaskListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleApprovalTaskListResponse> ForwardAsync(
         BusinessConsoleApprovalTaskListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        approval.ListPendingTasksAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
+        var membership = await ApprovalRoutingMembership.LoadAsync(masterData, tokenProvider.BearerToken,
+            request.OrganizationId, request.EnvironmentId, AuthorizationResult!, cancellationToken);
+        return await approval.ListPendingTasksAsync(tokenProvider.BearerToken,
+            request with { ActorType = actorType, ActorRef = actorRef, RoutingMembership = membership }, cancellationToken);
+    }
 }
 
 [Tags("Business Console Approval")]
@@ -181,11 +190,14 @@ public sealed class ListBusinessConsoleApprovalDecisionsEndpoint(
 public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessApprovalClient approval,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleResolveApprovalStepRequest, BusinessConsoleResolveApprovalStepResponse>(
         auth,
         BusinessGatewayPermissions.ApprovalsManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
     protected override string OrganizationId(BusinessConsoleResolveApprovalStepRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleResolveApprovalStepRequest request) => request.EnvironmentId;
@@ -195,21 +207,24 @@ public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
     protected override string? ResourceId(BusinessConsoleResolveApprovalStepRequest request) =>
         Route<string>("chainId") ?? request.ChainId;
 
-    protected override Task<BusinessConsoleResolveApprovalStepResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleResolveApprovalStepResponse> ForwardAsync(
         BusinessConsoleResolveApprovalStepRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
 
+        var membership = await ApprovalRoutingMembership.LoadAsync(masterData, tokenProvider.BearerToken,
+            request.OrganizationId, request.EnvironmentId, AuthorizationResult!, cancellationToken);
         var downstreamRequest = request with
         {
             ChainId = Route<string>("chainId") ?? request.ChainId,
             StepNo = Route<int>("stepNo"),
             ActorType = actorType,
             ActorRef = actorRef,
+            RoutingMembership = membership,
         };
-        return approval.ResolveStepAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+        return await approval.ResolveStepAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
     }
 }
 

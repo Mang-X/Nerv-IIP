@@ -76,7 +76,11 @@ const {
   taskDecisionOpen,
   taskPager,
   tasksState,
-  templateCodeSuggestions,
+  editingTemplate,
+  selectTemplateStep,
+  setTemplateApproverType,
+  templateStepIndex,
+  templateSteps,
   templateColumns,
   templateError,
   templateForm,
@@ -268,7 +272,11 @@ const {
       :departments-pending="departmentsPending"
       :document-type-options="documentTypeOptions"
       :submit-template="submitTemplate"
-      :template-code-suggestions="templateCodeSuggestions"
+      :editing-template="editingTemplate"
+      :select-template-step="selectTemplateStep"
+      :set-template-approver-type="setTemplateApproverType"
+      :template-step-index="templateStepIndex"
+      :template-steps="templateSteps"
       :template-error="templateError"
       :template-form="templateForm"
       :workers-pending="workersPending"

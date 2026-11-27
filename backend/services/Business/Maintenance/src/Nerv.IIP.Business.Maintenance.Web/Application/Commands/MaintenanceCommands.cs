@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 
@@ -90,7 +91,8 @@ public sealed record CreateMaintenanceWorkOrderCommand(
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
     string? IdempotencyKey = null,
-    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+    MaintenanceAlarmOrigin? AlarmOrigin = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidator<CreateMaintenanceWorkOrderCommand>
 {
@@ -126,6 +128,13 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(
         CreateMaintenanceWorkOrderCommand request,
         CancellationToken cancellationToken)
     {
+        request = request with { SourceAlarmId = MaintenanceText.Optional(request.SourceAlarmId) };
+        if (request.SourceAlarmId is { } alarmId)
+        {
+            await MaintenanceAlarmClearance.AcquireAsync(
+                dbContext, request.OrganizationId, request.EnvironmentId, alarmId, cancellationToken);
+        }
+
         var idempotencyKey = MaintenanceWorkOrderCreateIntents.NormalizeIdempotencyKey(request.IdempotencyKey);
         var fingerprint = request.ExpectedRestoreAtUtc is null
             ? CreateFingerprint(request)
@@ -160,14 +169,14 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(
 
         if (!string.IsNullOrWhiteSpace(request.SourceAlarmId))
         {
-            var existing = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
-                x => x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
-                    && x.SourceAlarmId == request.SourceAlarmId,
-                cancellationToken);
+            var existing = await MaintenanceWorkOrderAlarmAssociation.FindAsync(
+                dbContext, request.OrganizationId, request.EnvironmentId, request.SourceAlarmId,
+                request.AlarmOrigin, cancellationToken);
             if (existing is not null)
             {
-                throw new KnownException(MaintenanceStableWireCodes.SourceAlarmAlreadyBound);
+                await MaintenanceWorkOrderAlarmAssociation.ApplyRecordedClearanceAsync(dbContext, existing, request.AlarmOrigin, cancellationToken);
+                return MaintenanceWorkOrderCreateIntents.CreateReceipt(
+                    dbContext, existing, idempotencyKey, fingerprint);
             }
         }
 
@@ -206,19 +215,9 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(
             workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, request.AssetUnavailableReason, request.ExpectedRestoreAtUtc);
         }
 
+        await MaintenanceWorkOrderAlarmAssociation.ApplyRecordedClearanceAsync(dbContext, workOrder, request.AlarmOrigin, cancellationToken);
         dbContext.MaintenanceWorkOrders.Add(workOrder);
-        if (idempotencyKey is not null)
-        {
-            dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
-                request.OrganizationId,
-                request.EnvironmentId,
-                CreateRuleKey,
-                idempotencyKey,
-                MaintenanceWorkOrderCreateIntents.CreateReceiptCode(workOrder),
-                fingerprint,
-                DateTimeOffset.UtcNow));
-        }
-        return new MaintenanceWorkOrderCommandResult(workOrder.Id, workOrder.Status, workOrder.OpenedAtUtc);
+        return MaintenanceWorkOrderCreateIntents.CreateReceipt(dbContext, workOrder, idempotencyKey, fingerprint);
     }
 
     private static string CreateFingerprint(CreateMaintenanceWorkOrderCommand request) =>
@@ -268,7 +267,25 @@ internal static class MaintenanceWorkOrderCreateIntents
     public static string CreateReceiptCode(MaintenanceWorkOrder workOrder) =>
         string.Create(
             CultureInfo.InvariantCulture,
-            $"{CreateReceiptVersion}|{workOrder.Id}|{workOrder.Status}|{workOrder.OpenedAtUtc:O}");
+            $"{CreateReceiptVersion}|{workOrder.Id}|{MaintenanceWorkOrderStatus.Open}|{workOrder.OpenedAtUtc:O}");
+
+    public static MaintenanceWorkOrderCommandResult CreateReceipt(
+        ApplicationDbContext dbContext, MaintenanceWorkOrder order, string? idempotencyKey, string fingerprint)
+    {
+        if (idempotencyKey is not null)
+        {
+            dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+                order.OrganizationId,
+                order.EnvironmentId,
+                CreateRuleKey,
+                idempotencyKey,
+                CreateReceiptCode(order),
+                fingerprint,
+                DateTimeOffset.UtcNow));
+        }
+
+        return new MaintenanceWorkOrderCommandResult(order.Id, MaintenanceWorkOrderStatus.Open, order.OpenedAtUtc);
+    }
 
     public static CommandLockSettings CreateLockSettings(
         string organizationId,
@@ -337,7 +354,8 @@ public sealed record CreateMaintenanceWorkOrderV2Command(
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
     string? IdempotencyKey = null,
-    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+    MaintenanceAlarmOrigin? AlarmOrigin = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class CreateMaintenanceWorkOrderV2CommandValidator : AbstractValidator<CreateMaintenanceWorkOrderV2Command>
 {
@@ -379,6 +397,13 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(
         CreateMaintenanceWorkOrderV2Command request,
         CancellationToken cancellationToken)
     {
+        request = request with { SourceAlarmId = MaintenanceText.Optional(request.SourceAlarmId) };
+        if (request.SourceAlarmId is { } alarmId)
+        {
+            await MaintenanceAlarmClearance.AcquireAsync(
+                dbContext, request.OrganizationId, request.EnvironmentId, alarmId, cancellationToken);
+        }
+
         var idempotencyKey = MaintenanceWorkOrderCreateIntents.NormalizeIdempotencyKey(request.IdempotencyKey);
         var fingerprint = request.ExpectedRestoreAtUtc is null
             ? CreateFingerprint(request)
@@ -428,14 +453,14 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(
 
         if (!string.IsNullOrWhiteSpace(request.SourceAlarmId))
         {
-            var existing = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
-                x => x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
-                    && x.SourceAlarmId == request.SourceAlarmId,
-                cancellationToken);
+            var existing = await MaintenanceWorkOrderAlarmAssociation.FindAsync(
+                dbContext, request.OrganizationId, request.EnvironmentId, request.SourceAlarmId,
+                request.AlarmOrigin, cancellationToken);
             if (existing is not null)
             {
-                throw new KnownException(MaintenanceStableWireCodes.SourceAlarmAlreadyBound);
+                await MaintenanceWorkOrderAlarmAssociation.ApplyRecordedClearanceAsync(dbContext, existing, request.AlarmOrigin, cancellationToken);
+                return MaintenanceWorkOrderCreateIntents.CreateReceipt(
+                    dbContext, existing, idempotencyKey, fingerprint);
             }
         }
 
@@ -471,20 +496,9 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(
             workOrder.MarkAssetUnavailableByReasonCode(DateTimeOffset.UtcNow, reasonCode, request.ExpectedRestoreAtUtc);
         }
 
+        await MaintenanceWorkOrderAlarmAssociation.ApplyRecordedClearanceAsync(dbContext, workOrder, request.AlarmOrigin, cancellationToken);
         dbContext.MaintenanceWorkOrders.Add(workOrder);
-        if (idempotencyKey is not null)
-        {
-            dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
-                request.OrganizationId,
-                request.EnvironmentId,
-                MaintenanceWorkOrderCreateIntents.CreateRuleKey,
-                idempotencyKey,
-                MaintenanceWorkOrderCreateIntents.CreateReceiptCode(workOrder),
-                fingerprint,
-                DateTimeOffset.UtcNow));
-        }
-
-        return new MaintenanceWorkOrderCommandResult(workOrder.Id, workOrder.Status, workOrder.OpenedAtUtc);
+        return MaintenanceWorkOrderCreateIntents.CreateReceipt(dbContext, workOrder, idempotencyKey, fingerprint);
     }
 
     /// <summary>
@@ -811,11 +825,15 @@ public sealed class StartMaintenanceRepairCommandHandler(ApplicationDbContext db
     }
 }
 
+public sealed record MaintenanceAlarmOrigin(
+    string ExternalAlarmId, string DeviceAssetId, string AlarmCode, DateTimeOffset? ClearedAtUtc = null);
+
 public sealed record MarkMaintenanceWorkOrderAlarmClearedCommand(
     string OrganizationId,
     string EnvironmentId,
     string SourceAlarmId,
-    DateTimeOffset ClearedAtUtc) : ICommand;
+    DateTimeOffset ClearedAtUtc,
+    MaintenanceAlarmOrigin? AlarmOrigin = null) : ICommand;
 
 public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandValidator : AbstractValidator<MarkMaintenanceWorkOrderAlarmClearedCommand>
 {
@@ -832,16 +850,83 @@ public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandHandler(Applicati
 {
     public async Task Handle(MarkMaintenanceWorkOrderAlarmClearedCommand request, CancellationToken cancellationToken)
     {
-        var workOrders = await dbContext.MaintenanceWorkOrders
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.SourceAlarmId == request.SourceAlarmId)
-            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open)
-            .OrderBy(x => x.OpenedAtUtc)
-            .ToArrayAsync(cancellationToken);
-        foreach (var workOrder in workOrders)
+        await MaintenanceAlarmClearance.AcquireAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, request.SourceAlarmId, cancellationToken);
+        var clearance = await dbContext.MaintenanceAlarmClearances.FindAsync(
+            [request.OrganizationId, request.EnvironmentId, request.SourceAlarmId], cancellationToken);
+        if (clearance is null)
         {
-            workOrder.MarkAlarmCleared(request.ClearedAtUtc);
+            clearance = new MaintenanceAlarmClearance(
+                request.OrganizationId, request.EnvironmentId, request.SourceAlarmId, request.ClearedAtUtc.ToUniversalTime());
+            dbContext.MaintenanceAlarmClearances.Add(clearance);
+        }
+
+        var orders = await dbContext.MaintenanceWorkOrders.Where(
+            x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId
+                && x.SourceAlarmId == request.SourceAlarmId).ToArrayAsync(cancellationToken);
+        foreach (var order in orders)
+        {
+            MaintenanceWorkOrderAlarmAssociation.ApplyClearance(order, clearance.ClearedAtUtc);
+        }
+
+        if (orders.Length == 0 && request.AlarmOrigin is not null)
+        {
+            var order = await MaintenanceWorkOrderAlarmAssociation.FindLegacyAsync(
+                dbContext, request.OrganizationId, request.EnvironmentId, request.SourceAlarmId,
+                request.AlarmOrigin, cancellationToken);
+            MaintenanceWorkOrderAlarmAssociation.ApplyClearance(order, clearance.ClearedAtUtc);
+        }
+    }
+}
+
+internal static class MaintenanceWorkOrderAlarmAssociation
+{
+    public static async Task<MaintenanceWorkOrder?> FindAsync(
+        ApplicationDbContext dbContext, string organizationId, string environmentId, string alarmId,
+        MaintenanceAlarmOrigin? origin, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.SourceAlarmId == alarmId,
+            cancellationToken);
+        return order ?? (origin is null ? null
+            : await FindLegacyAsync(dbContext, organizationId, environmentId, alarmId, origin, cancellationToken));
+    }
+
+    public static async Task<MaintenanceWorkOrder?> FindLegacyAsync(
+        ApplicationDbContext dbContext, string organizationId, string environmentId, string alarmId,
+        MaintenanceAlarmOrigin origin, CancellationToken cancellationToken)
+    {
+        // 旧版自动工单曾保存外部编号。只有同设备、同告警码的旧自动工单可以补全关联。
+        var order = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId
+                && x.SourceAlarmId == origin.ExternalAlarmId && x.DeviceAssetId == origin.DeviceAssetId
+                && x.FailureModeCode == origin.AlarmCode && x.OpenedBy == IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            cancellationToken);
+        order?.BindCanonicalAlarmId(alarmId);
+        return order;
+    }
+
+    public static void ApplyClearance(MaintenanceWorkOrder? workOrder, DateTimeOffset clearedAtUtc)
+    {
+        if (workOrder?.Status is MaintenanceWorkOrderStatus.Open or MaintenanceWorkOrderStatus.Accepted
+            or MaintenanceWorkOrderStatus.InProgress or MaintenanceWorkOrderStatus.Paused
+            or MaintenanceWorkOrderStatus.WaitingForParts)
+        {
+            workOrder.MarkAlarmCleared(clearedAtUtc);
+        }
+    }
+
+    public static async Task ApplyRecordedClearanceAsync(
+        ApplicationDbContext dbContext, MaintenanceWorkOrder workOrder, MaintenanceAlarmOrigin? origin, CancellationToken cancellationToken)
+    {
+        if (workOrder.SourceAlarmId is { } alarmId)
+        {
+            var clearance = await dbContext.MaintenanceAlarmClearances.FindAsync(
+                [workOrder.OrganizationId, workOrder.EnvironmentId, alarmId], cancellationToken);
+            if ((clearance?.ClearedAtUtc ?? origin?.ClearedAtUtc) is { } clearedAtUtc)
+            {
+                ApplyClearance(workOrder, clearedAtUtc);
+            }
         }
     }
 }

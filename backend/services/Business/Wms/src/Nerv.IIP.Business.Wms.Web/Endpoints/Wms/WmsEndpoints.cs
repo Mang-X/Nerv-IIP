@@ -192,7 +192,15 @@ public sealed record CompleteInboundOrderRequest(
     string? ScopeId = null,
     long ExpectedVersion = 0);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
-public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
+public sealed record RetryInboundInventoryPostingRequest(
+    InboundOrderId InboundOrderId,
+    string IdempotencyKey,
+    string? OrganizationId,
+    string? EnvironmentId,
+    string? ActorPrincipalId,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes,
+    string? ScopeKind,
+    string? ScopeId);
 public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, string EnvironmentId, string SourceDocumentType, string SourceDocumentId, string Reason);
 public sealed record CancelInboundOrdersForSourceResponse(int CancelledCount);
 public sealed record CreateOutboundOrderRequest(
@@ -253,7 +261,15 @@ public sealed record CompleteOutboundOrderRequest(
     long ExpectedVersion = 0);
 public sealed record CancelOutboundOrderRequest(OutboundOrderId OutboundOrderId, string Reason);
 public sealed record CancelOutboundOrderResponse(OutboundOrderId OutboundOrderId, string Status);
-public sealed record RetryOutboundInventoryPostingRequest(OutboundOrderId OutboundOrderId, string IdempotencyKey);
+public sealed record RetryOutboundInventoryPostingRequest(
+    OutboundOrderId OutboundOrderId,
+    string IdempotencyKey,
+    string? OrganizationId,
+    string? EnvironmentId,
+    string? ActorPrincipalId,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes,
+    string? ScopeKind,
+    string? ScopeId);
 public sealed record CreateCountExecutionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -749,7 +765,12 @@ public sealed class RetryInboundInventoryPostingEndpoint(ISender sender) : WmsEn
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<RetryInboundInventoryPostingEndpoint>());
     public override async Task HandleAsync(RetryInboundInventoryPostingRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RetryInboundInventoryPostingCommand(req.InboundOrderId, req.IdempotencyKey), ct);
+        var result = await sender.Send(new RetryInboundInventoryPostingCommand(
+            req.InboundOrderId,
+            req.IdempotencyKey,
+            new WarehouseAssignedResourceExecutionRequest(
+                req.OrganizationId, req.EnvironmentId, req.ActorPrincipalId, req.AuthorizedSiteCodes,
+                req.ScopeKind, req.ScopeId, string.Empty, string.Empty, string.Empty, null, null)), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
@@ -1253,7 +1274,12 @@ public sealed class RetryOutboundInventoryPostingEndpoint(ISender sender) : WmsE
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<RetryOutboundInventoryPostingEndpoint>());
     public override async Task HandleAsync(RetryOutboundInventoryPostingRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RetryOutboundInventoryPostingCommand(req.OutboundOrderId, req.IdempotencyKey), ct);
+        var result = await sender.Send(new RetryOutboundInventoryPostingCommand(
+            req.OutboundOrderId,
+            req.IdempotencyKey,
+            new WarehouseAssignedResourceExecutionRequest(
+                req.OrganizationId, req.EnvironmentId, req.ActorPrincipalId, req.AuthorizedSiteCodes,
+                req.ScopeKind, req.ScopeId, string.Empty, string.Empty, string.Empty, null, null)), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }

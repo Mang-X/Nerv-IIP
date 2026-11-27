@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
-using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Web.Application.Validation;
 using Nerv.IIP.Contracts.Approval;
 
@@ -14,7 +13,10 @@ public sealed record ResolveApprovalStepCommand(
     string ActorType,
     string ActorRef,
     string Decision,
-    string? Comment) : ICommand<ApprovalDecisionId?>;
+    string? Comment,
+    string? RoleRefs = null,
+    string? DepartmentRef = null,
+    string? TargetStepId = null) : ICommand<ApprovalDecisionId?>;
 
 public sealed class ResolveApprovalStepCommandValidator : AbstractValidator<ResolveApprovalStepCommand>
 {
@@ -55,23 +57,21 @@ public sealed class ResolveApprovalStepCommandHandler(ApplicationDbContext dbCon
 
         var actorType = request.ActorType.Trim().ToLowerInvariant();
         var actorRef = request.ActorRef.Trim();
-        var nowUtc = DateTimeOffset.UtcNow;
-        var matchingDelegations = await dbContext.ApprovalDelegations
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == chain.OrganizationId
-                && x.EnvironmentId == chain.EnvironmentId
-                && x.Status == ApprovalDelegationStatuses.Active
-                && x.DelegateActorType == actorType
-                && x.DelegateActorRef == actorRef
-                && (x.DocumentType == null || x.DocumentType == chain.DocumentReference.DocumentType)
-                && x.EffectiveFromUtc <= nowUtc
-                && x.EffectiveToUtc >= nowUtc)
-            .OrderBy(x => x.EffectiveToUtc)
-            .ToListAsync(cancellationToken);
-        var matchingDelegation = matchingDelegations.FirstOrDefault(x => chain.Steps.Any(step =>
-            step.StepNo == request.StepNo
-            && step.Status == ApprovalStepStatuses.Pending
-            && step.MatchesApprover(x.DelegatorActorType, x.DelegatorActorRef)));
+        var actors = await ApprovalTaskActors.LoadAsync(dbContext, request.OrganizationId, request.EnvironmentId,
+            actorType, actorRef, request.RoleRefs, request.DepartmentRef, cancellationToken);
+        var eligibleSteps = chain.Steps.Where(x => x.StepNo == request.StepNo
+            && actors.Matches(x.ApproverType, x.ApproverRef, chain.DocumentReference.DocumentType));
+        var step = request.TargetStepId is null
+            ? eligibleSteps
+                .Where(x => x.Status == ApprovalStepStatuses.Pending)
+                .OrderByDescending(x => x.MatchesApprover(actorType, actorRef))
+                .ThenByDescending(x => actors.IsDirect(x.ApproverType, x.ApproverRef))
+                .ThenBy(x => x.ApproverType, StringComparer.Ordinal)
+                .ThenBy(x => x.ApproverRef, StringComparer.Ordinal)
+                .FirstOrDefault()
+            : eligibleSteps.SingleOrDefault(x => x.Id.ToString() == request.TargetStepId)
+                ?? throw new KnownException("当前账号不能处理此审批任务。");
+        var onBehalfOf = step is not null && !step.MatchesApprover(actorType, actorRef) ? step : null;
         try
         {
             var decision = chain.ResolveStep(
@@ -80,8 +80,8 @@ public sealed class ResolveApprovalStepCommandHandler(ApplicationDbContext dbCon
                 request.ActorRef,
                 request.Decision,
                 request.Comment,
-                matchingDelegation?.DelegatorActorType,
-                matchingDelegation?.DelegatorActorRef);
+                onBehalfOf?.ApproverType,
+                onBehalfOf?.ApproverRef);
             return decision.Id;
         }
         catch (InvalidOperationException exception)

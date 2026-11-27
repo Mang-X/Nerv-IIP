@@ -126,7 +126,8 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
     ApplicationDbContext dbContext,
     ISender sender,
     TimeProvider timeProvider,
-    SchedulingFreezeSettings freezeSettings) : ICommandHandler<CreateSchedulePlanRevisionCommand, SchedulePlanRevisionContract>
+    SchedulingFreezeSettings freezeSettings,
+    SchedulingInsertionInputs? insertionInputs = null) : ICommandHandler<CreateSchedulePlanRevisionCommand, SchedulePlanRevisionContract>
 {
     public async Task<SchedulePlanRevisionContract> Handle(
         CreateSchedulePlanRevisionCommand request,
@@ -134,7 +135,16 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
     {
         if (SchedulingWorkbenchLimits.TryGetInsertionJobId(request.PlanId, out var jobId))
         {
-            return await SaveInsertionCandidateAsync(request, jobId, cancellationToken);
+            // 候选首次保存及重试沿用原结果；已保存方案可以带人工锁生成新修订。
+            var repreviewSavedPlan = request.LockedAssignments.Count > 0 &&
+                await dbContext.SchedulePlans.AsNoTracking().AnyAsync(x =>
+                    x.PlanId == request.PlanId && x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId, cancellationToken);
+            if (!repreviewSavedPlan)
+                return await SaveInsertionCandidateAsync(request, jobId, cancellationToken);
+
+            if (request.IncludedOrderIds.Count > SchedulingWorkbenchLimits.MaxOrderCount)
+                throw new KnownException("锁定重预览最多支持 10 张工单，请调整选择后重试。");
         }
 
         var basePlanEntity = await dbContext.SchedulePlans.AsNoTracking()
@@ -276,18 +286,8 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         }
 
         var problem = result.Snapshot.Problem with { ProblemId = request.PlanId };
-        var reservations = result.Snapshot.FixedReservations.Select(x => new FixedWorkCenterReservation(
-            x.OrderId, x.OperationId,
-            problem.Orders.Single(order => order.OrderId == x.OrderId).Operations
-                .Single(operation => operation.OperationId == x.OperationId).OperationSequence,
-            x.WorkCenterId, x.StartUtc, x.EndUtc, x.ResourceId)).ToArray();
-        var freezeContext = result.Snapshot.Freeze;
-        var freeze = new SchedulingFreezeSnapshot(freezeContext.AsOfUtc,
-            freezeContext.DefaultWindowEndUtc - freezeContext.AsOfUtc,
-            freezeContext.WorkCenterWindows.ToDictionary(x => x.WorkCenterId, x => x.EndUtc - freezeContext.AsOfUtc,
-                StringComparer.Ordinal),
-            freezeContext.Assignments.Select(x => new SchedulingFrozenAssignmentSnapshot(x.Assignment,
-                x.Reasons.Aggregate(0, (reasons, reason) => reasons | (int)reason))).ToArray());
+        var reservations = SchedulingInsertionInputs.FixedReservations(result.Snapshot);
+        var freeze = SchedulingInsertionInputs.FreezeSnapshot(result.Snapshot.Freeze);
         var existing = await dbContext.SchedulePlans.AsNoTracking()
             .Include(x => x.Assignments).Include(x => x.ResourceLoads).Include(x => x.Conflicts).Include(x => x.UnscheduledOperations)
             .AsSplitQuery().SingleOrDefaultAsync(x => x.PlanId == request.PlanId &&
@@ -299,6 +299,26 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         }
         else
         {
+            var baselineStatus = await dbContext.SchedulePlans.AsNoTracking()
+                .Where(x => x.PlanId == result.BaselinePlanId && x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId)
+                .Select(x => (SchedulePlanLifecycleStatus?)x.Status).SingleOrDefaultAsync(cancellationToken);
+            if (baselineStatus is null or SchedulePlanLifecycleStatus.Superseded or SchedulePlanLifecycleStatus.Revoked)
+                throw InsertionCandidateStale();
+
+            var invalidatedAfterCalculation = await dbContext.SchedulePlanInvalidations.AsNoTracking()
+                .AnyAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+                    x.PlanId == result.BaselinePlanId && x.RecordedAtUtc > result.Snapshot.Freeze.AsOfUtc &&
+                    x.ReasonCode != SchedulingPlanInvalidationReasons.QualityReleased, cancellationToken);
+            if (invalidatedAfterCalculation)
+                throw InsertionCandidateStale();
+
+            // 沿用候选计算时刻的冻结窗口，重新读取当前权威输入。
+            var current = await insertionInputs!.LoadAsync(detail.Input, detail.AcceptedBaseline.Baseline,
+                detail.AcceptedBaseline.Problem, freezeSettings.At(result.Snapshot.Freeze.AsOfUtc), cancellationToken);
+            if (SchedulingInsertionInputs.ComparableInput(current) != SchedulingInsertionInputs.ComparableInput(result.Snapshot))
+                throw InsertionCandidateStale();
+
             var generated = SchedulePlanContractMapper.WithStatus(result.Candidate with { ProblemId = problem.ProblemId },
                 SchedulePlanStatusContract.Generated);
             var entity = SchedulePlan.FromGeneratedPlan(request.OrganizationId, request.EnvironmentId,
@@ -314,6 +334,9 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         var impact = await LoadLatestImpactAsync(request with { PlanId = result.BaselinePlanId }, problem, baseline, cancellationToken);
         return new(candidate, impact, Compare(baseline, candidate));
     }
+
+    private static KnownException InsertionCandidateStale() =>
+        new("插单候选已失效，排程输入或基线已变化，请重新计算。");
 
     private static IReadOnlyCollection<SchedulingLockedAssignmentContract> ValidateLocks(
         SchedulingProblemContract problem,

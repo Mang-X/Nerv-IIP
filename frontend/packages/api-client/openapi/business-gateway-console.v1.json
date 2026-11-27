@@ -3245,6 +3245,87 @@
         ]
       }
     },
+    "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry": {
+      "post": {
+        "tags": [
+          "Business Console WMS",
+          "Api"
+        ],
+        "operationId": "retryBusinessConsoleWmsInboundInventoryPosting",
+        "parameters": [
+          {
+            "name": "inboundOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleRetryWmsInboundInventoryPostingRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsInboundInventoryPostingRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovementResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry": {
       "post": {
         "tags": [
@@ -30898,6 +30979,71 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/procurement/purchase-orders/{purchaseOrderNo}/revision": {
+      "post": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "reviseBusinessConsoleErpPurchaseOrder",
+        "parameters": [
+          {
+            "name": "purchaseOrderNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleReviseErpPurchaseOrderRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReviseErpPurchaseOrderResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/procurement/purchase-receipts": {
       "post": {
         "tags": [
@@ -37380,6 +37526,24 @@
           "version": {
             "type": "integer",
             "format": "int64"
+          },
+          "inventoryPostingStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryMovementIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "postingFailureHistory": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -38351,6 +38515,10 @@
           "failureMessage": {
             "type": "string",
             "nullable": true
+          },
+          "inventoryMovementId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -38435,6 +38603,25 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsInboundInventoryPostingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0
+          },
+          "scopeKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "scopeId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -38443,6 +38630,14 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0
+          },
+          "scopeKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "scopeId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -66893,6 +67088,13 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineItem"
             }
+          },
+          "approvalChainId": {
+            "type": "string",
+            "nullable": true
+          },
+          "canReviseBeforeApproval": {
+            "type": "boolean"
           }
         }
       },
@@ -68806,6 +69008,88 @@
             "type": "string"
           },
           "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "promisedDate": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReviseErpPurchaseOrderResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "approvalChainId": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "lines"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 0,
+            "nullable": false
+          },
+          "lines": {
+            "type": "array",
+            "minLength": 1,
+            "nullable": false,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderLine"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderLine": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "orderedQuantity": {
             "type": "number",
             "format": "decimal"
           },
@@ -73734,6 +74018,9 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalTemplateStepItem"
             }
+          },
+          "createOnly": {
+            "type": "boolean"
           }
         }
       },
@@ -74019,6 +74306,10 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "stepId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -74163,6 +74454,10 @@
             "type": "string"
           },
           "comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetStepId": {
             "type": "string",
             "nullable": true
           }

@@ -69,6 +69,8 @@ export {
 
 export {
   completeBusinessConsoleWmsCountExecution,
+  retryBusinessConsoleWmsInboundInventoryPosting,
+  retryBusinessConsoleWmsOutboundInventoryPosting,
   completeBusinessConsoleWmsInboundOrder,
   completeBusinessConsoleWmsOutboundOrder,
   listBusinessConsoleWmsInboundOrders,

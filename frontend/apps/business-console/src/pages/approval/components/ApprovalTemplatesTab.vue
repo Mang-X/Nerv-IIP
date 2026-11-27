@@ -22,9 +22,9 @@ defineProps<{
 <template>
   <NvTabsContent value="templates" class="grid gap-3">
     <div class="flex justify-end">
-      <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openTemplate">
+      <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openTemplate()">
         <FilePlus2Icon aria-hidden="true" />
-        维护模板
+        新建模板
       </NvButton>
     </div>
     <NvDataTable
@@ -52,6 +52,11 @@ defineProps<{
           :value="row.isActive ? 'active' : 'disabled'"
           :label="formatStatus(row.isActive)"
       /></template>
+      <template #cell-actions="{ row }">
+        <NvButton v-if="canManageApprovals" size="sm" variant="ghost" @click="openTemplate(row)">
+          编辑
+        </NvButton>
+      </template>
     </NvDataTable>
   </NvTabsContent>
 </template>

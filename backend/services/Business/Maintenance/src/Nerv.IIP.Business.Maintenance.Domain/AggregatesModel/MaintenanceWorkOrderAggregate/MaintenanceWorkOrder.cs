@@ -392,6 +392,13 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         IncrementVersion();
     }
 
+    public void BindCanonicalAlarmId(string alarmEventId)
+    {
+        var canonicalId = MaintenanceText.Required(alarmEventId, nameof(alarmEventId));
+        SourceReferenceId = canonicalId;
+        SourceAlarmId = canonicalId;
+    }
+
     public void MarkAlarmCleared(DateTimeOffset clearedAtUtc)
     {
         EnsureOpen();

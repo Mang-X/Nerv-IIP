@@ -42,6 +42,11 @@ vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('10') }),
 }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: { principalId: 'buyer', permissionCodes: ['business.erp.procurement.manage'] },
+  }),
+}))
 vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyOperationFailure: vi.fn() }))
 
 const input = {

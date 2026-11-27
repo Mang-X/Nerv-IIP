@@ -33,10 +33,10 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     private const string Pending = "pending";
     private const string Reserved = "reserved";
-    private const string ReadyToPrint = "ready-to-print";
-    private const string SentToPrinter = "sent-to-printer";
-    private const string DeliveryUnknown = "delivery-unknown";
-    private const string Printed = "printed";
+    public const string ReadyToPrint = "ready-to-print";
+    public const string SentToPrinter = "sent-to-printer";
+    public const string DeliveryUnknown = "delivery-unknown";
+    public const string Printed = "printed";
     private const string Failed = "failed";
 
     private LabelPrintBatch()

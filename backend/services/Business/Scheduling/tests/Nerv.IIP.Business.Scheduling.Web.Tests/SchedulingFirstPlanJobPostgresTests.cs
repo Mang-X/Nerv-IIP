@@ -950,7 +950,7 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public KnownException? Failure { get; init; }
         public int Calls { get; private set; }
-        public SchedulingProblemContract? InsertionProblem { get; init; }
+        public SchedulingProblemContract? InsertionProblem { get; set; }
         public string? RushOrderId { get; init; }
         public SchedulingProblemContract? CandidateProblem { get; init; }
         public async Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(string org, string env,

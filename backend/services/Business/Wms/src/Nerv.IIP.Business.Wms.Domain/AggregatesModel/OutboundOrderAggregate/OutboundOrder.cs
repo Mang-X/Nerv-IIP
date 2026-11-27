@@ -409,7 +409,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                     line.QualityStatus,
                     line.OwnerType,
                     line.OwnerId,
-                    line.RequestedQuantity,
+                    line.IssuedQuantity,
                     line.InventoryReservationId);
             })
             .ToArray();

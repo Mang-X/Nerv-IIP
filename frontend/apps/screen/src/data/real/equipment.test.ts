@@ -105,6 +105,7 @@ describe('readEquipmentOverview', () => {
         items: [
           {
             alarmEventId: 'AL-1',
+            externalAlarmId: 'EXTERNAL-ALARM',
             deviceAssetId: 'DEV-OIL-02',
             alarmCode: 'PRESS_HIGH',
             severity: 'critical',
@@ -114,6 +115,7 @@ describe('readEquipmentOverview', () => {
           },
           {
             alarmEventId: 'AL-2',
+            externalAlarmId: 'EXTERNAL-ALARM',
             deviceAssetId: 'DEV-CNC-01',
             alarmCode: 'TEMP_WARN',
             severity: 'warning',
@@ -123,6 +125,7 @@ describe('readEquipmentOverview', () => {
           },
           {
             alarmEventId: 'AL-3',
+            externalAlarmId: 'EXTERNAL-ALARM',
             deviceAssetId: 'DEV-CNC-01',
             alarmCode: 'DOOR_OPEN',
             severity: 'info',
@@ -148,6 +151,7 @@ describe('readEquipmentOverview', () => {
             workOrderId: 'WO-2',
             deviceAssetId: 'DEV-CNC-01',
             status: 'Completed',
+            sourceAlarmId: 'AL-3',
             openedAtUtc: '2026-07-07T10:00:00Z',
           },
         ],
@@ -218,6 +222,8 @@ describe('readEquipmentOverview', () => {
     expect(press.escalated).toBe(true)
     expect(press.level).toBe('sev') // critical → sev
     expect(press.wo).toBe('WO-1') // sourceAlarmId=AL-1 → WO-1
+    expect(ov.alarms.find((alarm) => alarm.name === 'TEMP_WARN')?.wo).toBe('—')
+    expect(ov.alarms.find((alarm) => alarm.name === 'DOOR_OPEN')?.wo).toBe('WO-2')
     expect(press.line).toBe('液压站') // roster 名称
 
     const temp = ov.alarms.find((a) => a.name === 'TEMP_WARN')!

@@ -223,6 +223,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     assignedOperatorUserId?: string | null;
     assignedPoolCode?: string | null;
     version?: number;
+    inventoryPostingStatus?: string | null;
+    inventoryMovementIds?: Array<string> | null;
+    postingFailureHistory?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext = {
@@ -473,6 +476,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     inventoryPostingStatus?: string;
     failureCode?: string | null;
     failureMessage?: string | null;
+    inventoryMovementId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderListRequest = {
@@ -495,8 +499,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     expectedVersion: number;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsInboundInventoryPostingRequest = {
+    idempotencyKey?: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest = {
     idempotencyKey?: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateWmsCountExecutionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8147,6 +8159,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     receiptReadiness?: string;
     totalAmount?: number;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineItem>;
+    approvalChainId?: string | null;
+    canReviseBeforeApproval?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineItem = {
@@ -8632,6 +8646,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     skuCode?: string;
     uomCode?: string;
     quantity?: number;
+    unitPrice?: number;
+    promisedDate?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReviseErpPurchaseOrderResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderResponse = {
+    approvalChainId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderRequest = {
+    organizationId: string;
+    environmentId: string;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderLine>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderLine = {
+    lineNo?: string;
+    orderedQuantity?: number;
     unitPrice?: number;
     promisedDate?: string;
 };
@@ -10032,6 +10067,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     version?: number;
     isActive?: boolean;
     steps?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalTemplateStepItem>;
+    createOnly?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStartApprovalChainResponse = NetCorePalExtensionsDtoResponseData & {
@@ -10118,6 +10154,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     documentId?: string;
     documentLineId?: string | null;
     dueAtUtc?: string | null;
+    stepId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalTaskListRequest = {
@@ -10167,6 +10204,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     actorRef?: string;
     decision?: string;
     comment?: string | null;
+    targetStepId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleApprovalDelegationListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -11470,6 +11508,44 @@ export type CompleteBusinessConsoleWmsOutboundOrderResponses = {
 };
 
 export type CompleteBusinessConsoleWmsOutboundOrderResponse = CompleteBusinessConsoleWmsOutboundOrderResponses[keyof CompleteBusinessConsoleWmsOutboundOrderResponses];
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsInboundInventoryPostingRequest;
+    path: {
+        inboundOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry';
+};
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingError = RetryBusinessConsoleWmsInboundInventoryPostingErrors[keyof RetryBusinessConsoleWmsInboundInventoryPostingErrors];
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovementResponse;
+};
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingResponse = RetryBusinessConsoleWmsInboundInventoryPostingResponses[keyof RetryBusinessConsoleWmsInboundInventoryPostingResponses];
 
 export type RetryBusinessConsoleWmsOutboundInventoryPostingData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest;
@@ -24201,6 +24277,41 @@ export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponse
 };
 
 export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponse = ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponses[keyof ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponses];
+
+export type ReviseBusinessConsoleErpPurchaseOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderRequest;
+    path: {
+        purchaseOrderNo: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/erp/procurement/purchase-orders/{purchaseOrderNo}/revision';
+};
+
+export type ReviseBusinessConsoleErpPurchaseOrderErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReviseBusinessConsoleErpPurchaseOrderError = ReviseBusinessConsoleErpPurchaseOrderErrors[keyof ReviseBusinessConsoleErpPurchaseOrderErrors];
+
+export type ReviseBusinessConsoleErpPurchaseOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReviseErpPurchaseOrderResponse;
+};
+
+export type ReviseBusinessConsoleErpPurchaseOrderResponse = ReviseBusinessConsoleErpPurchaseOrderResponses[keyof ReviseBusinessConsoleErpPurchaseOrderResponses];
 
 export type RecordBusinessConsoleErpPurchaseReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest;

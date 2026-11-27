@@ -140,10 +140,23 @@ vi.mock('@/composables/approval/useBusinessApproval', () => ({
       {
         templateId: 'template-1',
         templateCode: 'purchase-order',
-        documentType: '采购订单',
+        documentType: 'purchase-order',
         version: 1,
         isActive: true,
-        steps: [],
+        steps: [
+          { stepNo: 1, stepName: '采购审核', approverType: 'role', approverRef: 'buyer' },
+          {
+            stepNo: 2,
+            stepName: '财务复核',
+            approverType: 'department',
+            approverRef: 'finance',
+            dueInHours: 8,
+            parallelGroupKey: 'finance',
+            completionPolicy: 'any',
+            conditionExpression: '{"minimumAmount":1000}',
+            condition: { minimumAmount: 1000 },
+          },
+        ],
       },
     ]),
     templatesPending: shallowRef(false),
@@ -413,7 +426,7 @@ describe('approval display identities', () => {
     await flushPromises()
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('维护模板'))!
+      .find((button) => button.text().includes('新建模板'))!
       .trigger('click')
     const typeSelect = wrapper
       .findAllComponents({ name: 'NvSelect' })
@@ -431,7 +444,7 @@ describe('approval display identities', () => {
     await popup.find('input[role="combobox"]').setValue('李华')
     await popup.find('[role="option"]').trigger('click')
     expect(wrapper.find('#approval-template-actor-ref').text()).toBe('李华')
-    wrapper.findComponent({ name: 'NvCombobox' }).vm.$emit('update:modelValue', 'purchase-order')
+    await wrapper.find('#approval-template-code').setValue('purchase-order')
     wrapper
       .findAllComponents({ name: 'NvSelect' })
       .find((select) => select.find('#approval-template-doc').exists())!
@@ -443,9 +456,44 @@ describe('approval display identities', () => {
       .trigger('submit')
     expect(approvalState.saveTemplate).toHaveBeenCalledWith(
       expect.objectContaining({
-        steps: [expect.objectContaining({ approverType: 'user', approverRef: 'manager-c' })],
+        steps: [
+          expect.objectContaining({ stepNo: 1, approverType: 'user', approverRef: 'manager-c' }),
+        ],
       }),
     )
     wrapper.unmount()
   })
+})
+
+it('保存修改的模板时，保留其他步骤及结构化路由条件', async () => {
+  const wrapper = mountApproval(['business.approvals.manage'], true)
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === '编辑')!
+    .trigger('click')
+  await wrapper.get('#approval-template-step-name').setValue('采购经理审核')
+  await wrapper
+    .findAll('form')
+    .find((form) => form.find('#approval-template-code').exists())!
+    .trigger('submit')
+  expect(approvalState.saveTemplate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      templateCode: 'purchase-order',
+      createOnly: false,
+      steps: [
+        expect.objectContaining({ stepNo: 1, stepName: '采购经理审核', approverRef: 'buyer' }),
+        expect.objectContaining({
+          stepNo: 2,
+          stepName: '财务复核',
+          approverRef: 'finance',
+          dueInHours: 8,
+          parallelGroupKey: 'finance',
+          completionPolicy: 'any',
+          conditionExpression: null,
+          condition: { minimumAmount: 1000 },
+        }),
+      ],
+    }),
+  )
+  wrapper.unmount()
 })

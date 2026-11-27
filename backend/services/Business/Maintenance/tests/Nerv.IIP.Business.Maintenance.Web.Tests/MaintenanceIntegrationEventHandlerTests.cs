@@ -222,7 +222,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
         var workOrders = await dbContext.MaintenanceWorkOrders.ToArrayAsync();
         Assert.Single(workOrders);
-        Assert.Equal("alarm-001", workOrders[0].SourceAlarmId);
+        Assert.Equal(alarm.Payload.AlarmEventId, workOrders[0].SourceAlarmId);
         Assert.Equal("p1", workOrders[0].Priority);
         Assert.Equal("OVER_TEMP", workOrders[0].FailureModeCode);
         Assert.Equal("temperature", workOrders[0].FailureCauseCode);
@@ -231,6 +231,119 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.Equal(1, sender.CreateWorkOrderCommandCount);
         Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
         Assert.Empty(await deadLetterStore.ListAsync(OpenWorkOrderWhenAlarmRaisedHandler.ConsumerName, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Manual_and_automatic_routes_share_the_alarm_order_and_preserve_early_clearance(bool manualFirst)
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var sender = new CommandOnlySender(dbContext);
+        var raised = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetters);
+        var cleared = new MarkWorkOrderAlarmClearedHandler(sender, dbContext, deadLetters);
+        var clearedAt = new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
+        var alarm = CreateAlarmRaisedEvent("evt-raise-late", "rule-001", clearedAt.AddHours(-1));
+        await cleared.HandleAsync(
+            CreateAlarmClearedEvent("evt-clear-first", "rule-001", alarm.Payload.RaisedAtUtc, clearedAt),
+            CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var manual = new CreateMaintenanceWorkOrderV2Command(
+            "org-001", "env-dev", "DEV-CNC-01", "p1", alarm.Payload.AlarmEventId,
+            "user:engineer", AssetUnavailableReasonCode: null, IdempotencyKey: "manual-alarm-001");
+        var manualHandler = new CreateMaintenanceWorkOrderV2CommandHandler(dbContext);
+        if (!manualFirst)
+        {
+            await raised.HandleAsync(alarm, CancellationToken.None);
+            dbContext.ChangeTracker.Clear();
+        }
+
+        var result = await manualHandler.Handle(manual, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        if (manualFirst)
+        {
+            await raised.HandleAsync(alarm, CancellationToken.None);
+        }
+
+        var order = await dbContext.MaintenanceWorkOrders.SingleAsync();
+        Assert.Equal(result.WorkOrderId, order.Id);
+        Assert.Equal(alarm.Payload.AlarmEventId, order.SourceAlarmId);
+        Assert.Equal(clearedAt, order.AlarmClearedAtUtc);
+    }
+
+    [MaintenanceRealPostgresFact]
+    public async Task Clearance_survives_reopen_and_alarm_routes_return_the_same_order_on_postgres()
+    {
+        await ResetMaintenanceSchemaAsync();
+        var clearedAt = new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
+        const string alarmId = "telemetry-alarm-4567";
+        await using (var db = CreatePostgresDbContext(LaneConnectionString))
+        {
+            await db.Database.MigrateAsync();
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            await new MarkMaintenanceWorkOrderAlarmClearedCommandHandler(db).Handle(
+                new MarkMaintenanceWorkOrderAlarmClearedCommand("org-001", "env-dev", alarmId, clearedAt),
+                CancellationToken.None);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
+        await using var automatic = CreatePostgresDbContext(LaneConnectionString);
+        await using var automaticTransaction = await automatic.Database.BeginTransactionAsync();
+        var created = await new CreateMaintenanceWorkOrderCommandHandler(automatic).Handle(
+            new CreateMaintenanceWorkOrderCommand("org-001", "env-dev", "DEV-CNC-01", "p1", alarmId,
+                "industrialTelemetry", "OVER_TEMP"),
+            CancellationToken.None);
+        await automatic.SaveChangesAsync();
+
+        await using var manual = CreatePostgresDbContext(LaneConnectionString);
+        await using var manualTransaction = await manual.Database.BeginTransactionAsync();
+        var manualCommand = new CreateMaintenanceWorkOrderV2Command(
+            "org-001", "env-dev", "DEV-CNC-01", "p1", alarmId, "user:engineer",
+            AssetUnavailableReasonCode: null, IdempotencyKey: "manual-retry-4567");
+        var manualResult = new CreateMaintenanceWorkOrderV2CommandHandler(manual).Handle(
+            manualCommand, CancellationToken.None);
+        await automaticTransaction.CommitAsync();
+        Assert.Equal(created.WorkOrderId, (await manualResult).WorkOrderId);
+        await manual.SaveChangesAsync();
+        await manualTransaction.CommitAsync();
+
+        await using var verify = CreatePostgresDbContext(LaneConnectionString);
+        var order = await verify.MaintenanceWorkOrders.SingleAsync();
+        Assert.Equal(created.WorkOrderId, order.Id);
+        Assert.Equal(alarmId, order.SourceAlarmId);
+        Assert.Equal(clearedAt, order.AlarmClearedAtUtc);
+        Assert.True(order.AssetUnavailable);
+    }
+
+    [Fact]
+    public async Task Clearance_recovers_the_legacy_order_for_the_same_device_and_alarm_code()
+    {
+        await using var db = CreateDbContext();
+        var legacy = MaintenanceWorkOrder.OpenFromAlarm(
+            "org-001", "env-dev", "MWO-LEGACY-4567", "DEV-CNC-01", "legacy-rule", "p1",
+            failureModeCode: "OVER_TEMP");
+        legacy.Accept("user:engineer");
+        db.MaintenanceWorkOrders.Add(legacy);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var clearedAt = new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
+        var handler = new MarkWorkOrderAlarmClearedHandler(
+            new CommandOnlySender(db), db, new InMemoryIntegrationEventDeadLetterStore());
+        await handler.HandleAsync(
+            CreateAlarmClearedEvent("evt-legacy-clear", "legacy-rule", clearedAt.AddHours(-1), clearedAt),
+            CancellationToken.None);
+
+        var order = await db.MaintenanceWorkOrders.SingleAsync();
+        Assert.Equal(legacy.Id, order.Id);
+        Assert.Equal("alarm-event-001", order.SourceAlarmId);
+        Assert.Equal(clearedAt, order.AlarmClearedAtUtc);
+        Assert.Equal(MaintenanceWorkOrderStatus.Accepted, order.Status);
     }
 
     [Fact]
@@ -339,7 +452,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         await clearedHandler.HandleAsync(CreateAlarmClearedEvent("evt-alarm-clear-537", "TEMP_RULE", raisedAtUtc, clearedAtUtc), CancellationToken.None);
 
         var workOrder = await dbContext.MaintenanceWorkOrders.SingleAsync();
-        Assert.Equal("TEMP_RULE", workOrder.SourceAlarmId);
+        Assert.Equal("alarm-event-001", workOrder.SourceAlarmId);
         Assert.True(workOrder.AssetUnavailable);
         Assert.True(workOrder.AlarmCleared);
         Assert.Equal(clearedAtUtc, workOrder.AlarmClearedAtUtc);

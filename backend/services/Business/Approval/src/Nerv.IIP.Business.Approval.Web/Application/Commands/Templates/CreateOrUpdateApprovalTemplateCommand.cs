@@ -12,7 +12,8 @@ public sealed record CreateOrUpdateApprovalTemplateCommand(
     string DocumentType,
     int Version,
     bool IsActive,
-    IReadOnlyCollection<ApprovalTemplateStepInput> Steps) : ICommand<ApprovalTemplateId>;
+    IReadOnlyCollection<ApprovalTemplateStepInput> Steps,
+    bool CreateOnly = false) : ICommand<ApprovalTemplateId>;
 
 public sealed record ApprovalTemplateStepInput(
     int StepNo,
@@ -112,6 +113,11 @@ public sealed class CreateOrUpdateApprovalTemplateCommandHandler(ApplicationDbCo
                 steps);
             dbContext.ApprovalTemplates.Add(template);
             return template.Id;
+        }
+
+        if (request.CreateOnly)
+        {
+            throw new KnownException("此模板编码已存在，请从模板列表打开编辑。");
         }
 
         template.ReplaceDefinition(request.DocumentType, request.Version, request.IsActive, steps);

@@ -85,12 +85,14 @@ export interface ApprovalTemplatePayload {
   documentType: string
   version: number
   isActive: boolean
+  createOnly?: boolean
   steps: BusinessConsoleApprovalTemplateStepItem[]
 }
 
 export interface ApprovalDecisionPayload {
   chainId: string
   stepNo: number
+  targetStepId?: string | null
   /**
    * 只接受权威小写取值：Gateway 契约把 `decision` 声明成自由 `string`，类型层不设防，
    * 所以由这里的联合类型充当前端的「契约闸门」（#1311）。
@@ -393,6 +395,7 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
           actorType: actor.value.actorType,
           actorRef: actor.value.actorRef,
           decision: payload.decision,
+          targetStepId: payload.targetStepId,
           comment: optionalNullableText(payload.comment),
         },
       }),
@@ -436,6 +439,7 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
           version: payload.version,
           isActive: payload.isActive,
           steps: payload.steps,
+          createOnly: payload.createOnly,
         },
       }),
     saveTemplateError: templateMutation.error,
