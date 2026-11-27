@@ -2,10 +2,12 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Contracts.Iam;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Auth;
@@ -13,6 +15,7 @@ namespace Nerv.IIP.Business.Approval.Web.Application.Auth;
 public sealed class ResolveApprovalStepAuthority(
     IHttpClientFactory clients,
     IInternalServiceTokenProvider internalToken,
+    IConfiguration configuration,
     ApplicationDbContext dbContext,
     ILogger<ResolveApprovalStepAuthority> logger)
 {
@@ -115,14 +118,14 @@ public sealed class ResolveApprovalStepAuthority(
                 if (loadApproverContext)
                 {
                     roles = string.Join(",", membership.RoleIds);
-                    department = await LoadDepartmentAsync(principal.UserId, organizationId, environmentId, ct);
+                    department = await LoadDepartmentAsync(bearer, principal.UserId, organizationId, environmentId, ct);
                 }
             }
 
             return (StatusCodes.Status200OK, new Actor(organizationId, environmentId,
                 principal.PrincipalType, principal.UserId, roles, department));
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or NotSupportedException
                                    || ex is OperationCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning("Approval action authority unavailable ({ErrorType}).", ex.GetType().Name);
@@ -192,9 +195,16 @@ public sealed class ResolveApprovalStepAuthority(
     private sealed record ApprovalScope(string OrganizationId, string EnvironmentId, string? ResourceOrganizationId);
 
     private async Task<string?> LoadDepartmentAsync(
-        string userId, string organizationId, string environmentId, CancellationToken ct)
+        AuthenticationHeaderValue userBearer, string userId, string organizationId, string environmentId, CancellationToken ct)
     {
         using var masterData = clients.CreateClient(MasterDataClient);
+        var settings = configuration.GetSection("Approval:MasterDataDepartment");
+        var credentials = settings.GetSection("OutboundCredentials");
+        if (settings.GetValue("UseScopedCaller", false) || credentials.Exists())
+        {
+            return await LoadScopedDepartmentAsync(masterData, credentials, userBearer, organizationId, environmentId, ct);
+        }
+
         masterData.DefaultRequestHeaders.Authorization = new("Bearer", internalToken.BearerToken);
         using var response = await masterData.GetAsync(
             $"/api/business/v1/master-data/principals/{Uri.EscapeDataString(userId)}/work-context"
@@ -204,6 +214,52 @@ public sealed class ResolveApprovalStepAuthority(
         return workContext.Worker is { EmploymentStatus: "active" } worker && worker.UserId == userId
             ? worker.DepartmentId
             : null;
+    }
+
+    private async Task<string?> LoadScopedDepartmentAsync(
+        HttpClient masterData, IConfigurationSection credentials, AuthenticationHeaderValue userBearer,
+        string organizationId, string environmentId, CancellationToken ct)
+    {
+        if (!credentials.Exists())
+        {
+            throw new HttpRequestException("Approval department caller credentials are unavailable.");
+        }
+
+        var sharedBearer = internalToken.BearerToken;
+        string credential;
+        try
+        {
+            credential = ScopedCallerOutboundToken.Resolve(credentials, organizationId, environmentId, sharedBearer);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new HttpRequestException("Approval department caller credentials are invalid for the selected scope.");
+        }
+
+        if (credential == sharedBearer || credentials.GetChildren().Count(profile => profile["BearerToken"] == credential) != 1)
+        {
+            throw new HttpRequestException("Approval department caller credentials must be distinct per scope.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/master-data/v1/approval-principal-department")
+        {
+            Content = JsonContent.Create(new { organizationId, environmentId }),
+        };
+        request.Headers.Authorization = new("Bearer", credential);
+        request.Headers.Add(ApprovalDepartmentUserAuthorization.HeaderName, userBearer.ToString());
+        using var response = await masterData.SendAsync(request, ct);
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            throw new HttpRequestException("Approval department lookup failed.", null, response.StatusCode);
+        }
+
+        var result = await ReadDataAsync<Department>(response, ct);
+        if (result.DepartmentId is { } id && (id.Length == 0 || id != id.Trim()))
+        {
+            throw new JsonException("Invalid approval department identifier.");
+        }
+
+        return result.DepartmentId;
     }
 
     private static async Task<T> ReadDataAsync<T>(HttpResponseMessage response, CancellationToken ct)
@@ -221,6 +277,7 @@ public sealed class ResolveApprovalStepAuthority(
     private sealed record Envelope<T>(bool Success, T? Data);
     private sealed record Principal(
         string UserId, string PrincipalType, string OrganizationId, string EnvironmentId);
+    private sealed record Department([property: JsonRequired] string? DepartmentId);
     private sealed record WorkContext(Worker? Worker);
     private sealed record Worker(string UserId, string EmploymentStatus, string? DepartmentId);
 }

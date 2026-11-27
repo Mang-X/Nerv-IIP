@@ -78,6 +78,14 @@
 3. 确认所有 Gateway 实例都已切换后，将 `AllowLegacyBearer` 设为 `false`。确认上述业务入口仍可用，且共享凭据调用 Approval 的链列表、待办及决策列表均收到 `401`。
 4. 若合法范围受阻，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。用相同入口和范围确认恢复。
 
+### Approval 审批人部门读取凭据
+
+在 AppHost 设置 `ApprovalMasterDataDepartment:Enabled=true`，用 `ApprovalMasterDataDepartment:Scopes` 登记审批人实际使用的每组 `OrganizationId` 和 `EnvironmentId`。为每组范围按列表下标配置 Aspire secret 参数 `approval-master-data-department-{index}`。每项使用独立凭据，并与共享内部凭据及其他操作凭据分开。由 AppHost 生成的 Compose 使用同一配置。
+
+1. 先部署带专用接收端的 MasterData，将 `ApprovalMasterDataDepartment:ConfigureSender` 保持为 `false`。只有 MasterData 接收新凭据。
+2. 确认所有 MasterData 实例就绪后，更新 Approval 并将 `ConfigureSender` 设为 `true`。逐范围验证用户可按实际部门完成审批。切换后，缺少对应范围的凭据、下游拒绝或异常响应都会终止审批并返回 `503`。
+3. 如需计划回滚，先将 `ConfigureSender` 恢复为 `false` 并更新 Approval。确认各实例都恢复原工作上下文查询后，可关闭 `Enabled` 并撤下 MasterData 的专用凭据。
+
 ### FileStorage tus 字节落点
 
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：
