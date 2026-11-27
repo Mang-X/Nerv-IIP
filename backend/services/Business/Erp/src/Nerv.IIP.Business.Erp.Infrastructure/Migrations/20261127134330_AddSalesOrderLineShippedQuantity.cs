@@ -22,7 +22,9 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 comment: "Actual WMS shipped quantity across ERP delivery orders for this sales order line.");
 
             // The earlier delivery projection migration added zero defaults without historical quantities.
-            // A legacy completion inbox entry identifies the order, but does not preserve shipped quantities.
+            // A successful legacy completion created or reused an AR sourced by the scoped ERP delivery number.
+            // The inbox key identifies the WMS outbound order, so use the AR source to flag unprojected
+            // deliveries for reconciliation without inferring shipment quantities from accounting data.
             migrationBuilder.Sql("""
                 DO $$
                 DECLARE
@@ -53,10 +55,10 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                           END
                        OR (d.status IN ('released', 'cancelled') AND EXISTS (
                               SELECT 1
-                              FROM erp.processed_integration_events i
-                              WHERE i."ConsumerName" = 'business-erp.wms-outbound-completed-ar-accrual'
-                                AND i."IdempotencyKey" = concat('wms:outbound-completed:',
-                                    d.organization_id, ':', d.environment_id, ':', d.delivery_order_no)
+                              FROM erp.account_receivables ar
+                              WHERE ar.organization_id = d.organization_id
+                                AND ar.environment_id = d.environment_id
+                                AND ar.source_document_no = d.delivery_order_no
                           ))
                     LIMIT 1;
 
