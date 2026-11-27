@@ -10,6 +10,7 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Inventory;
 
 public interface IWmsPurchaseReceiptAcceptanceClient
 {
+    Task<IReadOnlyDictionary<string, decimal>> GetBoundUnitCostsAsync(InboundOrder inbound, CancellationToken cancellationToken);
     Task<string> GetOrAcceptAsync(InboundOrder inbound, Guid batchId, CancellationToken cancellationToken);
 }
 
@@ -19,16 +20,45 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
 {
     private const string Route = "/api/business/v1/erp/wms-purchase-receipt-acceptances";
 
+    public async Task<IReadOnlyDictionary<string, decimal>> GetBoundUnitCostsAsync(
+        InboundOrder inbound, CancellationToken cancellationToken)
+    {
+        if (inbound.ReceiptBatchId is not { } batchId || inbound.ErpPurchaseReceiptNo is null)
+        {
+            throw new WmsUnprocessableException("ERP 必须先受理该收货批次。");
+        }
+
+        try
+        {
+            using var query = CreateRequest(HttpMethod.Get, Lookup(inbound, batchId));
+            using var found = await httpClient.SendAsync(query, cancellationToken);
+            var accepted = await ReadAcceptanceAsync(found, inbound, batchId, cancellationToken);
+            if (accepted.PurchaseReceiptNo != inbound.ErpPurchaseReceiptNo
+                || accepted.Lines!.Any(line => line.QualityStatus != "unrestricted" || line.UnitCost is null
+                    || line.UnitCost < 0m || line.UnitCost >= 1_000_000_000_000m))
+            {
+                throw new WmsUnprocessableException("ERP 已受理收货单号、质量状态或冻结成本与库存过账要求不匹配。");
+            }
+
+            return accepted.Lines!.ToDictionary(line => line.PurchaseOrderLineNo,
+                line => decimal.Round(line.UnitCost!.Value, 6, MidpointRounding.AwayFromZero), StringComparer.Ordinal);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException
+            || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            throw new KnownException("ERP 已受理收货读取失败，请用原请求重试。", exception);
+        }
+    }
+
     public async Task<string> GetOrAcceptAsync(InboundOrder inbound, Guid batchId, CancellationToken cancellationToken)
     {
         try
         {
-            var lookup = $"{Route}/{batchId:D}?organizationId={Uri.EscapeDataString(inbound.OrganizationId)}&environmentId={Uri.EscapeDataString(inbound.EnvironmentId)}";
-            using var query = CreateRequest(HttpMethod.Get, lookup);
+            using var query = CreateRequest(HttpMethod.Get, Lookup(inbound, batchId));
             using var found = await httpClient.SendAsync(query, cancellationToken);
             if (found.StatusCode != HttpStatusCode.NotFound)
             {
-                return await ReadReceiptNoAsync(found, inbound, batchId, cancellationToken);
+                return (await ReadAcceptanceAsync(found, inbound, batchId, cancellationToken)).PurchaseReceiptNo!;
             }
 
             using var submit = CreateRequest(HttpMethod.Post, Route);
@@ -40,6 +70,7 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
                 PurchaseOrderNo = inbound.SourceDocumentId,
                 inbound.SiteCode,
                 ExchangeRate = inbound.ReceiptExchangeRate!.Value,
+                Unrestricted = inbound.Lines.All(line => !line.RequiresQualityInspection),
                 Lines = inbound.Lines.OrderBy(line => line.LineNo, StringComparer.Ordinal).Select(line => new
                 {
                     PurchaseOrderLineNo = line.LineNo,
@@ -49,7 +80,7 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
                 }),
             });
             using var accepted = await httpClient.SendAsync(submit, cancellationToken);
-            return await ReadReceiptNoAsync(accepted, inbound, batchId, cancellationToken);
+            return (await ReadAcceptanceAsync(accepted, inbound, batchId, cancellationToken)).PurchaseReceiptNo!;
         }
         catch (HttpRequestException exception)
         {
@@ -65,6 +96,9 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
         }
     }
 
+    private static string Lookup(InboundOrder inbound, Guid batchId) =>
+        $"{Route}/{batchId:D}?organizationId={Uri.EscapeDataString(inbound.OrganizationId)}&environmentId={Uri.EscapeDataString(inbound.EnvironmentId)}";
+
     private HttpRequestMessage CreateRequest(HttpMethod method, string route)
     {
         var request = new HttpRequestMessage(method, route);
@@ -72,7 +106,7 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
         return request;
     }
 
-    private static async Task<string> ReadReceiptNoAsync(HttpResponseMessage response, InboundOrder inbound, Guid batchId,
+    private static async Task<Acceptance> ReadAcceptanceAsync(HttpResponseMessage response, InboundOrder inbound, Guid batchId,
         CancellationToken cancellationToken)
     {
         if (response.StatusCode == HttpStatusCode.Conflict)
@@ -101,7 +135,7 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
             throw new KnownException("ERP 已提交收货与 WMS 实收批次不匹配，无法绑定。");
         }
 
-        return result.PurchaseReceiptNo;
+        return result;
     }
 
     private sealed record AcceptanceEnvelope(bool Success, Acceptance? Data);
@@ -110,5 +144,5 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
         string? SiteCode, decimal ExchangeRate, AcceptedLine[]? Lines);
 
     private sealed record AcceptedLine(string PurchaseOrderLineNo, string SkuCode, string UomCode, decimal ReceivedQuantity,
-        string LocationCode, string? LotNo);
+        string LocationCode, string? LotNo, string? QualityStatus, decimal? UnitCost);
 }

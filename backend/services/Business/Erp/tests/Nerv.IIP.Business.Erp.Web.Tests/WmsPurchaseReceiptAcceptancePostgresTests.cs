@@ -60,6 +60,7 @@ public sealed class WmsPurchaseReceiptAcceptancePostgresTests
             organizationId = "org-test", environmentId = "env-test", wmsReceiptBatchId = batchId,
             purchaseOrderNo = "PO-WMS", siteCode = "SITE-01", exchangeRate = 1.25m,
             lines = new[] { new { purchaseOrderLineNo = "10", receivedQuantity = 2m } },
+            unrestricted = false,
         };
         using var unauthorized = await client.PostAsJsonAsync(Route, payload);
         Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
@@ -100,6 +101,7 @@ public sealed class WmsPurchaseReceiptAcceptancePostgresTests
         Assert.Equal(HttpStatusCode.NotFound, otherScope.StatusCode);
 
         await AssertRejectedAsync(client, payload with { exchangeRate = 1m });
+        await AssertRejectedAsync(client, payload with { unrestricted = true });
         await AssertRejectedAsync(client, payload with
         {
             wmsReceiptBatchId = Guid.NewGuid(),
@@ -112,14 +114,25 @@ public sealed class WmsPurchaseReceiptAcceptancePostgresTests
             lines = new[] { new { purchaseOrderLineNo = "99", receivedQuantity = 1m } },
         });
 
+        using var unrestricted = await client.PostAsJsonAsync(Route, payload with
+        {
+            wmsReceiptBatchId = Guid.NewGuid(), unrestricted = true,
+            lines = new[] { new { purchaseOrderLineNo = "10", receivedQuantity = 1m } },
+        });
+        Assert.True(unrestricted.IsSuccessStatusCode, await unrestricted.Content.ReadAsStringAsync());
+        using var unrestrictedResult = JsonDocument.Parse(await unrestricted.Content.ReadAsStringAsync());
+        var unrestrictedLine = Assert.Single(unrestrictedResult.RootElement.GetProperty("data").GetProperty("lines").EnumerateArray());
+        Assert.Equal("unrestricted", unrestrictedLine.GetProperty("qualityStatus").GetString());
+        Assert.Equal(123.75m, unrestrictedLine.GetProperty("unitCost").GetDecimal());
+
         await using var verification = factory.Services.CreateAsyncScope();
         var verifiedDb = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Single(await verifiedDb.PurchaseReceipts.ToArrayAsync());
+        Assert.Equal(2, await verifiedDb.PurchaseReceipts.CountAsync());
         var verifiedOrder = await verifiedDb.PurchaseOrders.Include(x => x.Lines).SingleAsync();
-        Assert.Equal(2m, Assert.Single(verifiedOrder.Lines).ReceivedQuantity);
+        Assert.Equal(3m, Assert.Single(verifiedOrder.Lines).ReceivedQuantity);
         var outboxTopics = await verifiedDb.Database.SqlQueryRaw<string>(
             """SELECT "Name" AS "Value" FROM cap.published""").ToArrayAsync();
-        Assert.Single(outboxTopics, topic => topic == "PurchaseReceiptRecordedIntegrationEvent");
+        Assert.Equal(2, outboxTopics.Count(topic => topic == "PurchaseReceiptRecordedIntegrationEvent"));
         Assert.DoesNotContain(outboxTopics, topic => topic == "InventoryMovementRequestedIntegrationEvent");
     }
 

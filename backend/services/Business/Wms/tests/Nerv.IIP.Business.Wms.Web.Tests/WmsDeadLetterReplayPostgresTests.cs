@@ -106,12 +106,12 @@ internal sealed class ReplayFixture(PostgreSqlTestDatabase database, WebApplicat
     public HttpClient Client => client;
 
     public static async Task<ReplayFixture> CreateAsync(Action<IServiceCollection>? configure = null,
-        IReadOnlyDictionary<string, string?>? settings = null)
+        IReadOnlyDictionary<string, string?>? settings = null, string environment = "Testing")
     {
         var database = await PostgreSqlTestDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!, "nerv_wms_deadletter");
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Testing");
+            builder.UseEnvironment(environment);
             builder.UseSetting("ConnectionStrings:PostgreSQL", database.ConnectionString);
             builder.ConfigureAppConfiguration((_, configuration) =>
             {

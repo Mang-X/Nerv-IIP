@@ -2040,9 +2040,10 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_rejects_foreign_source_invalid_version_and_conflicting_source_facts",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Staged_receipt_keeps_actual_zero_and_cancellation_closes_the_expectation",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Ambiguous_ack_replays_the_frozen_batch_and_committed_actual_survives_cancellation",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_unrestricted_receipt_posts_frozen_cost_and_retries_the_same_movement",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Migration_separates_unbound_candidate_requests_from_confirmed_history"
       ],
-      "expectedRuntimeTestCount": 20
+      "expectedRuntimeTestCount": 21
     }
   ]
 }
