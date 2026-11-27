@@ -466,10 +466,16 @@ public sealed class CompleteInboundOrderCommandHandler
             throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
         }
 
-        if (inbound.RequiresErpReceiptAcceptance && (inbound.ErpReceiptAcceptedVersion is null
-            || inbound.Lines.Any(line => line.RequiresQualityInspection)))
+        if (inbound.RequiresErpReceiptAcceptance)
         {
-            throw new WmsUnprocessableException("ERP 必须先受理该收货批次，且待检实收须等待来料检验链路启用。");
+            try
+            {
+                inbound.EnsureErpReceiptCanPost();
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new WmsUnprocessableException(exception.Message);
+            }
         }
 
         var unitCostsByLine = inbound.RequiresErpReceiptAcceptance
@@ -560,7 +566,8 @@ public sealed class CompleteInboundOrderCommandHandler
                 || replayRequest.SiteCode != inbound.SiteCode
                 || replayRequest.LotNo != line.LotNo
                 || replayRequest.SerialNo != line.SerialNo
-                || replayRequest.QualityStatus != line.ReceiptQualityStatus
+                || replayRequest.QualityStatus != (inbound.RequiresErpReceiptAcceptance
+                    ? line.ErpReceiptPostingQualityStatus : line.ReceiptQualityStatus)
                 || replayRequest.OwnerType != line.OwnerType
                 || replayRequest.OwnerId != line.OwnerId
                 || replayRequest.Quantity != line.ReceivedQuantity

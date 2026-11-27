@@ -274,9 +274,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             throw new InvalidOperationException("ERP must accept this receipt batch first.");
         }
 
-        if (lines.Any(line => line.RequiresQualityInspection))
+        if (lines.Any(line => !line.CanPostErpReceiptStock))
         {
-            throw new InvalidOperationException("Quality inspection is not wired for the accepted ERP receipt batch.");
+            throw new InvalidOperationException("ERP 收货批次的所有待检行须合格或让步放行后才能过账。");
         }
     }
 
@@ -440,7 +440,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
-                line.ReceiptQualityStatus,
+                RequiresErpReceiptAcceptance ? line.ErpReceiptPostingQualityStatus : line.ReceiptQualityStatus,
                 line.OwnerType,
                 line.OwnerId,
                 line.ReceivedQuantity,
@@ -465,6 +465,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
         var line = lines.Single(x => x.LineNo == lineNo);
         line.ProjectErpReceiptInspection(inspectionRecordId, result, quantity, reason);
+        AdvanceVersion();
     }
 
     public SupplierReturnRequest? ApplyInspectionResult(
@@ -549,6 +550,12 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         if (Status is not (InboundOrderStatus.InventoryPostingPending or InboundOrderStatus.InventoryPostingFailed))
         {
             throw new InvalidOperationException("Only pending or failed ERP receipt posting can be acknowledged.");
+        }
+
+        foreach (var line in lines.Where(line => line.RequiresQualityInspection))
+        {
+            line.ApplyInspectionResult(line.ErpReceiptInspectionResult!, line.ErpReceiptInspectionRecordId!,
+                line.ErpReceiptInspectedQuantity!.Value, line.ErpReceiptInspectionReason);
         }
 
         Status = InboundOrderStatus.Completed;
@@ -826,6 +833,16 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
 
     public bool IsReleasedForPutaway => QualityGateStatus is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased;
     public string ReceiptQualityStatus => RequiresQualityInspection ? "quality" : "unrestricted";
+
+    internal bool CanPostErpReceiptStock => !RequiresQualityInspection
+        || (ErpReceiptInspectionResult is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased
+            && ErpReceiptInspectionRecordId is not null && ErpReceiptInspectedQuantity == ReceivedQuantity);
+
+    public string ErpReceiptPostingQualityStatus => CanPostErpReceiptStock
+        ? ErpReceiptInspectionResult == InboundQualityGateStatuses.ConditionalReleased
+            ? "restricted"
+            : "unrestricted"
+        : throw new InvalidOperationException("ERP 收货行缺少放行判定。");
 
     public static InboundOrderLine Create(InboundOrderLineDraft draft)
     {

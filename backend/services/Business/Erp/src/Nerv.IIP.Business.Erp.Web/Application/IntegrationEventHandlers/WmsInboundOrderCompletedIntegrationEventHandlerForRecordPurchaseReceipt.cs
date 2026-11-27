@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -242,11 +243,10 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
             || accepted.PurchaseOrderNo != payload.PublicReference || accepted.SiteCode != payload.SiteCode
             || !string.Equals(payload.Status, "completed", StringComparison.OrdinalIgnoreCase)
             || payload.Lines is null || payload.Lines.Count != accepted.Lines.Count
-            || accepted.Lines.Any(line => line.QualityStatus != ErpReceiptQualityStatuses.Unrestricted
-                || !payload.Lines.Any(reported => reported is not null && reported.LineReference == line.PurchaseOrderLineNo
+            || accepted.Lines.Any(line => !payload.Lines.Any(reported => reported is not null && reported.LineReference == line.PurchaseOrderLineNo
                     && reported.SkuCode == line.SkuCode && reported.UomCode == line.UomCode
                     && reported.Quantity == line.ReceivedQuantity && reported.LocationCode == line.LocationCode
-                    && reported.SiteCode == accepted.SiteCode && reported.Status == line.QualityStatus)))
+                    && reported.SiteCode == accepted.SiteCode && ResultsInPostedStock(line.QualityStatus, reported.Status))))
         {
             await DeadLetterAsync(integrationEvent, "bound-receipt-completion-mismatch",
                 "WMS completion must match the scoped ERP receipt batch, receipt reference and accepted lines.", cancellationToken);
@@ -258,6 +258,14 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
             await dbContext.SaveEntitiesAsync(cancellationToken);
         }
     }
+
+    private static bool ResultsInPostedStock(string acceptedStatus, string? postedStatus) =>
+        acceptedStatus switch
+        {
+            ErpReceiptQualityStatuses.Unrestricted => postedStatus == InventoryQualityStatuses.Unrestricted,
+            ErpReceiptQualityStatuses.Quality => postedStatus is InventoryQualityStatuses.Unrestricted or InventoryQualityStatuses.Restricted,
+            _ => false,
+        };
 
     private static ReceiptProjectionDecision TryBuildReceiptLines(
         WmsIntegrationEvent integrationEvent,

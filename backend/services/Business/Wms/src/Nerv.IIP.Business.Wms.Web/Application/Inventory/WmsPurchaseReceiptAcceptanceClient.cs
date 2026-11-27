@@ -5,6 +5,7 @@ using System.Text.Json;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Inventory;
 
@@ -33,8 +34,11 @@ public sealed class HttpWmsPurchaseReceiptAcceptanceClient(
             using var query = CreateRequest(HttpMethod.Get, Lookup(inbound, batchId));
             using var found = await httpClient.SendAsync(query, cancellationToken);
             var accepted = await ReadAcceptanceAsync(found, inbound, batchId, cancellationToken);
+            var expectedQualityStatus = inbound.Lines.Any(line => line.RequiresQualityInspection)
+                ? InventoryQualityStatuses.Quality
+                : InventoryQualityStatuses.Unrestricted;
             if (accepted.PurchaseReceiptNo != inbound.ErpPurchaseReceiptNo
-                || accepted.Lines!.Any(line => line.QualityStatus != "unrestricted" || line.UnitCost is null
+                || accepted.Lines!.Any(line => line.QualityStatus != expectedQualityStatus || line.UnitCost is null
                     || line.UnitCost < 0m || line.UnitCost >= 1_000_000_000_000m))
             {
                 throw new WmsUnprocessableException("ERP 已受理收货单号、质量状态或冻结成本与库存过账要求不匹配。");

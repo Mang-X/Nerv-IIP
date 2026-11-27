@@ -108,7 +108,7 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
                         order.SiteCode,
                         x.StagingLocationCode,
                         x.ReceivedQuantity,
-                        x.QualityStatus))
+                        order.ReceiptBatchId is null ? x.QualityStatus : x.ErpReceiptPostingQualityStatus))
                     .ToArray(),
                 order.ReceiptBatchId is null ? order.SourceDocumentType : WmsSourceDocumentTypes.PurchaseReceipt,
                 order.ErpPurchaseReceiptNo ?? order.SourceDocumentId,

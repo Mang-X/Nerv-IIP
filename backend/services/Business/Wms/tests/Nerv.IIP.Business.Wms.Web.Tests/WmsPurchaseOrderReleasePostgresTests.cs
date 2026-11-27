@@ -20,6 +20,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Testing.PostgreSql;
@@ -231,11 +232,18 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
     }
 
     [WmsDeadLetterReplayPostgresFact]
-    public async Task Bound_unrestricted_receipt_posts_frozen_cost_and_retries_the_same_movement()
+    public Task Bound_unrestricted_receipt_posts_frozen_cost_and_retries_the_same_movement() =>
+        AssertBoundReceiptPostingAsync(inspected: false);
+
+    [WmsDeadLetterReplayPostgresFact]
+    public Task Bound_inspected_receipt_posts_pass_and_concession_at_frozen_cost_after_both_decisions() =>
+        AssertBoundReceiptPostingAsync(inspected: true);
+
+    private static async Task AssertBoundReceiptPostingAsync(bool inspected)
     {
-        var erp = new ReceiptAcceptanceTransport();
+        var erp = new ReceiptAcceptanceTransport(inspected);
         var settings = Settings();
-        settings[Route + "QualityStatus"] = "unrestricted";
+        settings[Route + "QualityStatus"] = inspected ? "quality" : "unrestricted";
         settings["Messaging:Provider"] = "InMemory";
         settings["Wms:WorkPoolSeed:Enabled"] = "false";
         await using var fixture = await ReplayFixture.CreateAsync(
@@ -263,6 +271,21 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         var batchId = await BatchIdAsync(fixture);
         var accepted = await SendAsync(fixture, new BindInboundErpReceiptCommand(receipt, batchId));
         completion = completion with { ExpectedVersion = accepted.Version };
+        if (inspected)
+        {
+            await Assert.ThrowsAsync<WmsUnprocessableException>(() => SendAsync(fixture, completion));
+            await DeliverDecisionAsync("020", "SKU-A", 12.5m, QualityIntegrationEventTypes.InspectionPassed, "passed", throughCap: true);
+            completion = completion with { ExpectedVersion = accepted.Version + 1 };
+            await Assert.ThrowsAsync<WmsUnprocessableException>(() => SendAsync(fixture, completion));
+            using var read = fixture.Factory.Services.CreateScope();
+            var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await db.InventoryMovementRequests.ToListAsync());
+            Assert.Empty(await ReadOutboxAsync(db, nameof(InventoryMovementRequestedIntegrationEvent)));
+            await DeliverDecisionAsync("010", "SKU-B", 2m, QualityIntegrationEventTypes.InspectionConditionalReleased, "conditional-release");
+            await DeliverDecisionAsync("010", "SKU-B", 2m, QualityIntegrationEventTypes.InspectionConditionalReleased, "conditional-release");
+            completion = completion with { ExpectedVersion = accepted.Version + 2 };
+        }
+
         erp.ReceiptNo = "WRONG";
         await Assert.ThrowsAsync<WmsUnprocessableException>(() => SendAsync(fixture, completion));
         erp.ReceiptNo = "RCV-123";
@@ -293,7 +316,10 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         {
             var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var request = await db.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "020");
-            Assert.Equal(6.25m, (await db.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "010")).UnitCost);
+            var secondLine = await db.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "010");
+            Assert.Equal(6.25m, secondLine.UnitCost);
+            Assert.Equal(inspected ? "restricted" : "unrestricted", secondLine.QualityStatus);
+            Assert.Equal("unrestricted", request.QualityStatus);
             Assert.Equal(15.625m, request.UnitCost);
             Assert.Equal("020", request.SourceDocumentLineId);
             Assert.Contains(batchId.ToString("N"), request.IdempotencyKey);
@@ -379,6 +405,47 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         Assert.Equal(batchId, acknowledgement.GetProperty("WmsReceiptBatchId").GetGuid());
         Assert.Equal("RCV-123", acknowledgement.GetProperty("SourceDocumentId").GetString());
         Assert.Equal(WmsSourceDocumentTypes.PurchaseReceipt, acknowledgement.GetProperty("SourceDocumentType").GetString());
+
+        var acknowledgedLines = acknowledgement.GetProperty("Lines").EnumerateArray()
+            .ToDictionary(line => line.GetProperty("LineReference").GetString()!, line => line.GetProperty("Status").GetString());
+        var completed = Assert.Single((await SendAsync(fixture, new ListInboundOrdersQuery("org-replay", "env-replay",
+            InboundOrderId: receipt.InboundOrderId, SiteCodes: ["SITE"], SiteWideScope: true))).Items);
+        Assert.Equal(inspected ? "conditional-release" : "not-required", completed.QualityGateStatus);
+        Assert.Equal("unrestricted", acknowledgedLines["020"]);
+        Assert.Equal(inspected ? "restricted" : "unrestricted", acknowledgedLines["010"]);
+
+        async Task DeliverDecisionAsync(string line, string sku, decimal quantity, string eventType, string result, bool throughCap = false)
+        {
+            using var delivery = fixture.Factory.Services.CreateScope();
+            var eventId = $"inspection-{line}";
+            var time = DateTimeOffset.Parse("2026-10-03T00:00:00Z");
+            var message = new InspectionResultIntegrationEvent(
+                eventId, eventType, 1, time,
+                QualityIntegrationEventSources.BusinessQuality, "corr", "cause", "org-replay", "env-replay",
+                "system:quality", eventId,
+                new(eventId, "PLAN", "receiving", "erp", "RCV-123", sku, quantity, result, null, [],
+                    RecordedAtUtc: time, SourceDocumentLineId: line, WmsReceiptBatchId: batchId));
+            if (!throughCap)
+            {
+                await delivery.ServiceProvider.GetRequiredService<QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate>()
+                    .HandleCapAsync(message, default);
+                return;
+            }
+
+            await delivery.ServiceProvider.GetRequiredService<ICapPublisher>()
+                .PublishAsync(nameof(InspectionResultIntegrationEvent), message);
+            await Eventually.AssertAsync(
+                condition: "CAP commits the exact batch inspection decision",
+                assertion: async token =>
+                {
+                    using var read = fixture.Factory.Services.CreateScope();
+                    var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    Assert.True(await db.ProcessedIntegrationEvents.AnyAsync(entry =>
+                        entry.ConsumerName == QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName
+                        && entry.EventId == message.EventId, token));
+                },
+                options: new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(100), []));
+        }
 
         async Task<DateTime?> AssertPostingAsync(string orderStatus, string postingStatus, params string[] movementIds)
         {
@@ -829,7 +896,7 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         return await scope.ServiceProvider.GetRequiredService<ISender>().Send(request);
     }
 
-    private sealed class ReceiptAcceptanceTransport : HttpMessageHandler
+    private sealed class ReceiptAcceptanceTransport(bool inspected) : HttpMessageHandler
     {
         private Guid? committedBatch;
         public string ReceiptNo { get; set; } = "RCV-123";
@@ -839,7 +906,7 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             if (request.Method == HttpMethod.Post)
             {
                 var body = await request.Content!.ReadFromJsonAsync<JsonElement>(cancellationToken);
-                Assert.True(body.GetProperty("unrestricted").GetBoolean());
+                Assert.Equal(!inspected, body.GetProperty("unrestricted").GetBoolean());
                 committedBatch = body.GetProperty("wmsReceiptBatchId").GetGuid();
             }
             else if (committedBatch is null)
@@ -862,9 +929,9 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
                         wmsReceiptBatchId = committedBatch, purchaseReceiptNo = ReceiptNo,
                         purchaseOrderNo = "PO-123", siteCode = "SITE", exchangeRate = 1.25m,
                         lines = new[] { new { purchaseOrderLineNo = "020", skuCode = "SKU-A", uomCode = "kg",
-                            receivedQuantity = 12.5m, locationCode = "STAGE-A", qualityStatus = "unrestricted", unitCost = 15.625m },
+                            receivedQuantity = 12.5m, locationCode = "STAGE-A", qualityStatus = inspected ? "quality" : "unrestricted", unitCost = 15.625m },
                             new { purchaseOrderLineNo = "010", skuCode = "SKU-B", uomCode = "pcs",
-                                receivedQuantity = 2m, locationCode = "STAGE-A", qualityStatus = "unrestricted", unitCost = 6.25m } },
+                                receivedQuantity = 2m, locationCode = "STAGE-A", qualityStatus = inspected ? "quality" : "unrestricted", unitCost = 6.25m } },
                     },
                 }),
             };
