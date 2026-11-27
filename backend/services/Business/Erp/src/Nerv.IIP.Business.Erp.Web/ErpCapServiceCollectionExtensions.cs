@@ -54,6 +54,7 @@ public static class ErpCapServiceCollectionExtensions
             x.UseDashboard();
         });
         services.AddScoped<PurchaseOrderReleaseOutbox>();
+        services.AddScoped<PurchaseOrderCancellationOutbox>();
         services.AddNervIipCanonicalTopicSubscriptions(environmentName);
 
         return services;

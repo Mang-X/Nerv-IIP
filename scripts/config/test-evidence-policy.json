@@ -1677,9 +1677,12 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
-        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Approval_commits_both_release_versions_once_and_outbox_failure_rolls_back"
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Approval_commits_both_release_versions_once_and_outbox_failure_rolls_back",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Wms_owned_cancellation_commits_one_event_across_late_retry",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Accepted_wms_receipt_wins_against_stale_cancellation_without_publishing",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Cancellation_outbox_failure_rolls_back_order_and_can_retry"
       ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 4
     },
     {
       "id": "erp-purchase-receipt-route",

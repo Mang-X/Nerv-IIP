@@ -6,6 +6,7 @@ public static class ErpIntegrationEventTypes
 {
     public const string PurchaseRequisitionCreated = "erp.PurchaseRequisitionCreated";
     public const string PurchaseOrderReleased = "erp.PurchaseOrderReleased";
+    public const string PurchaseOrderCancelled = "erp.PurchaseOrderCancelled";
     public const string PurchaseReceiptRecorded = "erp.PurchaseReceiptRecorded";
     public const string MaterialSupplyEtaChanged = "erp.MaterialSupplyEtaChanged";
     public const string SalesReturnAuthorized = "erp.SalesReturnAuthorized";

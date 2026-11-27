@@ -366,9 +366,15 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
             throw new InvalidOperationException("Purchase orders with received quantity cannot be cancelled.");
         }
 
-        changeHistory.Add(PurchaseOrderChange.Applied("cancel", [], reason));
+        var change = PurchaseOrderChange.Applied("cancel", [], reason);
+        changeHistory.Add(change);
         Version++;
         Status = PurchaseOrderStatus.Cancelled;
+        if (ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms)
+        {
+            this.AddDomainEvent(new PurchaseOrderCancelledDomainEvent(this, Version, change.Reason));
+        }
+
         AddMaterialSupplyEtaChanged(
             "purchase-order-cancelled",
             $"purchase-order:{PurchaseOrderNo}:cancel:{Version}",

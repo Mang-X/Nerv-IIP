@@ -158,7 +158,9 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
     public async Task Wms_batches_and_cancellation_share_the_purchase_order_write_boundary()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
-        await using var provider = CreateConcurrencyProvider();
+        await ErpPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = PurchaseOrderReleaseOutboxPostgresTests.CreateFactory();
+        var provider = factory.Services;
         await using (var setup = provider.CreateAsyncScope())
         {
             var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();

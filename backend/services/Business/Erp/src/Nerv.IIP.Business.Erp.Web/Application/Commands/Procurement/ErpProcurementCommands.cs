@@ -1520,6 +1520,12 @@ public sealed class CancelPurchaseOrderCommandHandler(
             throw new KnownException("Purchase orders with supplier invoices cannot be cancelled.");
         }
 
+        var wmsOwnsReceiving = order.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms;
+        if (wmsOwnsReceiving && order.Status == PurchaseOrderStatus.Cancelled)
+        {
+            return;
+        }
+
         if (order.Status != PurchaseOrderStatus.Released)
         {
             throw new KnownException("Only released purchase orders can be cancelled.");
@@ -1530,12 +1536,16 @@ public sealed class CancelPurchaseOrderCommandHandler(
             throw new KnownException("Purchase orders with received quantity cannot be cancelled.");
         }
 
-        await wmsInboundCancellationClient.CancelOpenInboundOrdersForPurchaseOrderAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.PurchaseOrderNo,
-            request.Reason,
-            cancellationToken);
+        if (!wmsOwnsReceiving)
+        {
+            await wmsInboundCancellationClient.CancelOpenInboundOrdersForPurchaseOrderAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.PurchaseOrderNo,
+                request.Reason,
+                cancellationToken);
+        }
+
         try { order.Cancel(request.Reason); }
         catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
     }

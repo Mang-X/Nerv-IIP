@@ -12,6 +12,11 @@ public sealed record PurchaseOrderReleasedDomainEvent(PurchaseOrder PurchaseOrde
     public DateTimeOffset ReleasedAtUtc { get; } = DateTimeOffset.UtcNow;
 }
 
+public sealed record PurchaseOrderCancelledDomainEvent(PurchaseOrder PurchaseOrder, int PurchaseOrderVersion, string? Reason) : IDomainEvent
+{
+    public DateTimeOffset CancelledAtUtc { get; } = DateTimeOffset.UtcNow;
+}
+
 public sealed record MaterialSupplyEtaChangedDomainEvent(
     string OrganizationId,
     string EnvironmentId,

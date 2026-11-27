@@ -32,6 +32,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | ERP | `PurchaseRequisitionCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `PurchaseOrderReleasedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `PurchaseOrderReleasedV2IntegrationEvent` | ERP：采购订单首次下达，在订单与审批 inbox 的事务内写入 CAP outbox；提供收货归属 `ReceivingAuthority`、原始行号、物料、单位、采购数量和承诺交期 | WMS `ErpPurchaseOrderReleasedIntegrationEventHandler` 只对显式 `wms` 归属按组织、环境及采购单号创建待收货预期。`direct` 和缺少该字段的旧报文均跳过自动建单，未知值被拒绝。已归属 WMS 的订单缺少站点收货配置或已有冲突收货单时，保留原事件进入死信 | `consumed-internally` |
+| ERP | `PurchaseOrderCancelledIntegrationEvent` | ERP 在显式归属 WMS 的采购订单取消事务内写入 V1 CAP outbox，携带组织、环境、采购单身份和取消提交版本 | WMS 取消预期入库投影需要消费该事件 | `needs-business-consumer` |
 | ERP | `MaterialSupplyEtaChangedIntegrationEvent` | ERP | Scheduling 按受影响 SKU 精确失效 generated 排程方案 | `consumed-internally` |
 | ERP | `PurchaseReceiptRecordedIntegrationEvent` | ERP | ERP GR/IR 处理；Quality 来料检验 | `consumed-internally` |
 | ERP | `SalesReturnAuthorizedIntegrationEvent` | ERP | WMS | `consumed-internally` |
