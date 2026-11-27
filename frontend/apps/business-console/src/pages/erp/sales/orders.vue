@@ -16,6 +16,7 @@ import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import FulfillmentTimelineSheet from '@/components/fulfillment/FulfillmentTimelineSheet.vue'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
+import SalesOrderLineQuantities from '@/components/erp/SalesOrderLineQuantities.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -137,6 +138,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
     width: 'w-32',
     accessor: (r) => r.totalAmount ?? 0,
   },
+  { key: 'lineQuantities', header: '分配与发运', width: 'w-60', cellClass: 'align-top' },
   { key: 'fulfillment', header: '履约', align: 'end', width: 'w-28' },
 ]
 
@@ -464,8 +466,11 @@ async function submit() {
       <template #cell-totalAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >
+      <template #cell-lineQuantities="{ row }">
+        <SalesOrderLineQuantities :lines="row.lines" />
+      </template>
       <template #cell-fulfillment="{ row }">
-        <div class="flex items-center justify-end gap-1">
+        <div class="flex flex-wrap items-center justify-end gap-1">
           <NvButton
             v-if="isCreditHeld(row)"
             size="sm"
@@ -502,7 +507,11 @@ async function submit() {
       </template>
     </NvDataTable>
 
-    <FulfillmentTimelineSheet v-model:open="timelineOpen" :order="timelineOrder" />
+    <FulfillmentTimelineSheet
+      v-model:open="timelineOpen"
+      :order="timelineOrder"
+      @refresh-order="orders.refreshSalesOrders"
+    />
 
     <NvDialog v-model:open="creditHoldOpen">
       <NvDialogContent>

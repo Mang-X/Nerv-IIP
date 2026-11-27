@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
+import SalesOrderLineQuantities from '@/components/erp/SalesOrderLineQuantities.vue'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
 import { useCanScheduleSingleOrder } from '@/composables/scheduling/useSingleOrderScheduling'
 import {
@@ -18,7 +19,7 @@ const props = defineProps<{
   open: boolean
   order: BusinessConsoleErpSalesOrderItem | null | undefined
 }>()
-const emit = defineEmits<{ 'update:open': [value: boolean] }>()
+const emit = defineEmits<{ 'update:open': [value: boolean]; 'refresh-order': [] }>()
 
 // 履约追踪时间线只在 Sheet 打开时实例化（延迟每节点独立 query，空态不发请求）。
 const openModel = computed({
@@ -73,7 +74,12 @@ const salesOrderNo = computed(() => props.order?.salesOrderNo?.trim() ?? '')
         :initial-keyword="salesOrderNo"
       />
 
-      <FulfillmentTimelineBody v-if="open" :order="order" />
+      <section v-if="order?.lines?.length" class="mx-4 space-y-2" aria-label="订单行数量">
+        <h3 class="text-sm font-semibold">订单行数量</h3>
+        <SalesOrderLineQuantities :lines="order.lines" />
+      </section>
+
+      <FulfillmentTimelineBody v-if="open" :order="order" @refresh-order="emit('refresh-order')" />
     </NvSheetContent>
   </NvSheet>
 </template>
