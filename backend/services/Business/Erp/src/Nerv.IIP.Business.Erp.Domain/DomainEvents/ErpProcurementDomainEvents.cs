@@ -26,6 +26,6 @@ public sealed record MaterialSupplyEtaChangedDomainEvent(
     string ChangeIdentity,
     DateTimeOffset ChangedAtUtc,
     IReadOnlyCollection<string> SkuCodes) : IDomainEvent;
-public sealed record PurchaseReceiptRecordedDomainEvent(PurchaseReceipt PurchaseReceipt) : IDomainEvent;
+public sealed record PurchaseReceiptRecordedDomainEvent(PurchaseReceipt PurchaseReceipt, Guid? WmsReceiptBatchId = null) : IDomainEvent;
 public sealed record PurchaseReceiptInventoryMovementRequestedDomainEvent(PurchaseReceipt PurchaseReceipt, PurchaseReceiptLine Line) : IDomainEvent;
 public sealed record SupplierInvoiceMatchedDomainEvent(SupplierInvoice SupplierInvoice) : IDomainEvent;

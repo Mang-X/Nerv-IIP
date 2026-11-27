@@ -101,6 +101,11 @@ public sealed class InboundOrderLineEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional received batch expiry date captured by WMS.");
         builder.Property(x => x.QualityGateStatus).HasColumnName("quality_gate_status").IsRequired().HasMaxLength(50).HasDefaultValue(InboundQualityGateStatuses.NotRequired).HasComment("WMS inbound quality gate state: pending, passed, conditional-release, rejected or not-required.");
         builder.Property(x => x.InspectionRecordId).HasColumnName("inspection_record_id").HasMaxLength(150).HasComment("Quality inspection record id that released or rejected this inbound line.");
+        builder.Property(x => x.ErpReceiptInspectionRecordId).HasColumnName("erp_receipt_inspection_record_id").HasMaxLength(150).IsConcurrencyToken().HasComment("First Quality record projected for the accepted ERP receipt line.");
+        builder.Property(x => x.ErpReceiptInspectionResult).HasColumnName("erp_receipt_inspection_result").HasMaxLength(50).HasComment("Projected Quality decision, independent of stock disposition.");
+        builder.Property(x => x.ErpReceiptInspectedQuantity).HasColumnName("erp_receipt_inspected_quantity").HasPrecision(18, 6).HasComment("Quantity covered by the projected Quality decision.");
+        builder.Property(x => x.ErpReceiptInspectionReason).HasColumnName("erp_receipt_inspection_reason").HasMaxLength(500).HasComment("Reason supplied by Quality for the projected decision.");
+        builder.HasIndex("InboundOrderId", nameof(InboundOrderLine.ErpReceiptInspectionRecordId)).IsUnique();
         builder.Property(x => x.QualityDispositionReason).HasColumnName("quality_disposition_reason").HasMaxLength(1000).HasComment("Optional Quality disposition reason copied from the inspection result.");
     }
 

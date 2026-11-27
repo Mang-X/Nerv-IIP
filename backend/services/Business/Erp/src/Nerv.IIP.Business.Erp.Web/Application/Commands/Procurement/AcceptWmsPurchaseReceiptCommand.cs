@@ -79,7 +79,7 @@ public sealed class AcceptWmsPurchaseReceiptCommandHandler(ApplicationDbContext 
             WmsPurchaseReceiptAcceptanceIdentity.Key(request.WmsReceiptBatchId),
             request.ExchangeRate, PurchaseReceiptInventoryPostingRoute.Wms);
         return new RecordPurchaseReceiptCommandHandler(dbContext, codingService)
-            .HandleWmsAcceptanceAsync(receipt, request.SiteCode, fingerprint, cancellationToken);
+            .HandleWmsAcceptanceAsync(receipt, request.SiteCode, fingerprint, request.WmsReceiptBatchId, cancellationToken);
     }
 
     private static string CanonicalDecimal(decimal value) => value.ToString("G29", CultureInfo.InvariantCulture);

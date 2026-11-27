@@ -96,7 +96,8 @@ public sealed record PurchaseReceiptRecordedPayload(
     string SupplierCode,
     string SiteCode,
     string QualityStatus,
-    IReadOnlyCollection<PurchaseReceiptRecordedLinePayload>? Lines = null);
+    IReadOnlyCollection<PurchaseReceiptRecordedLinePayload>? Lines = null,
+    Guid? WmsReceiptBatchId = null);
 
 public sealed record PurchaseReceiptRecordedLinePayload(
     string LineReference,

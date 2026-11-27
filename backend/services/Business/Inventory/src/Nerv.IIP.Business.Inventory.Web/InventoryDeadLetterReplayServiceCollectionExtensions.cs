@@ -69,7 +69,9 @@ public static class InventoryDeadLetterReplayServiceCollectionExtensions
         services.AddIntegrationEventDeadLetterReplay<InspectionResultIntegrationEvent, QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer>(
             QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.ConsumerName,
             (consumer, integrationEvent, token) => consumer.HandleAsync(integrationEvent, token),
-            (provider, integrationEvent, token) => HasStatusLegsAsync(provider, integrationEvent.OrganizationId, integrationEvent.EnvironmentId,
+            (provider, integrationEvent, token) => integrationEvent.Payload.WmsReceiptBatchId.HasValue
+                ? Task.FromResult(true)
+                : HasStatusLegsAsync(provider, integrationEvent.OrganizationId, integrationEvent.EnvironmentId,
                 InventoryMovementSourceServices.Quality, integrationEvent.Payload.SourceDocumentId, integrationEvent.IdempotencyKey, token));
         return services;
     }

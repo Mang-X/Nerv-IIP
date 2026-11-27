@@ -131,7 +131,8 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 sourceDocumentType: WmsSourceDocumentTypes.PurchaseReceipt,
                 occurredAtUtc: integrationEvent.OccurredAtUtc,
                 triggerIdempotencyKey: $"{integrationEvent.IdempotencyKey}:{line.LineReference}",
-                cancellationToken);
+                cancellationToken,
+                wmsReceiptBatchId: payload.WmsReceiptBatchId);
         }
 
         await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
@@ -413,7 +414,8 @@ internal static class InspectionTaskGeneration
         string? sourceDocumentType,
         DateTimeOffset occurredAtUtc,
         string triggerIdempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? wmsReceiptBatchId = null)
     {
         var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
         var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
@@ -471,7 +473,8 @@ internal static class InspectionTaskGeneration
             serialNo,
             occurredAtUtc,
             occurredAtUtc.AddHours(24),
-            normalizedTriggerIdempotencyKey));
+            normalizedTriggerIdempotencyKey,
+            wmsReceiptBatchId));
     }
 
     public static async Task SaveChangesIgnoreDuplicateTasksAsync(ApplicationDbContext dbContext, CancellationToken cancellationToken)

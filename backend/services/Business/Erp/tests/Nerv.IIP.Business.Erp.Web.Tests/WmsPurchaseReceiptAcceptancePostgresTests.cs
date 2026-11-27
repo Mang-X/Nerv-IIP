@@ -133,6 +133,13 @@ public sealed class WmsPurchaseReceiptAcceptancePostgresTests
         var outboxTopics = await verifiedDb.Database.SqlQueryRaw<string>(
             """SELECT "Name" AS "Value" FROM cap.published""").ToArrayAsync();
         Assert.Equal(2, outboxTopics.Count(topic => topic == "PurchaseReceiptRecordedIntegrationEvent"));
+        var recordedJsonRows = await verifiedDb.Database.SqlQueryRaw<string>(
+            """SELECT "Content" AS "Value" FROM cap.published WHERE "Name" = 'PurchaseReceiptRecordedIntegrationEvent'""").ToArrayAsync();
+        using var recorded = JsonDocument.Parse(Assert.Single(recordedJsonRows, row => row.Contains(batchId.ToString(), StringComparison.OrdinalIgnoreCase)));
+        var receiptFact = recorded.RootElement.GetProperty("Value").GetProperty("Payload");
+        Assert.Equal(batchId, receiptFact.GetProperty("WmsReceiptBatchId").GetGuid());
+        Assert.Equal(result.GetProperty("purchaseReceiptNo").GetString(), receiptFact.GetProperty("PurchaseReceiptNo").GetString());
+        Assert.Equal("10", Assert.Single(receiptFact.GetProperty("Lines").EnumerateArray()).GetProperty("LineReference").GetString());
         Assert.DoesNotContain(outboxTopics, topic => topic == "InventoryMovementRequestedIntegrationEvent");
     }
 

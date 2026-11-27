@@ -81,6 +81,84 @@ public sealed class WmsDeadLetterReplayPostgresTests
         Assert.True(await db.ProcessedIntegrationEvents.AnyAsync(x => x.EventId == "unrelated"));
     }
 
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Erp_receipt_quality_result_replays_after_exact_batch_binding_on_postgres()
+    {
+        await using var fixture = await ReplayFixture.CreateAsync();
+        var inbound = InboundOrder.CreatePendingReceipt("org-replay", "env-replay", "IN-BATCH", "purchase-order", "PO", "SITE",
+            [new ExpectedInboundOrderLine("01", "SKU", "kg", 5m, "STAGE", "quality", "company", null),
+             new ExpectedInboundOrderLine("02", "SKU", "kg", 5m, "STAGE", "quality", "company", null)]);
+        inbound.StageErpReceipt(inbound.Version, [new("01", 5m), new("02", 5m)], new("receipt-key", "fingerprint"), 1m);
+        var batchId = inbound.ReceiptBatchId!.Value;
+        await fixture.SeedAsync(db => db.InboundOrders.Add(inbound));
+        var template = Inspection("erp-quality", "PR-EXACT");
+        var ev = template with
+        {
+            Payload = template.Payload with
+            {
+                SourceService = "erp",
+                SourceDocumentLineId = "02",
+                WmsReceiptBatchId = batchId,
+                StockRelease = null
+            }
+        };
+        const string consumer = QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName;
+
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate>()
+                .HandleAsync(ev, default);
+        }
+        var letter = await fixture.LetterAsync(ev, consumer);
+        Assert.Equal("erp-receipt-acceptance-not-bound", letter.FailureCode);
+        await fixture.ReplayAsync(letter, "failed");
+
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
+            var staged = await db.InboundOrders.Include(x => x.Lines).SingleAsync();
+            staged.BindErpPurchaseReceipt(batchId, "PR-EXACT");
+            await db.SaveChangesAsync();
+        }
+
+        foreach (var conflict in new[]
+        {
+            ev with { OrganizationId = "other-org" },
+            ev with { EnvironmentId = "other-env" },
+            ev with { Payload = ev.Payload with { WmsReceiptBatchId = Guid.NewGuid() } },
+            ev with { Payload = ev.Payload with { SourceDocumentId = "OTHER-RECEIPT" } },
+            ev with { Payload = ev.Payload with { SourceDocumentLineId = "MISSING" } },
+            ev with { Payload = ev.Payload with { LotNo = "OTHER-LOT" } },
+        })
+        {
+            await fixture.ReplayAsync(await fixture.AddLetterAsync(conflict, consumer), "failed");
+        }
+
+        await fixture.ReplayAsync(letter, "replayed");
+        await fixture.ReplayAsync(letter, "replayed");
+        await fixture.ReplayAsync(await fixture.AddLetterAsync(ev with
+        {
+            EventId = "erp-quality-conflict",
+            Payload = ev.Payload with { SourceDocumentLineId = "01" }
+        }, consumer), "failed");
+        using var read = fixture.Factory.Services.CreateScope();
+        var persisted = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await persisted.InboundOrders.Include(x => x.Lines).SingleAsync();
+        Assert.Equal(InboundOrderStatus.Open, order.Status);
+        Assert.All(order.Lines, line => Assert.Equal(InboundQualityGateStatuses.Pending, line.QualityGateStatus));
+        Assert.Null(order.Lines.Single(line => line.LineNo == "01").ErpReceiptInspectionRecordId);
+        var selected = order.Lines.Single(line => line.LineNo == "02");
+        Assert.Equal("QI-erp-quality", selected.ErpReceiptInspectionRecordId);
+        Assert.Equal("passed", selected.ErpReceiptInspectionResult);
+        Assert.Equal(5m, selected.ErpReceiptInspectedQuantity);
+        Assert.Empty(await persisted.SupplierReturnRequests.ToListAsync());
+        Assert.Empty(await persisted.OutboundOrders.ToListAsync());
+        Assert.Equal(ev.IdempotencyKey, (await persisted.ProcessedIntegrationEvents.SingleAsync()).IdempotencyKey);
+        Assert.Equal(letter.EventJson, (await read.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>()
+            .GetAsync(letter.Id, default))!.EventJson);
+    }
+
     internal static InspectionResultIntegrationEvent Inspection(string id, string inbound) => new(id,
         QualityIntegrationEventTypes.InspectionPassed, 1, DateTimeOffset.Parse("2026-10-01T00:00:00Z"),
         QualityIntegrationEventSources.BusinessQuality, "original-correlation", "original-causation", "org-replay", "env-replay", "system:quality", id,

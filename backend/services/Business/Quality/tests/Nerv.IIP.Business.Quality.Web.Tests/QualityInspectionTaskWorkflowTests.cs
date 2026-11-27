@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.DomainEvents;
+using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.PeriodicInspectionOperationAggregate;
@@ -830,16 +832,17 @@ public sealed class QualityInspectionTaskWorkflowTests
         await dbContext.SaveChangesAsync();
         var erp = ErpPurchaseReceiptRecorded();
         var receiptLine = Assert.Single(erp.Payload.Lines!);
+        var batchId = Guid.Parse("8478ac56-69a3-4782-b835-2d1786b4b846");
         erp = erp with
         {
             Payload = erp.Payload with
             {
                 QualityStatus = ErpReceiptQualityStatuses.Quality,
-                Lines = [receiptLine with { QualityStatus = ErpReceiptQualityStatuses.Quality }]
+                Lines = [receiptLine with { QualityStatus = ErpReceiptQualityStatuses.Quality }],
+                WmsReceiptBatchId = batchId
             }
         };
         var wms = WmsInboundCompleted("IN-001", "PO-001-L1", "SKU-RM-1000", "quality");
-        var batchId = Guid.Parse("8478ac56-69a3-4782-b835-2d1786b4b846");
         wms = wms with
         {
             IdempotencyKey = $"wms:inbound-receipt-posted:org-001:env-dev:{batchId:N}",
@@ -881,6 +884,22 @@ public sealed class QualityInspectionTaskWorkflowTests
 
         Assert.True(replay.Succeeded, replay.Message);
         Assert.Equal(task.Id, (await dbContext.InspectionTasks.SingleAsync()).Id);
+        dbContext.ChangeTracker.Clear();
+        await dbContext.InspectionTasks.LoadAsync();
+
+        var submitted = await CreateTaskSubmissionHandler(dbContext).Handle(
+            new CreateInspectionRecordFromTaskCommand(task.Id, "qa-user-001",
+                [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+                null, [], "erp-accepted-wms-result", "org-001", "env-dev"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var record = await dbContext.InspectionRecords.SingleAsync(x => x.Id == submitted.InspectionRecordId);
+        var result = new InspectionPassedIntegrationEventConverter(new HttpQualityIntegrationEventContextAccessor(new Microsoft.AspNetCore.Http.HttpContextAccessor()))
+            .Convert(new InspectionPassedDomainEvent(record));
+        Assert.Equal("PR-001", result.Payload.SourceDocumentId);
+        Assert.Equal("PO-001-L1", result.Payload.SourceDocumentLineId);
+        Assert.Equal(batchId, result.Payload.WmsReceiptBatchId);
+        Assert.Null(result.Payload.StockRelease);
     }
 
     [Fact]

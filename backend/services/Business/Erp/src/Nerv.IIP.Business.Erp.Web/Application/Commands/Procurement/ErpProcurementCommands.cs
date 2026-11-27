@@ -876,12 +876,12 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
             fromWmsCompletion: true, cancellationToken);
 
     internal Task<RecordPurchaseReceiptResult> HandleWmsAcceptanceAsync(
-        RecordPurchaseReceiptCommand request, string siteCode, string fingerprint, CancellationToken cancellationToken) =>
-        RecordAsync(request, fromWmsCompletion: false, cancellationToken, siteCode, fingerprint);
+        RecordPurchaseReceiptCommand request, string siteCode, string fingerprint, Guid wmsReceiptBatchId, CancellationToken cancellationToken) =>
+        RecordAsync(request, fromWmsCompletion: false, cancellationToken, siteCode, fingerprint, wmsReceiptBatchId);
 
     private async Task<RecordPurchaseReceiptResult> RecordAsync(
         RecordPurchaseReceiptCommand request, bool fromWmsCompletion, CancellationToken cancellationToken,
-        string? acceptanceSiteCode = null, string? acceptanceFingerprint = null)
+        string? acceptanceSiteCode = null, string? acceptanceFingerprint = null, Guid? wmsReceiptBatchId = null)
     {
         // 先读实收的 PO 版本，再查批次。若同批次刚提交并关闭了订单，重试仍能读回结果。
         var order = acceptanceSiteCode is null ? null : await ReadOrderAsync(request, cancellationToken);
@@ -968,7 +968,8 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
                 allocation.Code,
                 request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus, x.LocationCode, x.LotNo, x.FinalDelivery)),
                 request.ExchangeRate,
-                request.InventoryPostingRoute);
+                request.InventoryPostingRoute,
+                wmsReceiptBatchId);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {

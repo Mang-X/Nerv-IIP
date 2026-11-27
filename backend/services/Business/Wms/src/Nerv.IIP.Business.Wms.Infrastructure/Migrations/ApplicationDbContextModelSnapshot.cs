@@ -442,6 +442,31 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Inbound order line id.");
 
+                    b.Property<decimal?>("ErpReceiptInspectedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("erp_receipt_inspected_quantity")
+                        .HasComment("Quantity covered by the projected Quality decision.");
+
+                    b.Property<string>("ErpReceiptInspectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("erp_receipt_inspection_reason")
+                        .HasComment("Reason supplied by Quality for the projected decision.");
+
+                    b.Property<string>("ErpReceiptInspectionRecordId")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("erp_receipt_inspection_record_id")
+                        .HasComment("First Quality record projected for the accepted ERP receipt line.");
+
+                    b.Property<string>("ErpReceiptInspectionResult")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("erp_receipt_inspection_result")
+                        .HasComment("Projected Quality decision, independent of stock disposition.");
+
                     b.Property<decimal?>("ExpectedQuantity")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -558,7 +583,8 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("InboundOrderId");
+                    b.HasIndex("InboundOrderId", "ErpReceiptInspectionRecordId")
+                        .IsUnique();
 
                     b.ToTable("inbound_order_lines", "wms", t =>
                         {

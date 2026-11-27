@@ -2022,6 +2022,7 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Erp_receipt_quality_result_replays_after_exact_batch_binding_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Quality_rejection_does_not_commit_inbox_and_recovers_original_event_through_http_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Legacy_failed_inbox_recovers_only_matching_unfinished_quality_fact_and_preserves_existing_effect_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Inventory_receipts_select_original_success_or_failure_and_batch_reads_persistent_results_on_postgres",
@@ -2044,7 +2045,7 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_unrestricted_receipt_posts_frozen_cost_and_retries_the_same_movement",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Migration_separates_unbound_candidate_requests_from_confirmed_history"
       ],
-      "expectedRuntimeTestCount": 21
+      "expectedRuntimeTestCount": 22
     }
   ]
 }

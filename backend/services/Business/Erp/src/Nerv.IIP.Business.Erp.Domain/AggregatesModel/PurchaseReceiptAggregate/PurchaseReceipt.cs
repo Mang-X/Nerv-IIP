@@ -29,7 +29,7 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     {
     }
 
-    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts, decimal exchangeRate, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute)
+    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts, decimal exchangeRate, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute, Guid? wmsReceiptBatchId)
     {
         ArgumentNullException.ThrowIfNull(order);
         if (!Enum.IsDefined(inventoryPostingRoute))
@@ -90,7 +90,7 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
                 DateTimeOffset.UtcNow,
                 affectedSkuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
         }
-        this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this));
+        this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this, wmsReceiptBatchId));
         if (InventoryPostingRoute == PurchaseReceiptInventoryPostingRoute.Direct)
         {
             foreach (var line in lines)
@@ -114,9 +114,9 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     public DateTime RecordedAtUtc { get; private set; }
     public IReadOnlyCollection<PurchaseReceiptLine> Lines => lines;
 
-    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines, decimal exchangeRate = 1m, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct)
+    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines, decimal exchangeRate = 1m, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct, Guid? wmsReceiptBatchId = null)
     {
-        return new PurchaseReceipt(order, purchaseReceiptNo, lines, exchangeRate, inventoryPostingRoute);
+        return new PurchaseReceipt(order, purchaseReceiptNo, lines, exchangeRate, inventoryPostingRoute, wmsReceiptBatchId);
     }
 
     public void Cancel()

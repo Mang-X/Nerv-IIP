@@ -25,6 +25,8 @@ public sealed class QualityInspectionIntegrationEventTests
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal("passed", integrationEvent.Payload.Result);
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal("PO-LINE-001", document.RootElement.GetProperty("payload").GetProperty("sourceDocumentLineId").GetString());
         Assert.Equal(
             $"quality:inspection-passed:org-001:env-dev:purchase-receipt:RCV-001:{record.Id}",
             integrationEvent.IdempotencyKey);
@@ -152,7 +154,7 @@ public sealed class QualityInspectionIntegrationEventTests
             "receiving",
             "purchase-receipt",
             "RCV-001",
-            sourceDocumentLineId: null,
+            sourceDocumentLineId: "PO-LINE-001",
             "SKU-RM-1000",
             10m,
             "BATCH-001",

@@ -87,6 +87,10 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
 
     private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
+        // The WMS acceptance path projects a decision before stock disposition is available.
+        if (integrationEvent.Payload.WmsReceiptBatchId.HasValue)
+            return;
+
         var payloadSourceType = integrationEvent.Payload.SourceType?.Trim() ?? string.Empty;
         if (NonStockBearingSourceTypes.Contains(payloadSourceType))
         {

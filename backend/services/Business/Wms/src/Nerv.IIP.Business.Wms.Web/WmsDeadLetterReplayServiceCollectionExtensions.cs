@@ -112,6 +112,9 @@ public static class WmsDeadLetterReplayServiceCollectionExtensions
 
     private static async Task<bool> QualityCompletedAsync(IServiceProvider provider, InspectionResultIntegrationEvent ev, CancellationToken token)
     {
+        if (ev.Payload.WmsReceiptBatchId.HasValue)
+            return await ErpReceiptInspectionProjection.IsPersistedAsync(Db(provider), ev, token);
+
         if (!await HasInboxAsync(provider, QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName, ev, token))
             return false;
         var inbound = await Db(provider).InboundOrders.AsNoTracking().Include(x => x.Lines).SingleOrDefaultAsync(x =>

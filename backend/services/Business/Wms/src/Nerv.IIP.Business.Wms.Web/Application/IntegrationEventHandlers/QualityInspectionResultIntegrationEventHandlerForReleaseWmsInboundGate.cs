@@ -47,6 +47,12 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
     private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, bool replay, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
+        if (payload.WmsReceiptBatchId.HasValue)
+        {
+            await new ErpReceiptInspectionProjection(dbContext, deadLetterStore).HandleAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
         if (!string.Equals(payload.SourceService, QualityInspectionSourceTypes.Wms, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(payload.SourceType, QualityInspectionSourceTypes.Receiving, StringComparison.OrdinalIgnoreCase))
         {

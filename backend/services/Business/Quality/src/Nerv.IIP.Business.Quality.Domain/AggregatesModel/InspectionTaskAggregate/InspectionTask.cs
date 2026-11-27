@@ -29,7 +29,8 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         string? serialNo,
         DateTimeOffset createdAtUtc,
         DateTimeOffset dueAtUtc,
-        string triggerIdempotencyKey)
+        string triggerIdempotencyKey,
+        Guid? wmsReceiptBatchId)
     {
         Id = new InspectionTaskId(Guid.CreateVersion7());
         OrganizationId = Required(organizationId);
@@ -42,6 +43,7 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             Required(triggerIdempotencyKey),
             nameof(triggerIdempotencyKey));
         SourceDocumentLineId = Optional(sourceDocumentLineId);
+        WmsReceiptBatchId = wmsReceiptBatchId;
         SkuCode = Required(skuCode);
         Quantity = Positive(quantity, nameof(quantity));
         UomCode = Required(uomCode);
@@ -62,6 +64,7 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
     public string SourceService { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string? SourceDocumentLineId { get; private set; }
+    public Guid? WmsReceiptBatchId { get; private set; }
     public string SkuCode { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
     public string UomCode { get; private set; } = string.Empty;
@@ -94,7 +97,8 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         string? serialNo,
         DateTimeOffset createdAtUtc,
         DateTimeOffset dueAtUtc,
-        string triggerIdempotencyKey)
+        string triggerIdempotencyKey,
+        Guid? wmsReceiptBatchId = null)
     {
         if (dueAtUtc <= createdAtUtc)
         {
@@ -116,7 +120,8 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
             serialNo,
             createdAtUtc,
             dueAtUtc,
-            triggerIdempotencyKey);
+            triggerIdempotencyKey,
+            wmsReceiptBatchId);
     }
 
     public void Start(string assignedUserId, DateTimeOffset startedAtUtc)

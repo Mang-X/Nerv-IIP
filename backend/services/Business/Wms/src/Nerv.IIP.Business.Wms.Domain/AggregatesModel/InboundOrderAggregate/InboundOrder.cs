@@ -455,6 +455,18 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         return requests;
     }
 
+    public void ProjectErpReceiptInspection(
+        string lineNo, string inspectionRecordId, string result, decimal quantity, string? reason)
+    {
+        if (!RequiresErpReceiptAcceptance || ErpPurchaseReceiptNo is null || Status == InboundOrderStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Only a bound ERP receipt can record a quality decision.");
+        }
+
+        var line = lines.Single(x => x.LineNo == lineNo);
+        line.ProjectErpReceiptInspection(inspectionRecordId, result, quantity, reason);
+    }
+
     public SupplierReturnRequest? ApplyInspectionResult(
         string eventType,
         string inspectionRecordId,
@@ -793,6 +805,10 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public string QualityStatus { get; private set; } = string.Empty;
     public string QualityGateStatus { get; private set; } = InboundQualityGateStatuses.Pending;
     public string? InspectionRecordId { get; private set; }
+    public string? ErpReceiptInspectionRecordId { get; private set; }
+    public string? ErpReceiptInspectionResult { get; private set; }
+    public decimal? ErpReceiptInspectedQuantity { get; private set; }
+    public string? ErpReceiptInspectionReason { get; private set; }
     public string? QualityDispositionReason { get; private set; }
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
@@ -800,6 +816,14 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public DateOnly? ExpiryDate { get; private set; }
     public bool RequiresQualityInspection => QualityGateStatus != InboundQualityGateStatuses.NotRequired;
     public bool HasQualityResult => QualityGateStatus is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased or InboundQualityGateStatuses.Rejected;
+    internal void ProjectErpReceiptInspection(string inspectionRecordId, string result, decimal quantity, string? reason)
+    {
+        ErpReceiptInspectionRecordId = inspectionRecordId;
+        ErpReceiptInspectionResult = result;
+        ErpReceiptInspectedQuantity = quantity;
+        ErpReceiptInspectionReason = reason;
+    }
+
     public bool IsReleasedForPutaway => QualityGateStatus is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased;
     public string ReceiptQualityStatus => RequiresQualityInspection ? "quality" : "unrestricted";
 
