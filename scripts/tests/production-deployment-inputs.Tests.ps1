@@ -13,6 +13,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
+. (Join-Path $repoRoot 'scripts/lib/ProductionComposePorts.ps1')
 $startScript = Join-Path $repoRoot 'scripts/install/start-nerv-iip-apphost.ps1'
 $appHostEnvironment = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostEnvironment.cs') -Raw
 $appHostServices = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs') -Raw
@@ -141,10 +142,7 @@ foreach ($contract in @(
 }
 
 # 校验各服务的独立块，避免其他服务上的同名键掩盖漏配。
-$serviceBlocks = @{}
-foreach ($match in [regex]::Matches($platformText, '(?ms)^  (?<name>[a-z0-9-]+):\r?\n(?<body>.*?)(?=^  [a-z0-9-]+:|^\S|\z)')) {
-    $serviceBlocks[$match.Groups['name'].Value] = $match.Groups['body'].Value
-}
+$serviceBlocks = Get-ComposeServiceBlocks -ComposeText $platformText
 $serviceEnvironments = @{}
 foreach ($serviceEntry in $serviceBlocks.GetEnumerator()) {
     $envMap = [hashtable]::new([StringComparer]::Ordinal)
@@ -163,6 +161,48 @@ foreach ($serviceEntry in $serviceBlocks.GetEnumerator()) {
     }
     $serviceEnvironments[$serviceEntry.Key] = $envMap
 }
+$approvalCallers = [ordered]@{
+    CreateChain = @('business-erp', 'business-inventory', 'business-gateway')
+    GetChain = @('business-mes', 'business-quality', 'business-product-engineering', 'business-gateway')
+    ReadCollections = @('business-gateway')
+    ReadTemplates = @('business-gateway')
+    WriteTemplates = @('business-gateway')
+    ReadDelegations = @('business-gateway')
+    OverdueCheck = @('approval-overdue-operator')
+}
+$approvalTokens = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($operation in $approvalCallers.Keys) {
+    $settings = if ([string]::Equals($operation, 'OverdueCheck', [StringComparison]::Ordinal)) { 'OverdueCheck__HttpAuthorization' } else { $operation }
+    $approval = $serviceEnvironments['business-approval']
+    if (-not [string]::Equals($approval["Approval__${settings}__AllowLegacyBearer"], '${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}', [StringComparison]::Ordinal)) {
+        throw "Approval $operation 缺少默认关闭的共享凭据兼容开关。"
+    }
+    $index = 0
+    foreach ($caller in $approvalCallers[$operation]) {
+        $profile = "Approval__${settings}__ScopedCallers__Profiles__${index}__"
+        $token = [string] $approval["${profile}BearerToken"]
+        if ($token -cnotmatch '^\$\{NERV_IIP_APPROVAL_[A-Z0-9_]+_TOKEN:\?set NERV_IIP_APPROVAL_[A-Z0-9_]+_TOKEN\}$' -or -not $approvalTokens.Add($token)) {
+            throw "Approval $operation 的 $caller 缺少独立必填凭据。"
+        }
+        if (-not [string]::Equals($caller, 'approval-overdue-operator', [StringComparison]::Ordinal)) {
+            $sender = $serviceEnvironments[$caller]
+            $outbound = "Approval__${operation}__OutboundCredentials__0__"
+            foreach ($field in @('OrganizationId', 'EnvironmentId', 'BearerToken')) {
+                if ([string]::IsNullOrEmpty($approval[$profile + $field]) -or -not [string]::Equals($approval[$profile + $field], $sender[$outbound + $field], [StringComparison]::Ordinal)) {
+                    throw "Approval $operation 的 $caller 缺少匹配的 $field。"
+                }
+            }
+            if (-not [string]::Equals($sender['Approval__BaseUrl'], 'http://business-approval:8080', [StringComparison]::Ordinal)) {
+                throw "$caller 缺少容器内 Approval 路由。"
+            }
+        }
+        $index++
+    }
+}
+if (-not [string]::Equals($serviceEnvironments['iam']['InternalService__BearerToken'], '', [StringComparison]::Ordinal)) {
+    throw 'IAM 不应接收共享内部凭据。'
+}
+
 $fileStorageBindings = @(
     @('file-storage', 'FileStorage__Tus__VolumeIdentity', 'VOLUME_IDENTITY'),
     @('file-storage', 'FileStorage__DownloadCallers__platform-gateway__BearerToken', 'PLATFORM_GATEWAY_DOWNLOAD_TOKEN'),
@@ -212,17 +252,7 @@ foreach ($gateway in @('gateway', 'business-gateway')) {
     Assert-ContainsOrdinal -Text $serviceBlocks[$gateway] -Expected 'Security__ForwardedHeaders__TrustedProxies: ${NERV_IIP_GATEWAY_TRUSTED_PROXIES:?' -Message "网关 $gateway 缺少必填可信代理配置。"
 }
 Assert-ContainsOrdinal -Text $environmentExampleText -Expected 'NERV_IIP_GATEWAY_TRUSTED_PROXIES=' -Message '生产环境样例缺少可信代理输入。'
-$exposedBusinessServices = @('business-gateway', 'business-console')
-$internalBusinessServices = @(
-    $serviceBlocks.Keys | Where-Object {
-        $candidate = [string] $_
-        $candidate.StartsWith('business-', [StringComparison]::Ordinal) -and
-            -not ($exposedBusinessServices | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::Ordinal) })
-    }
-)
-foreach ($service in @('iam') + $internalBusinessServices) {
-    if ($serviceBlocks[$service] -match '(?m)^    ports:') { throw "服务 $service 不得发布宿主机端口。" }
-}
+Assert-ProductionComposeInternalPorts -ServiceBlocks $serviceBlocks
 
 Write-Host 'Production deployment input contracts passed.'
 

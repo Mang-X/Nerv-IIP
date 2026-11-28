@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http;
@@ -249,6 +250,106 @@ public sealed class BusinessGatewayProxyTests
         }
         private static BusinessConsoleDemandSourceResponse Demand(string id, string type, string reference, string customer) =>
             new(id, reference, type, "1", customer, 1, "active", "SKU-A", "EA", "SITE-A", 10m, new DateOnly(2026, 10, 2));
+    }
+
+    [Theory]
+    [InlineData(null, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.OK)]
+    [InlineData(null, "ECO-001", "WO-001", "abort-work-order", HttpStatusCode.OK)]
+    [InlineData(null, "ECO-001", "WO-001", "pending-decision", HttpStatusCode.OK, "&changeNumber=ECO-001")]
+    [InlineData(null, "ECO-001", "WO-001", "auto-rebound", HttpStatusCode.OK, "&workOrderId=WO-001")]
+    [InlineData(null, "ECO-001", "WO-001", "blocked-for-manual-confirmation", HttpStatusCode.OK)]
+    [InlineData(null, "ECO-001", "WO-001", "decided", HttpStatusCode.BadGateway)]
+    [InlineData(null, "ECO-OTHER", "WO-001", "continue-with-archived-version", HttpStatusCode.BadGateway)]
+    [InlineData(null, "ECO-001", "WO-OTHER", "continue-with-archived-version", HttpStatusCode.BadGateway)]
+    [InlineData(null, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.Forbidden, "&workOrderId=WO-001&scopeKind=work-center&scopeId=WC-UNTRUSTED")]
+    [InlineData(null, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.BadRequest, "")]
+    [InlineData(BusinessGatewayPermissions.EngineeringChangesRead, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.Forbidden)]
+    [InlineData(BusinessGatewayPermissions.MesWorkOrdersRead, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.Forbidden)]
+    public async Task Mes_engineering_change_impacts_require_both_reads_and_forward_only_scoped_valid_facts(
+        string? deniedPermission,
+        string changeNumber,
+        string workOrderId,
+        string disposition,
+        HttpStatusCode expectedStatus,
+        string identityFilter = "&changeNumber=ECO-001&workOrderId=WO-001")
+    {
+        var hasAudit = disposition is "continue-with-archived-version" or "abort-work-order";
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = new[]
+            {
+                new
+                {
+                    changeNumber,
+                    workOrderId,
+                    disposition,
+                    decidedBy = hasAudit ? "user:operator" : null,
+                    decidedAtUtc = hasAudit ? "2026-07-06T12:00:00+00:00" : null,
+                    decisionReason = hasAudit ? "现场确认" : null,
+                },
+            },
+            total = 8,
+        }));
+        var auth = new FakeBusinessGatewayAuthorizationClient(
+            permission => permission.PermissionCode != deniedPermission,
+            scopeGrants: [new AuthorizationScopeGrant("role", "lead", "work-center", "WC-A", [BusinessGatewayPermissions.MesWorkOrdersRead])]);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new NamedPrimaryHandlerFilter("MesEngineeringChangeImpacts", handler));
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
+            {
+                PrincipalWorkContext = PrincipalWorkContext(new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center", "WC-A", "工作中心 A", "workshop-covered", [])),
+            });
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-order-engineering-change-impacts?organizationId=org-001&environmentId=env-dev" +
+            identityFilter + "&skip=2&take=3&authorizedWorkCenterIds=WC-UNTRUSTED");
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        if (expectedStatus is HttpStatusCode.Forbidden or HttpStatusCode.BadRequest)
+        {
+            Assert.Empty(handler.Requests);
+            return;
+        }
+
+        var downstream = Assert.Single(handler.Requests);
+        Assert.Equal("internal-test-token", downstream.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/business/v1/mes/work-order-engineering-change-impacts", downstream.RequestUri!.AbsolutePath);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(downstream.RequestUri.Query);
+        Assert.Equal("WC-A", query["authorizedWorkCenterIds"]);
+        Assert.Equal(identityFilter.Contains("changeNumber=", StringComparison.Ordinal) ? "ECO-001" : "", query.GetValueOrDefault("changeNumber").ToString());
+        Assert.Equal(identityFilter.Contains("workOrderId=", StringComparison.Ordinal) ? "WO-001" : "", query.GetValueOrDefault("workOrderId").ToString());
+        Assert.Equal("2", query["skip"]);
+        Assert.Equal("3", query["take"]);
+
+        if (expectedStatus == HttpStatusCode.OK)
+        {
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = body.RootElement.GetProperty("data");
+            Assert.Equal(8, data.GetProperty("total").GetInt32());
+            var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+            Assert.Equal("ECO-001", item.GetProperty("changeNumber").GetString());
+            Assert.Equal("WO-001", item.GetProperty("workOrderId").GetString());
+            Assert.Equal(disposition, item.GetProperty("disposition").GetString());
+            Assert.Equal(hasAudit ? "user:operator" : null, item.GetProperty("decidedBy").GetString());
+            Assert.Equal(hasAudit ? "现场确认" : null, item.GetProperty("decisionReason").GetString());
+            if (hasAudit)
+            {
+                Assert.Equal(new DateTimeOffset(2026, 7, 6, 12, 0, 0, TimeSpan.Zero),
+                    item.GetProperty("decidedAtUtc").GetDateTimeOffset());
+            }
+            else
+            {
+                Assert.Equal(JsonValueKind.Null, item.GetProperty("decidedAtUtc").ValueKind);
+            }
+        }
     }
 
     [Fact]
@@ -8644,6 +8745,59 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_sales_orders_facade_forwards_allocated_and_shipped_line_quantities()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        salesOrderNo = "SO-001",
+                        customerCode = "CUST-001",
+                        siteCode = "SITE-001",
+                        status = "released",
+                        totalAmount = 1200m,
+                        lines = new[]
+                        {
+                            new { lineNo = "10", skuCode = "SKU-001", uomCode = "EA", allocatedQuantity = 12m, shippedQuantity = 0m },
+                            new { lineNo = "20", skuCode = "SKU-002", uomCode = "KG", allocatedQuantity = 8m, shippedQuantity = 2.5m },
+                        },
+                    },
+                },
+                total = 1,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                new NamedPrimaryHandlerFilter("IBusinessErpClient", handler));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/erp/sales/sales-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.ErpSalesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=100",
+            Assert.Single(handler.Requests).RequestUri!.PathAndQuery);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var lines = document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("lines");
+        Assert.Equal(12m, lines[0].GetProperty("allocatedQuantity").GetDecimal());
+        Assert.Equal(0m, lines[0].GetProperty("shippedQuantity").GetDecimal());
+        Assert.Equal(8m, lines[1].GetProperty("allocatedQuantity").GetDecimal());
+        Assert.Equal(2.5m, lines[1].GetProperty("shippedQuantity").GetDecimal());
+    }
+
+    [Fact]
     public async Task Erp_rfq_create_forwards_the_line_site_to_erp()
     {
         string? postedJson = null;
@@ -9040,8 +9194,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("purchase-order-default", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("templateCode").GetString());
     }
 
-    [Fact]
-    public async Task Approval_center_list_and_delegation_facades_forward_filters_and_internal_token()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approval_center_forwards_end_principal_for_writes_and_internal_token_for_reads(bool includeLegacyInitiator)
     {
         var approval = new RecordingApprovalClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -9060,7 +9216,7 @@ public sealed class BusinessGatewayProxyTests
         var decisions = await client.GetAsync("/api/business-console/v1/approval/decisions?organizationId=org-001&environmentId=env-dev&chainId=chain-001&actorType=user&actorRef=u-manager&decision=approve&skip=2&take=11");
         var tasks = await client.GetAsync("/api/business-console/v1/approval/tasks?organizationId=org-001&environmentId=env-dev&actorType=user&actorRef=u-manager&skip=3&take=12");
         var delegations = await client.GetAsync("/api/business-console/v1/approval/delegations?organizationId=org-001&environmentId=env-dev&status=active&delegateActorRef=u-backup&skip=4&take=13");
-        var startChain = await client.PostAsJsonAsync("/api/business-console/v1/approval/chains", new
+        var startChainBody = JsonSerializer.SerializeToNode(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
@@ -9069,8 +9225,13 @@ public sealed class BusinessGatewayProxyTests
             documentType = "purchase-order",
             documentId = "PO-001",
             documentLineId = (string?)null,
-            startedBy = "u-victim",
-        });
+        })!.AsObject();
+        if (includeLegacyInitiator)
+        {
+            startChainBody["startedBy"] = new string('x', 151);
+        }
+
+        var startChain = await client.PostAsJsonAsync("/api/business-console/v1/approval/chains", startChainBody);
         var createDelegation = await client.PostAsJsonAsync("/api/business-console/v1/approval/delegations", new
         {
             organizationId = "org-001",
@@ -9097,19 +9258,249 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, createDelegation.StatusCode);
         Assert.Equal(HttpStatusCode.OK, revokeDelegation.StatusCode);
         Assert.Equal("internal-test-token", approval.LastInternalToken);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization!.Parameter, approval.LastCreateDelegationBearer);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, approval.LastRevokeDelegationBearer);
         Assert.Equal(new BusinessConsoleApprovalChainListRequest("org-001", "env-dev", "pending", "u-requester", null, "purchase-order", "PO-001", 1, 10), approval.LastChainListRequest);
         Assert.Equal(new BusinessConsoleApprovalDecisionListRequest("org-001", "env-dev", "chain-001", "user", "user-admin", "approve", null, null, 2, 11), approval.LastDecisionListRequest);
         Assert.Equal("user-admin", approval.LastRequest?.ActorRef);
         Assert.Equal(3, approval.LastRequest?.Skip);
         Assert.Equal(12, approval.LastRequest?.Take);
         Assert.Equal(new BusinessConsoleApprovalDelegationListRequest("org-001", "env-dev", "active", null, "u-backup", null, 4, 13), approval.LastDelegationListRequest);
-        Assert.Equal("user-admin", approval.LastStartChainRequest?.StartedBy);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, approval.LastStartChainPrincipalBearer);
+        Assert.Equal("user-admin", approval.LastStartChainActorRef);
         Assert.Equal("user", approval.LastCreateDelegationRequest?.DelegatorActorType);
         Assert.Equal("user-admin", approval.LastCreateDelegationRequest?.DelegatorActorRef);
         Assert.Equal("user-admin", approval.LastCreateDelegationRequest?.CreatedBy);
         Assert.Equal("u-backup", approval.LastCreateDelegationRequest?.DelegateActorRef);
         Assert.Equal("delegation-001", approval.LastRevokeDelegationRequest?.DelegationId);
         Assert.Equal("user-admin", approval.LastRevokeDelegationRequest?.RevokedBy);
+    }
+
+    [Fact]
+    public async Task Approval_delegation_client_sends_scope_and_business_target_with_the_end_principal_bearer()
+    {
+        using var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = request.RequestUri!.AbsolutePath.EndsWith("/revoke", StringComparison.Ordinal)
+                ? (object)new { accepted = true }
+                : new { delegationId = "delegation-001" },
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream);
+        const string bearer = "test-end-principal";
+        var from = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var created = await client.CreateDelegationAsync(bearer,
+            new("org-001", "env-dev", "user", "u-creator", "user", "u-backup",
+                "purchase-order", from, from.AddDays(1), "travel", "u-creator"), CancellationToken.None);
+        var revoked = await client.RevokeDelegationAsync(bearer, created.DelegationId,
+            new(created.DelegationId, "org-001", "env-dev", "u-manager"), CancellationToken.None);
+
+        Assert.True(revoked.Accepted);
+        Assert.Collection(handler.Requests,
+            create => Assert.Equal("/api/business/v1/approvals/delegations", create.RequestUri!.AbsolutePath),
+            revoke => Assert.Equal("/api/business/v1/approvals/delegations/delegation-001/revoke", revoke.RequestUri!.AbsolutePath));
+        Assert.All(handler.Requests, request => Assert.Equal(bearer, request.Headers.Authorization?.Parameter));
+        using var createBody = JsonDocument.Parse(handler.RequestBodies[0]!);
+        using var revokeBody = JsonDocument.Parse(handler.RequestBodies[1]!);
+        Assert.Equal("org-001", createBody.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", createBody.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("user", createBody.RootElement.GetProperty("delegateActorType").GetString());
+        Assert.Equal("u-backup", createBody.RootElement.GetProperty("delegateActorRef").GetString());
+        Assert.Equal("u-creator", createBody.RootElement.GetProperty("delegatorActorRef").GetString());
+        Assert.Equal("u-creator", createBody.RootElement.GetProperty("createdBy").GetString());
+        Assert.Equal("org-001", revokeBody.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", revokeBody.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("u-manager", revokeBody.RootElement.GetProperty("revokedBy").GetString());
+    }
+
+    [Fact]
+    public async Task Approval_client_uses_the_scoped_bearer_only_for_chain_creation()
+    {
+        const string profile = "Approval:CreateChain:OutboundCredentials:0:";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [profile + "OrganizationId"] = "org-001",
+            [profile + "EnvironmentId"] = "env-dev",
+            [profile + "BearerToken"] = "synthetic-gateway-approval-token",
+        }).Build();
+        using var handler = new RecordingHandler(request => request.Method == HttpMethod.Post
+            ? JsonResponse(HttpStatusCode.OK, new { data = new { chainId = "chain-001" }, success = true })
+            : JsonResponse(HttpStatusCode.OK, new { data = new { items = Array.Empty<object>(), total = 0 }, success = true }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        const string legacy = "synthetic-shared-token";
+        var request = new BusinessConsoleStartApprovalChainRequest("org-001", "env-dev", "fixture", "quality",
+            "ncr-disposition", "ncr-001", null, RoutingOrganizationId: "org-routing");
+
+        var started = await client.StartChainAsync(legacy, request, "user-admin", CancellationToken.None, "synthetic-user-token");
+        Assert.Equal("chain-001", started.ChainId);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartChainAsync(legacy,
+            request with { EnvironmentId = "env-other" }, "user-admin", CancellationToken.None));
+        await client.ListChainsAsync(legacy, new("org-001", "env-dev", null, null, null, null, null), CancellationToken.None);
+
+        Assert.Collection(handler.Requests,
+            posted =>
+            {
+                Assert.Equal("synthetic-gateway-approval-token", posted.Headers.Authorization?.Parameter);
+                Assert.Equal("Bearer synthetic-user-token", Assert.Single(posted.Headers.GetValues("X-Nerv-IIP-Approval-Principal")));
+            },
+            listed => Assert.Equal(legacy, listed.Headers.Authorization?.Parameter));
+        using var payload = JsonDocument.Parse(handler.RequestBodies[0]!);
+        Assert.Equal("quality", payload.RootElement.GetProperty("sourceService").GetString());
+        Assert.Equal("user-admin", payload.RootElement.GetProperty("startedBy").GetString());
+        Assert.Equal("org-routing", payload.RootElement.GetProperty("routingOrganizationId").GetString());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approval_collection_client_uses_the_configured_scope_without_retrying_with_shared_bearer(bool scoped)
+    {
+        const string profile = "Approval:ReadCollections:OutboundCredentials:0:";
+        const string scopedToken = "synthetic-gateway-approval-collection-token";
+        const string sharedToken = "synthetic-shared-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(scoped
+            ? new Dictionary<string, string?>
+            {
+                [profile + "OrganizationId"] = "org-001",
+                [profile + "EnvironmentId"] = "env-dev",
+                [profile + "BearerToken"] = scopedToken,
+            }
+            : new Dictionary<string, string?>()).Build();
+        using var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+
+        foreach (var read in new Func<string, Task>[]
+        {
+            env => client.ListChainsAsync(sharedToken, new("org-001", env, null, null, null, null, null), CancellationToken.None),
+            env => client.ListPendingTasksAsync(sharedToken, new("org-001", env, "user", "u-reviewer"), CancellationToken.None),
+            env => client.ListDecisionsAsync(sharedToken, new("org-001", env), CancellationToken.None),
+        })
+        {
+            var denied = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => read("env-dev"));
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            if (scoped)
+            {
+                var unavailable = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => read("env-other"));
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            }
+        }
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.All(handler.Requests, request => Assert.Equal(scoped ? scopedToken : sharedToken, request.Headers.Authorization?.Parameter));
+    }
+
+    [Fact]
+    public async Task Approval_delegation_list_client_uses_its_configured_scope_without_shared_retry()
+    {
+        const string profile = "Approval:ReadDelegations:OutboundCredentials:0:";
+        const string scopedToken = "synthetic-gateway-delegation-list-token";
+        const string sharedToken = "synthetic-shared-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [profile + "OrganizationId"] = "org-001",
+            [profile + "EnvironmentId"] = "env-dev",
+            [profile + "BearerToken"] = scopedToken,
+        }).Build();
+        using var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        var request = new BusinessConsoleApprovalDelegationListRequest("org-001", "env-dev", Status: "active");
+
+        var denied = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ListDelegationsAsync(sharedToken, request, CancellationToken.None));
+        var unavailable = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ListDelegationsAsync(sharedToken, request with { EnvironmentId = "env-other" }, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal(scopedToken, forwarded.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/business/v1/approvals/delegations", forwarded.RequestUri!.AbsolutePath);
+        Assert.Contains("status=active", forwarded.RequestUri.Query);
+    }
+
+    [Fact]
+    public async Task Approval_template_client_sends_distinct_read_and_write_credentials()
+    {
+        const string sharedToken = "synthetic-shared-token";
+        const string readToken = "synthetic-gateway-template-read-token";
+        const string writeToken = "synthetic-gateway-template-write-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Approval:ReadTemplates:OutboundCredentials:0:OrganizationId"] = "org-001",
+            ["Approval:ReadTemplates:OutboundCredentials:0:EnvironmentId"] = "env-dev",
+            ["Approval:ReadTemplates:OutboundCredentials:0:BearerToken"] = readToken,
+            ["Approval:WriteTemplates:OutboundCredentials:0:OrganizationId"] = "org-001",
+            ["Approval:WriteTemplates:OutboundCredentials:0:EnvironmentId"] = "env-dev",
+            ["Approval:WriteTemplates:OutboundCredentials:0:BearerToken"] = writeToken,
+        }).Build();
+        using var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        var template = new BusinessConsoleCreateOrUpdateApprovalTemplateRequest(
+            "org-001", "env-dev", "ECO-DEFAULT", "engineering-change-order", 1, true, []);
+
+        var read = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ListTemplatesAsync(sharedToken, new("org-001", "env-dev"), CancellationToken.None));
+        var write = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateOrUpdateTemplateAsync(sharedToken, template, CancellationToken.None));
+        var unavailable = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateOrUpdateTemplateAsync(sharedToken, template with { EnvironmentId = "env-other" }, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, read.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, write.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        Assert.Collection(handler.Requests,
+            request =>
+            {
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.Equal(readToken, request.Headers.Authorization?.Parameter);
+            },
+            request =>
+            {
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.Equal(writeToken, request.Headers.Authorization?.Parameter);
+            });
+    }
+
+    [Fact]
+    public async Task Approval_client_uses_the_scoped_read_bearer_and_preserves_detail_not_found()
+    {
+        const string profile = "Approval:GetChain:OutboundCredentials:0:";
+        const string readToken = "synthetic-gateway-approval-read-token";
+        const string sharedToken = "synthetic-shared-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [profile + "OrganizationId"] = "org-001",
+            [profile + "EnvironmentId"] = "env-dev",
+            [profile + "BearerToken"] = readToken,
+        }).Build();
+        using var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/chain-other", StringComparison.Ordinal)
+            ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+            : JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new BusinessConsoleApprovalChainResponse(
+                    "chain-001", "org-001", "env-dev", "fixture", 1,
+                    "pending", "quality", "ncr-disposition", "doc-001", null, [], []),
+                success = true,
+            }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        var request = new BusinessConsoleApprovalChainRequest("org-001", "env-dev", "chain-001");
+
+        var chain = await client.GetChainAsync(sharedToken, request, CancellationToken.None);
+        Assert.Equal("chain-001", chain.ChainId);
+        var missing = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetChainAsync(sharedToken, request with { ChainId = "chain-other" }, CancellationToken.None));
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.GetChainAsync(sharedToken, request with { EnvironmentId = "env-other" }, CancellationToken.None));
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, sent => Assert.Equal(readToken, sent.Headers.Authorization?.Parameter));
     }
 
     [Fact]
@@ -9196,30 +9587,32 @@ public sealed class BusinessGatewayProxyTests
 
         if (allowed)
         {
-            var result = await approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None);
+            var result = await approval.ResolveStepAsync("end-principal-fixture", request, CancellationToken.None);
             Assert.Equal("decision-fixture", result.DecisionId);
         }
         else
         {
             var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-                approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None));
+                approval.ResolveStepAsync("end-principal-fixture", request, CancellationToken.None));
             Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
         }
 
-        Assert.Equal(HttpMethod.Post, Assert.Single(handler.Requests).Method);
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, forwarded.Method);
         using var body = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
         Assert.Equal("org-001", body.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", body.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal(
+            new[] { "comment", "decision", "environmentId", "organizationId", "targetStepId" },
+            body.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
     }
 
     [Fact]
-    public async Task Approval_resolve_facade_derives_actor_from_authorized_principal()
+    public async Task Approval_resolve_facade_forwards_end_principal_and_route_target()
     {
         var approval = new RecordingApprovalClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
-            services.RemoveAll<IBusinessMasterDataClient>();
-            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
             services.RemoveAll<IInternalServiceTokenProvider>();
@@ -9243,11 +9636,9 @@ public sealed class BusinessGatewayProxyTests
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("internal-test-token", approval.LastInternalToken);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization!.Parameter, approval.LastInternalToken);
         Assert.Equal("chain-001", approval.LastResolveStepRequest?.ChainId);
         Assert.Equal(1, approval.LastResolveStepRequest?.StepNo);
-        Assert.Equal("user", approval.LastResolveStepRequest?.ActorType);
-        Assert.Equal("user-admin", approval.LastResolveStepRequest?.ActorRef);
     }
 
     [Fact]

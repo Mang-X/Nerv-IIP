@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Roles;
+using Nerv.IIP.Iam.Web.Application.Users;
 using NetCorePal.Extensions.Dto;
 using Nerv.IIP.Web;
 
@@ -12,7 +13,8 @@ namespace Nerv.IIP.Iam.Web.Endpoints.Authorization;
 [AllowAnonymous]
 public sealed class AuthorizationCheckEndpoint(
     IIamAuthService auth,
-    IIamRoleApplicationService roles) : Endpoint<AuthorizationCheckRequest, ResponseData<AuthorizationCheckResponse>>
+    IIamRoleApplicationService roles,
+    IIamUserApplicationService users) : Endpoint<AuthorizationCheckRequest, ResponseData<AuthorizationCheckResponse>>
 {
     public override async Task HandleAsync(AuthorizationCheckRequest req, CancellationToken ct)
     {
@@ -38,6 +40,21 @@ public sealed class AuthorizationCheckEndpoint(
             return;
         }
 
+        AuthorizationMembership? selectedMembership = null;
+        if (req.IncludeSelectedMembership && principal.PrincipalType == "user")
+        {
+            var membership = await users.GetMembershipAsync(principal.UserId, req.OrganizationId, req.EnvironmentId, ct);
+            var membershipRoles = await roles.ResolveRolesAsync(membership.RoleIds, ct);
+            if (membershipRoles.Count == 0)
+            {
+                await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status403Forbidden, "forbidden", ct);
+                return;
+            }
+
+            selectedMembership = new AuthorizationMembership(
+                membership.OrganizationId, membership.EnvironmentId, membershipRoles.Select(x => x.RoleId).ToArray());
+        }
+
         var resolvedRoles = req.IncludePrincipalContext
             ? await roles.ResolveRolesAsync(principal.RoleIds, ct)
             : [];
@@ -50,7 +67,10 @@ public sealed class AuthorizationCheckEndpoint(
                 null,
                 authorization.DataScope,
                 req.IncludePrincipalContext ? authorization.ScopeGrants : null,
-                resolvedRoles.Select(x => new AuthorizationRole(x.RoleId, x.RoleName)).ToArray()).AsResponseData(),
+                resolvedRoles.Select(x => new AuthorizationRole(x.RoleId, x.RoleName)).ToArray())
+            {
+                SelectedMembership = selectedMembership,
+            }.AsResponseData(),
             ct);
     }
 }

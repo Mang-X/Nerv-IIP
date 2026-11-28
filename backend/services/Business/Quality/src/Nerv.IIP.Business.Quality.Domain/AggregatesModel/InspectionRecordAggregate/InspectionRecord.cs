@@ -60,7 +60,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         string? dispositionReason,
         IReadOnlyCollection<string> dispositionAttachmentFileIds,
         IReadOnlyCollection<InspectionUomConversion>? uomConversions = null,
-        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null)
+        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null,
+        Guid? wmsReceiptBatchId = null)
     {
         Id = new InspectionRecordId(Guid.CreateVersion7());
         OrganizationId = Required(organizationId);
@@ -70,6 +71,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         SourceService = Supported(sourceService, SourceServices, nameof(sourceService));
         SourceDocumentId = Required(sourceDocumentId);
         SourceDocumentLineId = Optional(sourceDocumentLineId);
+        WmsReceiptBatchId = wmsReceiptBatchId;
         SkuCode = Required(skuCode);
         InspectedQuantity = Positive(inspectedQuantity, nameof(inspectedQuantity));
         BatchNo = Optional(batchNo);
@@ -117,6 +119,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     /// ——同一工单不同工序做同一 SKU 检验因此各成独立 attempt 链（#3319）。
     /// </summary>
     public string? SourceDocumentLineId { get; private set; }
+    public Guid? WmsReceiptBatchId { get; private set; }
 
     public string SkuCode { get; private set; } = string.Empty;
     public int AttemptNumber { get; private set; } = 1;
@@ -200,7 +203,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         string? dispositionReason,
         IReadOnlyCollection<string> dispositionAttachmentFileIds,
         IReadOnlyCollection<InspectionUomConversion>? uomConversions = null,
-        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null)
+        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null,
+        Guid? wmsReceiptBatchId = null)
     {
         ArgumentNullException.ThrowIfNull(inspectionPlan);
         if (inspectionPlan.Status != "active")
@@ -237,7 +241,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             plannedLines,
             dispositionReason,
             dispositionAttachmentFileIds,
-            measuringDeviceUsage: measuringDeviceUsage);
+            measuringDeviceUsage: measuringDeviceUsage,
+            wmsReceiptBatchId: wmsReceiptBatchId);
     }
 
     public static InspectionRecord Reinspect(
@@ -309,7 +314,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             evaluatedLines,
             dispositionReason,
             dispositionAttachmentFileIds,
-            measuringDeviceUsage: measuringDeviceUsage)
+            measuringDeviceUsage: measuringDeviceUsage,
+            wmsReceiptBatchId: previousInspection.WmsReceiptBatchId)
         {
             AttemptNumber = checked(previousInspection.AttemptNumber + 1),
             ReinspectionOfInspectionRecordId = previousInspection.Id,

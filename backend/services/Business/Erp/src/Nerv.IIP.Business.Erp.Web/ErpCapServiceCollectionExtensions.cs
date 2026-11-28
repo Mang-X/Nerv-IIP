@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DotNetCore.CAP;
 using Microsoft.Extensions.Configuration;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
@@ -16,7 +17,7 @@ namespace Nerv.IIP.Business.Erp.Web;
 /// 普通单测可以按生产参数把容器建起来、解析 CAP 的 consumer selector 接口
 /// 并断言拿到的是共享实现——与 MES 的 <c>AddMesCapIntegrationEvents</c> 同一姿势。
 ///
-/// 本类型只做搬运：注册项、注册顺序与传入参数与内联时逐行一致，不改变生产接线语义。
+/// 采购订单下达的 V2 outbox 随生产 CAP 接线注册。
 /// </summary>
 public static class ErpCapServiceCollectionExtensions
 {
@@ -52,6 +53,8 @@ public static class ErpCapServiceCollectionExtensions
             x.UseConfiguredTransport(configuration, environmentName);
             x.UseDashboard();
         });
+        services.AddScoped<PurchaseOrderReleaseOutbox>();
+        services.AddScoped<PurchaseOrderCancellationOutbox>();
         services.AddNervIipCanonicalTopicSubscriptions(environmentName);
 
         return services;

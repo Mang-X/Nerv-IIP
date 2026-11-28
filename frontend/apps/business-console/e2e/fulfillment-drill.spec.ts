@@ -163,6 +163,58 @@ test('从订单节点打开实际发货单，返回后普通入口仍可搜索�
   await expect(page.getByText('DO-OTHER-0', { exact: true })).toBeVisible()
 })
 
+test('履约追踪逐行显示已分配量和实际发运量，刷新后读取最新订单数量', async ({ page }) => {
+  await salesSession(page)
+  let shippedQuantity = 0
+  await page.route('**/sales-orders?*', async (route) => {
+    await route.fulfill({
+      json: {
+        success: true,
+        data: {
+          total: 1,
+          items: [
+            {
+              salesOrderNo,
+              status: 'released',
+              lines: [
+                {
+                  lineNo: '10',
+                  skuCode: 'SKU-MOTOR',
+                  uomCode: 'EA',
+                  allocatedQuantity: 120,
+                  shippedQuantity,
+                },
+                {
+                  lineNo: '20',
+                  skuCode: 'SKU-COIL',
+                  uomCode: 'KG',
+                  allocatedQuantity: 8.5025,
+                  shippedQuantity: 2.5025,
+                },
+                { lineNo: '30', skuCode: 'SKU-BRACKET', uomCode: 'EA', allocatedQuantity: 12 },
+              ],
+            },
+          ],
+        },
+      },
+    })
+  })
+
+  await openTimeline(page)
+  const quantities = page.getByRole('region', { name: '订单行数量' })
+  const lines = quantities.getByRole('listitem')
+  await expect(lines).toHaveCount(3)
+  await expect(lines.nth(0)).toContainText('已分配 120 EA')
+  await expect(lines.nth(0)).toContainText('实际已发运 0 EA')
+  await expect(lines.nth(1)).toContainText('已分配 8.5025 KG')
+  await expect(lines.nth(1)).toContainText('实际已发运 2.5025 KG')
+  await expect(lines.nth(2)).toContainText('实际已发运 —')
+
+  shippedQuantity = 120
+  await page.getByRole('dialog').getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(lines.nth(0)).toContainText('实际已发运 120 EA')
+})
+
 test('发货深链接使用现有销售读权限', async ({ page }) => {
   await salesSession(page, ['business.planning.mrp.read'])
   await page.goto('/erp/sales/deliveries?keyword=DO-314')

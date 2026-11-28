@@ -21,6 +21,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure;
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
+    public DbSet<PurchaseOrderCancellation> PurchaseOrderCancellations => Set<PurchaseOrderCancellation>();
     public DbSet<InboundOrder> InboundOrders => Set<InboundOrder>();
     public DbSet<BackorderOrder> BackorderOrders => Set<BackorderOrder>();
     public DbSet<InboundOrderLine> InboundOrderLines => Set<InboundOrderLine>();

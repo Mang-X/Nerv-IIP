@@ -115,7 +115,20 @@ public static class NervIipSeedPermissions
 {
     public static readonly string[] All =
     [
+        "internal.approval-chains.create-erp",
+        "internal.approval-chains.create-inventory",
+        "internal.approval-chains.create-gateway",
+        "internal.approval-chains.read-mes",
+        "internal.approval-chains.read-quality",
+        "internal.approval-chains.read-product-engineering",
+        "internal.approval-chains.read-gateway",
+        "internal.approval-chains.list-gateway",
+        "internal.approval-templates.read-gateway",
+        "internal.approval-templates.write-gateway",
+        "internal.approval-delegations.list-gateway",
+        "internal.approval-tasks.check-overdue",
         "internal.gateway-cache.invalidate",
+        "internal.masterdata.approval-department.read",
         "iam.users.read",
         "iam.users.manage",
         "iam.roles.read",

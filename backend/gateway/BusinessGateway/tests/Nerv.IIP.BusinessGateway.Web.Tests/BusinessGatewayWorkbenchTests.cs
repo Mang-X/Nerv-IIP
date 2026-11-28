@@ -370,7 +370,12 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
 
     public BusinessConsoleApprovalDelegationListRequest? LastDelegationListRequest { get; private set; }
 
-    public BusinessConsoleStartApprovalChainRequest? LastStartChainRequest { get; private set; }
+    public string? LastStartChainPrincipalBearer { get; private set; }
+    public string? LastStartChainActorRef { get; private set; }
+
+    public string? LastCreateDelegationBearer { get; private set; }
+
+    public string? LastRevokeDelegationBearer { get; private set; }
 
     public BusinessConsoleCreateApprovalDelegationRequest? LastCreateDelegationRequest { get; private set; }
 
@@ -410,10 +415,13 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
     public Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
-        CancellationToken cancellationToken)
+        string authorizedActorRef,
+        CancellationToken cancellationToken,
+        string? principalBearer = null)
     {
         LastInternalToken = internalBearerToken;
-        LastStartChainRequest = request;
+        LastStartChainPrincipalBearer = principalBearer;
+        LastStartChainActorRef = authorizedActorRef;
         return Task.FromResult(new BusinessConsoleStartApprovalChainResponse("chain-001"));
     }
 
@@ -559,7 +567,7 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
         BusinessConsoleCreateApprovalDelegationRequest request,
         CancellationToken cancellationToken)
     {
-        LastInternalToken = internalBearerToken;
+        LastCreateDelegationBearer = internalBearerToken;
         LastCreateDelegationRequest = request;
         return Task.FromResult(new BusinessConsoleCreateApprovalDelegationResponse("delegation-001"));
     }
@@ -570,7 +578,7 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
         BusinessConsoleRevokeApprovalDelegationRequest request,
         CancellationToken cancellationToken)
     {
-        LastInternalToken = internalBearerToken;
+        LastRevokeDelegationBearer = internalBearerToken;
         LastRevokeDelegationRequest = request with { DelegationId = delegationId };
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }

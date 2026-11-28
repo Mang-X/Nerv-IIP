@@ -3917,7 +3917,17 @@ public sealed record BusinessConsoleErpSalesOrderItem(
     string CustomerCode,
     string SiteCode,
     string Status,
-    decimal TotalAmount);
+    decimal TotalAmount,
+    IReadOnlyCollection<BusinessConsoleErpSalesOrderLineItem>? Lines = null);
+
+public sealed record BusinessConsoleErpSalesOrderLineItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    [property: Description("已分配数量。由已开立发货单占用，包含其中已发运的数量，以订单行计量单位计。")]
+    decimal AllocatedQuantity,
+    [property: Description("实际已发运数量。由 WMS 确认后累计，以订单行计量单位计。")]
+    decimal ShippedQuantity);
 
 public sealed record BusinessConsoleErpOpportunityListResponse(
     IReadOnlyCollection<BusinessConsoleErpOpportunityItem> Items,
@@ -4343,7 +4353,6 @@ public sealed record BusinessConsoleStartApprovalChainRequest(
     string DocumentType,
     string DocumentId,
     string? DocumentLineId,
-    string StartedBy,
     decimal? Amount = null,
     string? RoutingOrganizationId = null,
     string? DepartmentId = null);
@@ -4457,11 +4466,7 @@ public sealed record BusinessConsoleResolveApprovalStepRequest(
     string ActorRef,
     string Decision,
     string? Comment,
-    string? TargetStepId = null)
-{
-    [System.Text.Json.Serialization.JsonIgnore]
-    internal ApprovalRoutingMembership? RoutingMembership { get; init; }
-}
+    string? TargetStepId = null);
 
 public sealed record BusinessConsoleResolveApprovalStepResponse(string DecisionId);
 

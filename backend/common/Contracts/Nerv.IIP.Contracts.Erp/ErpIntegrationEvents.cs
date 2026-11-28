@@ -6,6 +6,7 @@ public static class ErpIntegrationEventTypes
 {
     public const string PurchaseRequisitionCreated = "erp.PurchaseRequisitionCreated";
     public const string PurchaseOrderReleased = "erp.PurchaseOrderReleased";
+    public const string PurchaseOrderCancelled = "erp.PurchaseOrderCancelled";
     public const string PurchaseReceiptRecorded = "erp.PurchaseReceiptRecorded";
     public const string MaterialSupplyEtaChanged = "erp.MaterialSupplyEtaChanged";
     public const string SalesReturnAuthorized = "erp.SalesReturnAuthorized";
@@ -95,7 +96,8 @@ public sealed record PurchaseReceiptRecordedPayload(
     string SupplierCode,
     string SiteCode,
     string QualityStatus,
-    IReadOnlyCollection<PurchaseReceiptRecordedLinePayload>? Lines = null);
+    IReadOnlyCollection<PurchaseReceiptRecordedLinePayload>? Lines = null,
+    Guid? WmsReceiptBatchId = null);
 
 public sealed record PurchaseReceiptRecordedLinePayload(
     string LineReference,

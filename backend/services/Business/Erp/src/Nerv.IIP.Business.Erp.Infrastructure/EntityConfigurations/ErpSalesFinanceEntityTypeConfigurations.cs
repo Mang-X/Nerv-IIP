@@ -107,6 +107,7 @@ public sealed class SalesOrderLineEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData UOM code.");
         builder.Property(x => x.OrderedQuantity).HasColumnName("ordered_quantity").IsRequired().HasPrecision(18, 6).HasComment("Ordered quantity.");
         builder.Property(x => x.DeliveredQuantity).HasColumnName("delivered_quantity").IsRequired().HasPrecision(18, 6).HasComment("Released delivery quantity.");
+        builder.Property(x => x.ShippedQuantity).HasColumnName("shipped_quantity").IsRequired().IsConcurrencyToken().HasPrecision(18, 6).HasDefaultValue(0m).HasComment("Actual WMS shipped quantity across ERP delivery orders for this sales order line.");
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("Sales unit price.");
         builder.Property(x => x.RequiredDate).HasColumnName("required_date").IsRequired().HasComment("Customer required date.");
         builder.Property(x => x.Cancelled).HasColumnName("cancelled").IsRequired().HasComment("Whether the unfulfilled sales order line was cancelled.");

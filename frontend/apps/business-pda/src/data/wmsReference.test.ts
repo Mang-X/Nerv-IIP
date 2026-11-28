@@ -28,6 +28,7 @@ describe('WMS PDA 服务端状态契约', () => {
       '',
       'Open',
       'PendingQualityCheck',
+      'InventoryPostingPending',
       'Completed',
       'InventoryPostingFailed',
       'Cancelled',

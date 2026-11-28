@@ -27,6 +27,75 @@ public sealed class WmsQualityInspectionGateConsumerTests
         string TargetLocationCode);
 
     [Fact]
+    public async Task Erp_receipt_decision_waits_for_binding_then_projects_only_the_original_line()
+    {
+        var databaseName = nameof(Erp_receipt_decision_waits_for_binding_then_projects_only_the_original_line);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var token = CancellationToken.None;
+        var inbound = InboundOrder.CreatePendingReceipt("org-001", "env-dev", "IN-ERP", "purchase-order", "PO-001", "SITE-01",
+            [
+                new ExpectedInboundOrderLine("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "quality", "company", null),
+                new ExpectedInboundOrderLine("LINE-002", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "quality", "company", null)
+            ]);
+        inbound.StageErpReceipt(inbound.Version, [new("LINE-001", 5m), new("LINE-002", 5m)], new("receipt-key", "fingerprint"), 1m);
+        var batchId = inbound.ReceiptBatchId!.Value;
+        var template = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, "PR-001");
+        var payload = System.Text.Json.JsonSerializer.SerializeToNode(template.Payload with
+        {
+            SourceService = "erp",
+            StockRelease = null
+        })!.AsObject();
+        payload["SourceDocumentLineId"] = "LINE-002";
+        payload["WmsReceiptBatchId"] = batchId;
+        var inspectionPayload = System.Text.Json.JsonSerializer.Deserialize<InspectionResultPayload>(payload.ToJsonString())!;
+        var result = template with { Payload = inspectionPayload };
+
+        await using (var db = CreateContext(databaseName, databaseRoot))
+        {
+            db.InboundOrders.Add(inbound);
+            await db.SaveChangesAsync(token);
+            var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(db, deadLetters);
+            await handler.HandleAsync(result, token);
+            Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync(token));
+            var early = Assert.Single(await deadLetters.ListAsync(
+                QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending, token));
+            Assert.Equal("erp-receipt-acceptance-not-bound", early.FailureCode);
+            inbound.BindErpPurchaseReceipt(batchId, "PR-001");
+            await db.SaveChangesAsync(token);
+        }
+
+        await using (var db = CreateContext(databaseName, databaseRoot))
+        {
+            var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(db, deadLetters);
+            await handler.HandleAsync(result, token);
+            await handler.HandleAsync(result with { EventId = "redelivery" }, token);
+            await handler.HandleAsync(result with
+            {
+                EventId = "conflicting-event",
+                Payload = result.Payload with { InspectionRecordId = "QI-CONFLICT" }
+            }, token);
+        }
+
+        await using var persisted = CreateContext(databaseName, databaseRoot);
+        Assert.Single(await persisted.ProcessedIntegrationEvents.ToListAsync(token));
+        var order = await persisted.InboundOrders.Include(x => x.Lines).SingleAsync(token);
+        Assert.All(order.Lines, line => Assert.Equal(InboundQualityGateStatuses.Pending, line.QualityGateStatus));
+        Assert.Null(order.Lines.Single(x => x.LineNo == "LINE-001").ErpReceiptInspectionRecordId);
+        var projected = order.Lines.Single(x => x.LineNo == "LINE-002");
+        Assert.Equal("QI-001", projected.ErpReceiptInspectionRecordId);
+        Assert.Equal("rejected", projected.ErpReceiptInspectionResult);
+        Assert.Equal(5m, projected.ErpReceiptInspectedQuantity);
+        Assert.Equal("critical-defect", projected.ErpReceiptInspectionReason);
+        Assert.Empty(await persisted.SupplierReturnRequests.ToListAsync(token));
+        Assert.Empty(await persisted.OutboundOrders.ToListAsync(token));
+        Assert.Contains(await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, token), x => x.FailureCode == "erp-receipt-quality-result-conflict");
+    }
+
+    [Fact]
     public async Task Quality_passed_event_releases_wms_putaway_gate_for_received_stock()
     {
         var databaseName = nameof(Quality_passed_event_releases_wms_putaway_gate_for_received_stock);

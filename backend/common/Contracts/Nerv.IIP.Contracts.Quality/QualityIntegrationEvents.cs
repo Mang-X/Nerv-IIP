@@ -395,7 +395,9 @@ public sealed record InspectionResultPayload(
     /// <summary>
     /// 检验对象所属 MES 工序任务公开 id；来源为工单级检验或非 MES 归属检验时为 null。
     /// </summary>
-    string? OperationTaskId = null);
+    string? OperationTaskId = null,
+    string? SourceDocumentLineId = null,
+    Guid? WmsReceiptBatchId = null);
 
 public sealed record StockReleaseDimensionPayload(
     string UomCode,

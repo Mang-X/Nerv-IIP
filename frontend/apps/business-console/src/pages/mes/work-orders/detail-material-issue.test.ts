@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { reactive, ref, toRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,7 +23,7 @@ const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
   useRouter: () => ({ push: routerPush, replace: vi.fn() }),
-  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
 vi.mock('@/composables/scheduling/useScheduleInvalidation', () => ({
@@ -56,6 +56,7 @@ const state = vi.hoisted(() => ({
   returnLineSideMaterial: vi.fn(),
   refreshMaterialReadiness: vi.fn(),
   recordEngineeringChangeDecision: vi.fn(),
+  impacts: vi.fn(),
   materialIssueRequests: [] as Record<string, unknown>[],
   baseUomBySku: new Map<string, string>(),
   skusPending: false,
@@ -63,6 +64,11 @@ const state = vi.hoisted(() => ({
   detailPending: false,
   detail: {} as Record<string, unknown>,
   materialReadiness: {} as Record<string, unknown>,
+}))
+
+vi.mock('@nerv-iip/api-client', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsoleMesEngineeringChangeWorkOrderImpacts: state.impacts,
 }))
 
 const readinessQuery = reactive({ pending: false, error: undefined as unknown })
@@ -166,10 +172,11 @@ function mountDetail(permissionCodes: string[]) {
           props: ['rows', 'columns'],
           template: `<div><div v-for="row in rows">
             <span v-for="column in columns">
-              {{ column.key === 'wmsRequestId' ? '' : column.accessor ? column.accessor(row) : row[column.key] }}
+              <slot :name="'cell-' + column.key" :row="row">
+                {{ column.accessor ? column.accessor(row) : row[column.key] }}
+              </slot>
             </span>
-            <slot name="cell-wmsRequestId" :row="row" />
-            <slot name="cell-actions" :row="row" />
+
           </div></div>`,
         },
         NvButton: { template: '<button><slot /></button>' },
@@ -230,6 +237,7 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     readinessQuery.error = undefined
     state.returnLineSideMaterial.mockReset()
     state.recordEngineeringChangeDecision.mockReset()
+    state.impacts.mockReset()
     state.materialIssueRequests.length = 0
     state.baseUomBySku.clear()
     state.baseUomBySku.set('MAT-OIL', 'L')
@@ -626,6 +634,84 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('[data-testid="line-side-receipt-error"]').text()).toContain(message)
+  })
+
+  it('工单工程变更区显示权威处置，保存决策后读取留痕和变更单链接', async () => {
+    const impact = { workOrderId: 'WO-1', changeNumber: 'ECO/2602-01' }
+    const decidedAt = '2026-02-10T12:34:00Z'
+    state.impacts
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            total: 1,
+            items: [{ ...impact, disposition: 'blocked-for-manual-confirmation' }],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            total: 1,
+            items: [
+              {
+                ...impact,
+                disposition: 'continue-with-archived-version',
+                decidedBy: 'shift-lead-07',
+                decidedAtUtc: decidedAt,
+                decisionReason: '已完成首件检验',
+              },
+            ],
+          },
+        },
+      })
+    state.recordEngineeringChangeDecision.mockResolvedValue(undefined)
+    const wrapper = mountDetail([
+      'business.mes.work-orders.read',
+      'business.mes.work-orders.manage',
+      'business.engineering.changes.read',
+    ])
+    await flushPromises()
+
+    const section = wrapper.get('section[aria-label="工程变更影响"]')
+    expect(section.text()).toContain('待人工确认')
+    expect(section.text()).not.toContain('shift-lead-07')
+    expect(section.get('a[href="/engineering/eco?changeNumber=ECO%2F2602-01"]').text()).toBe(
+      'ECO/2602-01',
+    )
+    expect(state.impacts.mock.calls[0]?.[0].query).toEqual({
+      workOrderId: 'WO-1',
+      organizationId: 'org',
+      environmentId: 'dev',
+      scopeKind: 'work-center',
+      scopeId: 'WC-1',
+      skip: 0,
+      take: 10,
+    })
+
+    await wrapper.get('[data-testid="record-engineering-change-decision"]').trigger('click')
+    await wrapper.get('#engineering-change-number').setValue('ECO/2602-01')
+    await wrapper.get('select').setValue('continue-with-archived-version')
+    await wrapper.get('#engineering-change-reason').setValue('已完成首件检验')
+    await wrapper.get('[data-testid="confirm-engineering-change-decision"]').trigger('click')
+    await flushPromises()
+
+    expect(state.impacts).toHaveBeenCalledTimes(2)
+    expect(section.text()).toContain('继续旧版')
+    expect(section.text()).toContain('shift-lead-07')
+    expect(section.text()).toContain('已完成首件检验')
+    expect(section.get('time').attributes('datetime')).toBe(decidedAt)
+    wrapper.unmount()
+  })
+
+  it('未获工程变更读取权时，工单可查看但不读取变更记录', async () => {
+    const wrapper = mountDetail(['business.mes.work-orders.read'])
+    await flushPromises()
+    expect(wrapper.text()).toContain('工单 WO-1')
+    expect(wrapper.find('section[aria-label="工程变更影响"]').exists()).toBe(false)
+    expect(state.impacts).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('工程变更决策空白提交显示字段校验且不发请求', async () => {

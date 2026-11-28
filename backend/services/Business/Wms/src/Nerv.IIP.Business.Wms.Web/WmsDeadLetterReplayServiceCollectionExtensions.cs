@@ -37,6 +37,16 @@ public static class WmsDeadLetterReplayServiceCollectionExtensions
                     && x.SourceDocumentId == ev.Payload.RequestNo.Trim(), token)
                 && await Db(provider).WarehouseTasks.AsNoTracking().AnyAsync(x => x.OrganizationId == ev.OrganizationId
                     && x.EnvironmentId == ev.EnvironmentId && x.SourceOrderNo == PrepareMesMaterialIssueOutboundCommandHandler.OutboundOrderNoFor(ev.Payload.RequestNo), token));
+        Add<PurchaseOrderCancelledIntegrationEvent, ErpPurchaseOrderCancelledIntegrationEventHandler>(services,
+            ErpPurchaseOrderCancelledIntegrationEventHandler.ConsumerName, async (provider, ev, token) =>
+                await ErpPurchaseOrderCancelledIntegrationEventHandler.HasPersistedCancellationAsync(Db(provider), ev, token)
+                && await Db(provider).ProcessedIntegrationEvents.AnyAsync(x =>
+                    x.ConsumerName == ErpPurchaseOrderCancelledIntegrationEventHandler.ConsumerName
+                    && x.IdempotencyKey == ev.IdempotencyKey && x.EventType == ev.EventType
+                    && x.EventVersion == ev.EventVersion && x.SourceService == ev.SourceService, token));
+        Add<PurchaseOrderReleasedV2IntegrationEvent, ErpPurchaseOrderReleasedIntegrationEventHandler>(services,
+            ErpPurchaseOrderReleasedIntegrationEventHandler.ConsumerName,
+            (provider, ev, token) => ErpPurchaseOrderReleasedIntegrationEventHandler.HasPersistedReleaseAsync(Db(provider), ev, token));
         Add<SalesReturnAuthorizedIntegrationEvent, ErpSalesReturnAuthorizedIntegrationEventHandler>(services,
             ErpSalesReturnAuthorizedIntegrationEventHandler.ConsumerName, async (provider, ev, token) =>
                 await HasInboxAsync(provider, ErpSalesReturnAuthorizedIntegrationEventHandler.ConsumerName, ev, token)
@@ -102,6 +112,9 @@ public static class WmsDeadLetterReplayServiceCollectionExtensions
 
     private static async Task<bool> QualityCompletedAsync(IServiceProvider provider, InspectionResultIntegrationEvent ev, CancellationToken token)
     {
+        if (ev.Payload.WmsReceiptBatchId.HasValue)
+            return await ErpReceiptInspectionProjection.IsPersistedAsync(Db(provider), ev, token);
+
         if (!await HasInboxAsync(provider, QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName, ev, token))
             return false;
         var inbound = await Db(provider).InboundOrders.AsNoTracking().Include(x => x.Lines).SingleOrDefaultAsync(x =>

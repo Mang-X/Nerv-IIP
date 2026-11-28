@@ -27,6 +27,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\services\Business\MasterData\src\Nerv.IIP.Business.MasterData.Web\Nerv.IIP.Business.MasterData.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\ProductEngineering\src\Nerv.IIP.Business.ProductEngineering.Web\Nerv.IIP.Business.ProductEngineering.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Web\Nerv.IIP.Business.DemandPlanning.Web.csproj" />

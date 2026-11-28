@@ -72,14 +72,7 @@ public sealed class GetPrincipalWorkContextQueryHandler(ApplicationDbContext dbC
         var organizationId = Required(request.OrganizationId);
         var environmentId = Required(request.EnvironmentId);
         var userId = Required(request.UserId);
-        var workers = await dbContext.Workers
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.UserId == userId
-                && !x.Disabled)
-            .Take(2)
+        var workers = await PrincipalWorkerMapping.Find(dbContext, organizationId, environmentId, userId)
             .ToListAsync(cancellationToken);
 
         if (workers.Count == 0)

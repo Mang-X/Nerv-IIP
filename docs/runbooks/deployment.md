@@ -51,6 +51,87 @@
 
 不要把 `infra/compose/` 的 legacy overlay 当成完整平台拓扑；它只用于已有迁移期验证/发布演练。生成产物进入交付前，运行当前仓库提供的 production deployment artifact / release rehearsal 验证入口；准确脚本名、参数和 impact 以 `scripts/` 与 CI producer 为准。
 
+开启 ERP → WMS 采购订单自动收货时，在运行 `publish-compose` 的同一进程环境准备配置，详见[采购收货配置与启用顺序](wms-purchase-order-receiving.md#配置)。
+
+### Approval 生产认证与存量切换
+
+IAM 的授权检查和当前主体查询使用 IAM 凭据。网关、Approval 等请求方将当前主体的令牌传给 IAM。IAM 服务部署不接收共享内部令牌。
+
+Approval 的生产配置默认关闭七组 HTTP 操作的共享令牌兼容。为每个组织与环境范围配置下表中的调用方凭据。每个调用方、操作和范围独立生成凭据，经部署 secret 机制注入。共享内部令牌仍由其他内部接口使用，保留到这些接口完成迁移。
+
+| AppHost 配置节 | 调用方 |
+| --- | --- |
+| `ApprovalCreateChain` | ERP、Inventory、BusinessGateway |
+| `ApprovalGetChain` | MES、Quality、ProductEngineering、BusinessGateway |
+| `ApprovalReadCollections`、`ApprovalReadTemplates`、`ApprovalWriteTemplates`、`ApprovalReadDelegations` | BusinessGateway，每组独立 |
+| `ApprovalOverdueCheck` | 运维调用方，使用 `approval-check-overdue-operator-<范围索引>` 参数。进程内后台检查沿用自己的配置 |
+
+每节的 `Scopes` 数组必填，例如 `ApprovalCreateChain__Scopes__0__OrganizationId` 与 `ApprovalCreateChain__Scopes__0__EnvironmentId`。按各操作后续章节的参数名提供相应 secret。legacy Compose 验证入口在 `nerv-iip.production.env.example` 中列出单组范围和独立 secret 输入。多范围部署使用 Aspire 生成入口。
+
+已经给 BusinessGateway 配置建链专用凭据的部署，先更新全部 BusinessGateway 实例并验证建链，再更新 Approval。更新后的网关兼容仍携带 `startedBy` 的旧 Console 请求。转发给上一版 Approval 时，网关使用已验证的当前主体填充旧服务契约，并附带主体证明。
+
+1. 仍使用共享凭据的存量部署先更新 Approval。Aspire 按操作显式设置 `AllowLegacyBearer=true`、`ConfigureSenders=false`。legacy Compose 验证时显式设置 `NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER=true` 并保留旧发送方实例。
+2. 更新发送方并启用范围凭据。建链时，BusinessGateway 还传当前主体的 IAM bearer，Approval 向 IAM 复核身份与建链权限。ERP 与 Inventory 的发起人记录为认证服务主体。兼容共享凭据的旧机器调用记录为 `service:legacy-internal`，其请求体发起人不写入审计记录。
+3. 对各范围验证每个调用方的成功路径及范围外、其他调用方凭据的拒绝路径。停用相应 `AllowLegacyBearer` 后，再验证同一路由拒绝共享令牌。如果切换受阻，先恢复接收方兼容并验证生效，再恢复旧发送方或关闭其范围凭据。保留上线前后各操作的调用结果与回滚配置。
+
+### Approval 建链调用凭据
+
+迁移时在 AppHost 设置 `ApprovalCreateChain:Enabled=true`，并在 `ApprovalCreateChain:Scopes` 的每条记录提供 `OrganizationId` 与 `EnvironmentId`。为每个范围按列表下标提供三项 Aspire secret 参数 `approval-create-chain-erp-{index}`、`approval-create-chain-inventory-{index}` 和 `approval-create-chain-gateway-{index}`。每项使用独立凭据，范围列表应覆盖三个调用方实际使用的组织和环境。
+
+1. 先让 Approval 部署支持限定凭据的版本，设置 `ApprovalCreateChain:AllowLegacyBearer=true` 和 `ApprovalCreateChain:ConfigureSenders=false`。
+2. 更新 ERP、Inventory 和 BusinessGateway，并将 `ConfigureSenders` 设为 `true`。在每个配置范围验证采购订单或销售授信审批、盘点调整审批及 Gateway 代用户建链。保留各入口的响应状态和相关 ID。
+3. 确认所有实例已切换后，将 `AllowLegacyBearer` 设为 `false`。验证共享凭据在建链入口收到 `401`，且其他 Approval 入口继续使用各自现有认证。
+4. 若新凭据或范围配置阻断合法建链，先恢复 Approval 的 `AllowLegacyBearer=true`，再关闭发送方的限定凭据配置，检查建链恢复后再继续切换。
+
+### Approval 审批链详情读取凭据
+
+迁移时设置 `ApprovalGetChain:Enabled=true`，并在 `ApprovalGetChain:Scopes` 中配置各调用方实际使用的 `OrganizationId` 与 `EnvironmentId`。为每个范围按列表下标分别提供 Aspire secret 参数 `approval-get-chain-mes-{index}`、`approval-get-chain-quality-{index}`、`approval-get-chain-product-engineering-{index}` 和 `approval-get-chain-gateway-{index}`。每项使用独立凭据，且与共享凭据和建链凭据分开。
+
+1. 先更新 Approval，设置 `ApprovalGetChain:AllowLegacyBearer=true` 和 `ApprovalGetChain:ConfigureSenders=false`。
+2. 更新四个调用方，将 `ConfigureSenders` 设为 `true`。逐范围验证 MES 工序开工、Quality 的 NCR 处置和 CAPA 关闭、ProductEngineering 工程变更发布及 BusinessGateway 审批链详情。记录相关链 ID 与各入口的响应状态。
+3. 确认所有实例完成切换后，将 `AllowLegacyBearer` 设为 `false`。验证限定凭据可以读取各自的审批链，且共享凭据读取详情时收到 `401`。
+4. 如需回滚，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。用同一组业务入口和链 ID 核对恢复情况。
+
+### Approval 审批链列表、待办和决策读取凭据
+
+在 AppHost 设置 `ApprovalReadCollections:Enabled=true`，用 `ApprovalReadCollections:Scopes` 登记 BusinessGateway 实际使用的每组 `OrganizationId` 和 `EnvironmentId`。为每组范围按列表下标配置 Aspire secret 参数 `approval-read-collections-gateway-{index}`，凭据须与共享、建链及链详情的凭据分别配置。
+
+1. 先更新 Approval，设置 `ApprovalReadCollections:AllowLegacyBearer=true` 和 `ApprovalReadCollections:ConfigureSenders=false`。
+2. 更新 BusinessGateway 并将 `ConfigureSenders` 设为 `true`。逐范围验证链列表、审批待办、工作台待办及审批决策列表，记录响应状态和代表性审批链 ID。
+3. 确认所有 Gateway 实例都已切换后，将 `AllowLegacyBearer` 设为 `false`。确认上述业务入口仍可用，且共享凭据调用 Approval 的链列表、待办及决策列表均收到 `401`。
+4. 若合法范围受阻，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。用相同入口和范围确认恢复。
+
+### Approval 模板读取与写入凭据
+
+在 AppHost 分别配置 `ApprovalReadTemplates` 和 `ApprovalWriteTemplates`。每组设置 `Enabled=true`，在 `Scopes` 中登记该操作使用的每个 `OrganizationId` 与 `EnvironmentId`，并按列表下标分别提供 Aspire secret 参数 `approval-read-templates-gateway-{index}` 和 `approval-write-templates-gateway-{index}`。每项凭据须与共享凭据及其他 Approval 操作凭据不同。
+
+1. 先更新 Approval。对迁移中的每组设置 `AllowLegacyBearer=true` 和 `ConfigureSenders=false`。
+2. 更新 BusinessGateway，并将该组的 `ConfigureSenders` 设为 `true`。逐范围使用有权限的用户验证模板列表或创建及编辑，并确认无权限用户在 Gateway 被拒绝。
+3. 确认该组在所有 Gateway 实例完成切换后，将其 `AllowLegacyBearer` 设为 `false`。验证授权操作继续可用，且共享凭据调用对应 Approval 路由时收到 `401`。
+4. 如需回滚，先在 Approval 恢复该组的 `AllowLegacyBearer=true`，再将其 `ConfigureSenders` 设为 `false`。
+
+### Approval 委托列表凭据
+
+在 AppHost 设置 `ApprovalReadDelegations:Enabled=true`，用 `ApprovalReadDelegations:Scopes` 登记委托列表实际使用的每组 `OrganizationId` 与 `EnvironmentId`。为各范围按列表下标提供 Aspire secret 参数 `approval-read-delegations-gateway-{index}`，每项凭据须与共享凭据及其他 Approval 操作凭据不同。
+
+1. 先更新 Approval，设置 `ApprovalReadDelegations:AllowLegacyBearer=true` 和 `ApprovalReadDelegations:ConfigureSenders=false`。
+2. 更新 BusinessGateway，将 `ConfigureSenders` 设为 `true`。逐范围使用具备审批读取权限的用户验证委托列表与筛选。
+3. 确认所有 Gateway 实例完成切换后，将 `AllowLegacyBearer` 设为 `false`，确认授权列表继续可用且共享凭据调用 Approval 委托列表时收到 `401`。
+4. 如需回滚，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。
+
+### Approval 超时人工检查凭据
+
+- `POST /api/business/v1/approvals/tasks/overdue/check` 保留为内部运维入口。存量滚动切换时显式设置 `Approval:OverdueCheck:HttpAuthorization:AllowLegacyBearer=true`，在 Approval 服务配置 `Approval:OverdueCheck:HttpAuthorization:ScopedCallers:Profiles`。每个 profile 填写唯一的 `Name`、独立的 `BearerToken`、`Subject=approval-overdue-operator`、`Permissions:0=internal.approval-tasks.check-overdue` 及对应的 `OrganizationId` 和 `EnvironmentId`。通过部署的 secret 注入机制提供 token，每组范围使用独立凭据。
+- 将人工调用方迁移到对应范围的凭据。验证请求返回 `200` 和 `markedCount`，匹配凭据但超出范围的请求返回 `403`。全部迁移完成后，将 `AllowLegacyBearer` 设为 `false`，共享凭据应收到 `401`。严格模式要求在启用前配置有效 profile。需要回滚时，先恢复 `AllowLegacyBearer=true`，再恢复旧调用方。
+- 后台扫描由 `Approval:OverdueCheck:Enabled`、`Scopes` 和 `Interval` 控制。打开扫描并配置范围后，服务启动时扫描一次，随后按间隔扫描，默认间隔 15 分钟。后台直接派发应用命令，无需 HTTP 凭据。手动调用只检查本次请求涵盖的范围。
+
+### Approval 审批人部门读取凭据
+
+Production AppHost 默认同时配置 Approval 专用发送端和 MasterData 接收端。发布时用 `ApprovalMasterDataDepartment__Scopes__0__OrganizationId` 和 `ApprovalMasterDataDepartment__Scopes__0__EnvironmentId` 等数组项登记审批人实际使用的全部范围。默认发布缺少范围时会失败。为每组范围按列表下标配置 Aspire secret 参数 `approval-master-data-department-{index}`。生成的 Compose 通过 `APPROVAL_MASTER_DATA_DEPARTMENT_{index}` 向匹配的两端注入同一凭据。每个范围使用独立凭据，并与共享内部凭据及其他操作凭据分开。
+
+- 分批迁移时，先用 `ApprovalMasterDataDepartment__ConfigureSender=false` 发布。MasterData 接收专用凭据，Approval 继续使用原工作上下文查询。确认所有 MasterData 实例就绪后，删除该覆盖并更新 Approval。逐范围验证用户可按实际部门完成审批。
+- 专用发送端启用后，缺少对应范围的凭据、下游拒绝或异常响应都会终止审批并返回 `503`。如需计划回滚，先将 `ConfigureSender` 恢复为 `false` 并更新 Approval。确认各实例恢复原工作上下文查询后，可用 `ApprovalMasterDataDepartment__Enabled=false` 撤下 MasterData 的专用凭据。
+
 ### FileStorage tus 字节落点
 
 FileStorage 的 tus 根目录承载上传暂存，默认 `local` 模式也存放已完成文件。生产部署须使用绝对路径和持久挂载，并在首次启动前写入与部署配置一致的卷身份。

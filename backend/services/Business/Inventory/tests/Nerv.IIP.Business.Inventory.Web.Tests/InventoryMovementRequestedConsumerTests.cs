@@ -667,19 +667,25 @@ public sealed class InventoryMovementRequestedConsumerTests
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore());
 
-        await handler.HandleAsync(
-            CreateInspectionEvent(
-                QualityIntegrationEventTypes.InspectionPassed,
-                new StockReleaseDimensionPayload(
-                    "kg",
-                    "SITE-01",
-                    "LOC-B-02",
-                    "   ",
-                    "",
-                    StockQualityStatus.Quality,
-                    "company",
-                    " ")),
-            CancellationToken.None);
+        var legacyDecision = CreateInspectionEvent(
+            QualityIntegrationEventTypes.InspectionPassed,
+            new StockReleaseDimensionPayload("kg", "SITE-01", "LOC-B-02", "   ", "",
+                StockQualityStatus.Quality, "company", " "));
+        var batchDecision = legacyDecision with
+        {
+            Payload = legacyDecision.Payload with
+            {
+                SourceService = "erp",
+                SourceDocumentId = "PR-001",
+                SourceDocumentLineId = "LINE-001",
+                WmsReceiptBatchId = Guid.NewGuid()
+            }
+        };
+        await handler.HandleAsync(batchDecision, CancellationToken.None);
+        Assert.Equal(5m, targetLedger.OnHandQuantity);
+        Assert.Empty(dbContext.StockMovements);
+
+        await handler.HandleAsync(legacyDecision, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality).OnHandQuantity);

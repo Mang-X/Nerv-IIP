@@ -33,6 +33,8 @@
     <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Infrastructure\Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj" />
     <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Domain\Nerv.IIP.Business.DemandPlanning.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Inventory\src\Nerv.IIP.Business.Inventory.Web\Nerv.IIP.Business.Inventory.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Quality\src\Nerv.IIP.Business.Quality.Web\Nerv.IIP.Business.Quality.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Infrastructure\Nerv.IIP.Business.Mes.Infrastructure.csproj" />
     <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Maintenance\src\Nerv.IIP.Business.Maintenance.Web\Nerv.IIP.Business.Maintenance.Web.csproj" Aliases="global,MaintenanceWeb" />

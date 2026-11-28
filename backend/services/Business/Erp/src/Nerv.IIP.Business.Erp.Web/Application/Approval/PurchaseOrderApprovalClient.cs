@@ -26,7 +26,8 @@ public interface IPurchaseOrderApprovalClient
 
 public sealed class HttpPurchaseOrderApprovalClient(
     HttpClient httpClient,
-    IInternalServiceTokenProvider internalTokenProvider) : IPurchaseOrderApprovalClient
+    IInternalServiceTokenProvider internalTokenProvider,
+    IConfiguration? configuration = null) : IPurchaseOrderApprovalClient
 {
     public async Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
     {
@@ -45,7 +46,9 @@ public sealed class HttpPurchaseOrderApprovalClient(
                 request.OrganizationId,
                 request.DepartmentId)),
         };
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ScopedCallerOutboundToken.Resolve(
+            configuration?.GetSection("Approval:CreateChain:OutboundCredentials"),
+            request.OrganizationId, request.EnvironmentId, internalTokenProvider.BearerToken));
 
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         response.EnsureSuccessStatusCode();

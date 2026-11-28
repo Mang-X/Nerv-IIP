@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EngineeringWorkOrderImpacts from '@/components/mes/EngineeringWorkOrderImpacts.vue'
 import WorkOrderSourceFacts from '@/components/mes/WorkOrderSourceFacts.vue'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
@@ -74,6 +75,7 @@ const {
   decisionOpen,
   decisionShowErrors,
   decisionValidationSummary,
+  engineeringImpactsRefreshVersion,
   detail,
   detailError,
   detailErrorMessage,
@@ -174,6 +176,7 @@ const {
   unreturnableNoLotRows,
   workOrderLabel,
   workOrderManageScopeReady,
+  workOrderReadScope,
   workOrderReadScopeMessage,
   workOrderStatusPill,
   workOrderTone,
@@ -181,7 +184,7 @@ const {
 </script>
 
 <template>
-  <BusinessLayout>
+  <BusinessLayout class="max-sm:overflow-x-clip">
     <NvPageHeader
       :title="`工单 ${workOrderLabel}`"
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
@@ -345,6 +348,15 @@ const {
         </div>
       </div>
     </div>
+
+    <EngineeringWorkOrderImpacts
+      v-if="detail?.workOrderId && workOrderReadScope"
+      :work-order-id="detail.workOrderId"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+      :scope="workOrderReadScope"
+      :refresh-version="engineeringImpactsRefreshVersion"
+    />
 
     <WorkOrderQualityHolds
       :active-quality-hold-count="activeQualityHoldCount"

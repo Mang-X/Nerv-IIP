@@ -106,7 +106,9 @@ internal static class InspectionIntegrationEventPayloads
             record.OwnerId,
             record.UomCode,
             workOrderId,
-            operationTaskId);
+            operationTaskId,
+            record.SourceDocumentLineId,
+            record.WmsReceiptBatchId);
     }
 
     private static StockReleaseDimensionPayload? ToStockRelease(InspectionRecord record, string? targetQualityStatus)

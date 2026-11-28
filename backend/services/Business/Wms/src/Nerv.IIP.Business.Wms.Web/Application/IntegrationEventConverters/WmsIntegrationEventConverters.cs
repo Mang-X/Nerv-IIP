@@ -80,11 +80,14 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
         var order = domainEvent.InboundOrder;
         var line = order.Lines.First();
         var status = order.Status.ToString();
+        var completionKey = order.ReceiptBatchId is { } batchId
+            ? EventIds.Idempotency("inbound-receipt-posted", order.OrganizationId, order.EnvironmentId, batchId.ToString("N"))
+            : EventIds.Idempotency("inbound-completed", order.OrganizationId, order.EnvironmentId, order.InboundOrderNo);
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.InboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
-            EventIds.Idempotency("inbound-completed", order.OrganizationId, order.EnvironmentId, order.InboundOrderNo),
+            completionKey,
             new WmsIntegrationPayload(
                 order.InboundOrderNo,
                 line.LineNo,
@@ -105,10 +108,11 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
                         order.SiteCode,
                         x.StagingLocationCode,
                         x.ReceivedQuantity,
-                        x.QualityStatus))
+                        order.ReceiptBatchId is null ? x.QualityStatus : x.ErpReceiptPostingQualityStatus))
                     .ToArray(),
-                order.SourceDocumentType,
-                order.SourceDocumentId));
+                order.ReceiptBatchId is null ? order.SourceDocumentType : WmsSourceDocumentTypes.PurchaseReceipt,
+                order.ErpPurchaseReceiptNo ?? order.SourceDocumentId,
+                WmsReceiptBatchId: order.ReceiptBatchId));
     }
 }
 
@@ -351,7 +355,8 @@ internal static class InventoryMovementRequestEventMapping
             request.InventoryReservationId,
             UnitCost: request.UnitCost,
             ProductionDate: request.ProductionDate,
-            ExpiryDate: request.ExpiryDate);
+            ExpiryDate: request.ExpiryDate,
+            MatchReceiptStockDates: request.MatchReceiptStockDates);
     }
 }
 

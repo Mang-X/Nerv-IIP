@@ -66,11 +66,14 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         Assert.Equal(["SKU-RM-1000"], etaChanged.Payload.SkuCodes);
     }
 
-    [Fact]
-    public async Task InboundOrderCompletedHandler_RecordsPurchaseReceiptAndGrIrToApClosureOnce()
+    [Theory]
+    [InlineData(PurchaseReceiptInventoryPostingRoute.Direct)]
+    [InlineData(PurchaseReceiptInventoryPostingRoute.Wms)]
+    public async Task InboundOrderCompletedHandler_RecordsPurchaseReceiptAndGrIrToApClosureOnce(
+        PurchaseReceiptInventoryPostingRoute authority)
     {
         await using var dbContext = CreateDbContext();
-        await ReleasePurchaseOrderAsync(dbContext, "PO-WMS-GRIR-001", "LINE-001", 2m, 12.5m);
+        await ReleasePurchaseOrderAsync(dbContext, "PO-WMS-GRIR-001", "LINE-001", 2m, 12.5m, authority);
         var integrationEvent = BuildWmsCompletedEvent("WMS-IN-GRIR-001", "purchase-order", "PO-WMS-GRIR-001", "LINE-001", 2m);
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var inboundHandler = CreateInboundHandler(dbContext, deadLetters);
@@ -367,7 +370,8 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         string purchaseOrderNo,
         string lineNo,
         decimal quantity,
-        decimal unitPrice)
+        decimal unitPrice,
+        PurchaseReceiptInventoryPostingRoute authority = PurchaseReceiptInventoryPostingRoute.Direct)
     {
         var order = PurchaseOrder.Create(
             "org-001",
@@ -375,7 +379,8 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
             purchaseOrderNo,
             "SUP-001",
             "SITE-01",
-            [new PurchaseOrderLineDraft(lineNo, "SKU-RM-1000", "kg", quantity, unitPrice, new DateOnly(2026, 7, 1))]);
+            "CNY",
+            [new PurchaseOrderLineDraft(lineNo, "SKU-RM-1000", "kg", quantity, unitPrice, new DateOnly(2026, 7, 1))], authority);
         order.MarkApprovalRequested($"chain-{purchaseOrderNo}");
         order.ReleaseAfterApproval($"chain-{purchaseOrderNo}");
         dbContext.PurchaseOrders.Add(order);

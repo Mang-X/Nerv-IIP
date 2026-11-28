@@ -1,3 +1,4 @@
+import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import { vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
@@ -56,6 +57,8 @@ const wms = vi.hoisted(() => ({
   outboundStatus: 'open',
   outboundPoolCode: 'POOL-01' as string | null,
   completeInbound: vi.fn(),
+  confirmReceipt: vi.fn(),
+  purchaseReceipt: undefined as BusinessConsoleWmsInboundOrderItem['purchaseReceipt'],
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
   verifyCountExecution: vi.fn(),
@@ -83,6 +86,7 @@ const wms = vi.hoisted(() => ({
   refreshOutboundOrders: vi.fn(async () => undefined),
   refreshCountExecutions: vi.fn(async () => undefined),
 }))
+const inboundVersion = shallowRef(3)
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
@@ -123,13 +127,16 @@ vi.mock('@/composables/inventory/useInventoryScope', async () => {
 })
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
+  useAuthStore: () => ({
+    principal: { principalId: 'emp049', permissionCodes: wms.permissionCodes },
+  }),
 }))
 
 vi.mock('@/composables/wms/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
 vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  confirmBusinessConsoleWmsInboundReceipt: wms.confirmReceipt,
   retryBusinessConsoleWmsInboundInventoryPosting: wms.retryInboundPosting,
   retryBusinessConsoleWmsOutboundInventoryPosting: wms.retryOutboundPosting,
 }))
@@ -144,6 +151,8 @@ vi.mock('@/composables/wms', () => ({
         inboundOrderNo: 'IB-1',
         siteCode: 'SITE-001',
         status: wms.inboundStatus,
+        version: inboundVersion.value,
+        purchaseReceipt: wms.purchaseReceipt,
         createdAtUtc: '2026-06-01T00:00:00Z',
         qualityGateStatus: wms.qualityGateStatus,
         isReleasedForPutaway: wms.isReleasedForPutaway,
@@ -343,6 +352,9 @@ const resetFixture = () => {
   wms.qualityGateStatus = undefined
   wms.isReleasedForPutaway = true
   wms.inboundStatus = 'open'
+  inboundVersion.value = 3
+  wms.confirmReceipt.mockReset()
+  wms.purchaseReceipt = undefined
   wms.outboundStatus = 'open'
   wms.outboundPoolCode = 'POOL-01'
   wms.retryInboundPosting.mockReset()
@@ -356,4 +368,4 @@ const resetFixture = () => {
   ]
 }
 
-export { wms, candidateState, layoutStub, resetFixture, routeGuardState, setInput }
+export { wms, candidateState, inboundVersion, layoutStub, resetFixture, routeGuardState, setInput }

@@ -195,13 +195,25 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsDeadLetterReplayPostgresTests.cs",
-      "sourceSha256": "5b4497d2876590b4056511ecc884989470d7f3d0e6696cd563e404551a8f6b99",
+      "sourceSha256": "5a8000e5fac37286ec8d33b112f2765196c5d85d0bbf9f823427d6396af41c4b",
       "factoryCallCount": 1,
       "ownerships": [
         {
           "strategy": "encapsulated-explicit-drop",
           "factoryCallCount": 1,
           "reason": "The HTTP replay fixture owns its unique database and explicitly drops it after host disposal, including initialization failure."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsPurchaseOrderReleasePostgresTests.cs",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The WMS purchase-order CAP startup proof drops its owned database after host disposal."
         }
       ]
     },
@@ -318,6 +330,17 @@
       ]
     },
     {
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.BlockedStock.cs",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "Each blocked supplier-return case owns its temporary database and disposes it after all three DbContexts are closed."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs",
       "factoryCallCount": 1,
       "ownerships": [
@@ -326,6 +349,17 @@
           "factoryCallCount": 1,
           "reason": "The FullChain ERP return acceptance proof preserves DROP-failure evidence by explicitly cleaning up after both DbContexts are disposed.",
           "ownerVariable": "database"
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/WarehousePurchaseReceiptBrokerAcceptanceTests.cs",
+      "factoryCallCount": 4,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 4,
+          "reason": "Each running service owns a separate CAP outbox and inbox in its own test database."
         }
       ]
     },

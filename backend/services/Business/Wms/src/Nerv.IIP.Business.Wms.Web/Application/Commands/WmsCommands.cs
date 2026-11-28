@@ -112,6 +112,22 @@ public sealed class CreateInboundOrderCommandHandler(
             request.SourceDocumentId,
             request.SiteCode,
             request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)));
+        if (string.Equals(proposedOrder.SourceDocumentType, WmsSourceDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase))
+        {
+            await PurchaseOrderInboundLock.AcquireAsync(dbContext, proposedOrder.OrganizationId,
+                proposedOrder.EnvironmentId, proposedOrder.SourceDocumentId, cancellationToken);
+            var hasExpectedReceipt = await dbContext.InboundOrders.AnyAsync(x =>
+                x.OrganizationId == proposedOrder.OrganizationId && x.EnvironmentId == proposedOrder.EnvironmentId
+                && x.SourceDocumentType == WmsSourceDocumentTypes.PurchaseOrder
+                && x.SourceDocumentId == proposedOrder.SourceDocumentId
+                && x.InboundOrderNo == proposedOrder.SourceDocumentId
+                && x.Lines.Any(line => line.ExpectedQuantity != null), cancellationToken);
+            if (hasExpectedReceipt)
+            {
+                throw new KnownException($"采购订单 '{proposedOrder.SourceDocumentId}' 已有待收货来源单。请使用该入库单处理收货。");
+            }
+        }
+
         var existingOrder = await dbContext.InboundOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(
@@ -315,10 +331,11 @@ public sealed class CompleteInboundOrderCommandLock : ICommandLock<CompleteInbou
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new CommandLockSettings(
-            $"business-wms:inbound-order-complete:{command.InboundOrderId}",
-            30));
+        return Task.FromResult(ForInboundOrder(command.InboundOrderId));
     }
+
+    internal static CommandLockSettings ForInboundOrder(InboundOrderId id) =>
+        new($"business-wms:inbound-order-complete:{id}", 30);
 }
 
 public sealed record CompleteWmsMovementResult(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
@@ -374,15 +391,18 @@ public sealed class CompleteInboundOrderCommandHandler
     private readonly ApplicationDbContext dbContext;
     private readonly WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer;
     private readonly IWmsPurchaseReceiptPostingRouteClient purchaseReceiptPostingRouteClient;
+    private readonly IWmsPurchaseReceiptAcceptanceClient? receiptAcceptanceClient;
 
     public CompleteInboundOrderCommandHandler(
         ApplicationDbContext dbContext,
         IWmsPurchaseReceiptPostingRouteClient purchaseReceiptPostingRouteClient,
-        WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer)
+        WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer,
+        IWmsPurchaseReceiptAcceptanceClient? receiptAcceptanceClient = null)
     {
         this.dbContext = dbContext;
         this.executionAuthorizer = executionAuthorizer;
         this.purchaseReceiptPostingRouteClient = purchaseReceiptPostingRouteClient;
+        this.receiptAcceptanceClient = receiptAcceptanceClient;
     }
 
     public CompleteInboundOrderCommandHandler(ApplicationDbContext dbContext, IWmsPurchaseReceiptPostingRouteClient purchaseReceiptPostingRouteClient)
@@ -395,6 +415,8 @@ public sealed class CompleteInboundOrderCommandHandler
 
     public async Task<CompleteWmsMovementResult> Handle(CompleteInboundOrderCommand request, CancellationToken cancellationToken)
     {
+        await ErpReceiptPostingLock.AcquireAsync(dbContext, dbContext.InboundOrders
+            .Where(order => order.Id == request.InboundOrderId), cancellationToken);
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(
             x => x.Id == request.InboundOrderId,
             cancellationToken)
@@ -411,9 +433,11 @@ public sealed class CompleteInboundOrderCommandHandler
         var singleLine = inbound.Lines.Count == 1;
         var replayKeysByLine = inbound.Lines.ToDictionary(
             line => line.LineNo,
-            line => singleLine
-                ? WmsText.ReplayIdempotencyKeys(request.IdempotencyKey)
-                : WmsText.ReplayLineIdempotencyKeys(request.IdempotencyKey, line.LineNo),
+            line => inbound.RequiresErpReceiptAcceptance
+                ? (IReadOnlyList<string>)[inbound.ErpReceiptMovementKey(line.LineNo)]
+                : singleLine
+                    ? WmsText.ReplayIdempotencyKeys(request.IdempotencyKey)
+                    : WmsText.ReplayLineIdempotencyKeys(request.IdempotencyKey, line.LineNo),
             StringComparer.Ordinal);
         var replayKeys = replayKeysByLine.Values.SelectMany(keys => keys).Distinct(StringComparer.Ordinal).ToArray();
         var replayRequests = await dbContext.InventoryMovementRequests
@@ -442,7 +466,22 @@ public sealed class CompleteInboundOrderCommandHandler
             throw new WmsLifecycleConflictException("complete-inbound", inbound.Status.ToString());
         }
 
-        var unitCostsByLine = string.Equals(inbound.SourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
+        if (inbound.RequiresErpReceiptAcceptance)
+        {
+            try
+            {
+                inbound.EnsureErpReceiptCanPost();
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new WmsUnprocessableException(exception.Message);
+            }
+        }
+
+        var unitCostsByLine = inbound.RequiresErpReceiptAcceptance
+            ? await (receiptAcceptanceClient ?? throw new InvalidOperationException("ERP receipt acceptance client is required."))
+                .GetBoundUnitCostsAsync(inbound, cancellationToken)
+            : string.Equals(inbound.SourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
             ? await purchaseReceiptPostingRouteClient.GetUnitCostsAsync(
                 inbound.OrganizationId, inbound.EnvironmentId, inbound.SourceDocumentId, inbound.Lines, cancellationToken)
             : null;
@@ -527,7 +566,8 @@ public sealed class CompleteInboundOrderCommandHandler
                 || replayRequest.SiteCode != inbound.SiteCode
                 || replayRequest.LotNo != line.LotNo
                 || replayRequest.SerialNo != line.SerialNo
-                || replayRequest.QualityStatus != line.ReceiptQualityStatus
+                || replayRequest.QualityStatus != (inbound.RequiresErpReceiptAcceptance
+                    ? line.ErpReceiptPostingQualityStatus : line.ReceiptQualityStatus)
                 || replayRequest.OwnerType != line.OwnerType
                 || replayRequest.OwnerId != line.OwnerId
                 || replayRequest.Quantity != line.ReceivedQuantity
@@ -572,6 +612,22 @@ public sealed class CompleteInboundOrderCommandHandler
     }
 }
 
+internal static class ErpReceiptPostingLock
+{
+    public static async Task AcquireAsync(
+        ApplicationDbContext db, IQueryable<InboundOrder> orders, CancellationToken cancellationToken)
+    {
+        var scope = await orders.Where(order => order.ReceiptBatchId != null)
+            .Select(order => new { order.OrganizationId, order.EnvironmentId, order.SourceDocumentId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (scope is not null)
+        {
+            await PurchaseOrderInboundLock.AcquireAsync(db, scope.OrganizationId, scope.EnvironmentId,
+                scope.SourceDocumentId, cancellationToken);
+        }
+    }
+}
+
 public sealed record RetryInboundInventoryPostingCommand(InboundOrderId InboundOrderId, string IdempotencyKey, WarehouseAssignedResourceExecutionRequest? Execution = null) : ICommand<CompleteWmsMovementResult>;
 
 public sealed class RetryInboundInventoryPostingCommandValidator : AbstractValidator<RetryInboundInventoryPostingCommand>
@@ -602,6 +658,8 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
 {
     public async Task<CompleteWmsMovementResult> Handle(RetryInboundInventoryPostingCommand request, CancellationToken cancellationToken)
     {
+        await ErpReceiptPostingLock.AcquireAsync(dbContext, dbContext.InboundOrders
+            .Where(order => order.Id == request.InboundOrderId), cancellationToken);
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"未找到入库单，入库单 ID = {request.InboundOrderId}");
         if (request.Execution is { } execution)
@@ -624,6 +682,11 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
                 && x.MovementType == InventoryMovementTypes.Inbound
                 && x.SourceDocumentId == inbound.InboundOrderNo)
             .ToArrayAsync(cancellationToken);
+        if (inbound.RequiresErpReceiptAcceptance)
+        {
+            return RetryBoundReceipt(inbound, postingAttempts);
+        }
+
         var replay = postingAttempts.OrderBy(x => x.SourceDocumentLineId).FirstOrDefault(x =>
             WmsText.ReplayIdempotencyKeys(request.IdempotencyKey).Contains(x.IdempotencyKey)
             || (x.SourceDocumentLineId is { } lineNo &&
@@ -653,6 +716,28 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
             failedRequestsByLine.ToDictionary(pair => pair.Key, pair => pair.Value.UnitCost, StringComparer.Ordinal));
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
+    }
+
+    private static CompleteWmsMovementResult RetryBoundReceipt(
+        InboundOrder inbound, IReadOnlyCollection<InventoryMovementRequest> attempts)
+    {
+        var requests = attempts.Where(request => request.SourceDocumentLineId is { } lineNo
+            && request.IdempotencyKey == inbound.ErpReceiptMovementKey(lineNo))
+            .OrderBy(request => request.SourceDocumentLineId, StringComparer.Ordinal).ToArray();
+        if (requests.Length != inbound.Lines.Count
+            || inbound.Status is not (InboundOrderStatus.Completed or InboundOrderStatus.InventoryPostingPending
+                or InboundOrderStatus.InventoryPostingFailed))
+        {
+            throw new WmsLifecycleConflictException("retry-inbound-inventory-posting", inbound.Status.ToString());
+        }
+
+        inbound.ResumeErpReceiptPosting();
+        foreach (var request in requests.Where(request => request.Status == InventoryMovementRequestStatus.Failed))
+        {
+            request.RetryFailedPosting();
+        }
+
+        return new CompleteWmsMovementResult(requests[0].Id, requests[0].InventoryMovementId);
     }
 }
 
@@ -734,6 +819,12 @@ public sealed class CreatePickingTaskCommandHandler(
             ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var line = outbound.Lines.SingleOrDefault(x => x.LineNo == request.LineNo)
             ?? throw new KnownException($"未找到出库行，行号 = {request.LineNo}");
+        var blockedSupplierReturn = line.MatchReceiptStockDates;
+        if (blockedSupplierReturn && WmsText.Required(request.FromLocationCode, nameof(request.FromLocationCode)) != line.PickLocationCode)
+        {
+            throw new KnownException("退供拣货必须使用原收货过账库位。");
+        }
+
         var fingerprint = WmsCodingService.Fingerprint(
             request.OutboundOrderId,
             request.LineNo,
@@ -772,6 +863,11 @@ public sealed class CreatePickingTaskCommandHandler(
             throw new KnownException("当前出库单不可创建拣货任务，请检查状态后重试。", exception);
         }
 
+        if (blockedSupplierReturn && inventoryReservationClient is null)
+        {
+            throw new KnownException("退供拣货需要库存预留服务。");
+        }
+
         var taskNo = await _codingService.AllocateAsync(
             outbound.OrganizationId,
             outbound.EnvironmentId,
@@ -784,7 +880,8 @@ public sealed class CreatePickingTaskCommandHandler(
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
         // line-level idempotency key lets command retries recover the same reservation.
         var reservation = line.InventoryReservationId is null && inventoryReservationClient is not null
-            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, taskNo, request.FromLocationCode, request.Quantity, cancellationToken)
+            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, taskNo,
+                request.FromLocationCode, request.Quantity, blockedSupplierReturn, cancellationToken)
             : null;
         var inventoryReservationId = line.InventoryReservationId ?? reservation?.ReservationId;
         var task = outbound.CreatePickingTask(
@@ -810,10 +907,11 @@ public sealed class CreatePickingTaskCommandHandler(
         string taskNo,
         string fromLocationCode,
         decimal quantity,
+        bool blockedSupplierReturn,
         CancellationToken cancellationToken)
     {
         var idempotencyKey = WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo, taskNo);
-        if (string.IsNullOrWhiteSpace(line.LotNo))
+        if (string.IsNullOrWhiteSpace(line.LotNo) && !blockedSupplierReturn)
         {
             var fefo = await inventoryReservationClient.ReserveFefoAsync(
                 new WmsInventoryFefoReservationRequest(
@@ -865,7 +963,10 @@ public sealed class CreatePickingTaskCommandHandler(
                 line.QualityStatus,
                 line.OwnerType,
                 line.OwnerId,
-                quantity),
+                quantity,
+                line.ProductionDate,
+                line.ExpiryDate,
+                MatchReceiptStockDates: line.MatchReceiptStockDates),
             cancellationToken);
         return new PickingReservationResult(reservation.ReservationId, fromLocationCode, reservation.LotNo ?? line.LotNo, line.SerialNo);
     }
@@ -2033,17 +2134,27 @@ public sealed class CancelInboundOrdersForSourceCommandHandler(ApplicationDbCont
         var sourceDocumentType = WmsText.Required(request.SourceDocumentType, nameof(request.SourceDocumentType));
         var sourceDocumentId = WmsText.Required(request.SourceDocumentId, nameof(request.SourceDocumentId));
         var reason = WmsText.Required(request.Reason, nameof(request.Reason));
+        var organizationId = WmsText.Required(request.OrganizationId, nameof(request.OrganizationId));
+        var environmentId = WmsText.Required(request.EnvironmentId, nameof(request.EnvironmentId));
+        var isPurchaseOrder = string.Equals(sourceDocumentType, WmsSourceDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase);
+        if (isPurchaseOrder)
+        {
+            await PurchaseOrderInboundLock.AcquireAsync(dbContext, organizationId, environmentId, sourceDocumentId, cancellationToken);
+        }
+
         var inboundOrders = await dbContext.InboundOrders
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
                 && x.SourceDocumentType == sourceDocumentType
                 && x.SourceDocumentId == sourceDocumentId
-                && x.Status == InboundOrderStatus.Open)
+                && x.Status == InboundOrderStatus.Open
+                && (!isPurchaseOrder || x.ReceiptBatchId == null && x.ReceiptConfirmationKey == null
+                    && !x.Lines.Any(line => line.ExpectedQuantity != null && line.ReceivedQuantity > 0m)))
             .ToArrayAsync(cancellationToken);
         var inboundOrderNos = inboundOrders.Select(x => x.InboundOrderNo).ToArray();
         var openPutawayTasks = await dbContext.WarehouseTasks
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
                 && x.TaskType == WarehouseTaskType.Putaway
                 && inboundOrderNos.Contains(x.SourceOrderNo)
                 && (x.Status == WarehouseTaskStatus.Open
@@ -2173,7 +2284,10 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
                     line.QualityStatus,
                     line.OwnerType,
                     line.OwnerId,
-                    line.IssuedQuantity),
+                    line.IssuedQuantity,
+                    line.ProductionDate,
+                    line.ExpiryDate,
+                    MatchReceiptStockDates: line.MatchReceiptStockDates),
                 cancellationToken)).ReservationId;
 
             reservationIds[line.LineNo] = reservationId;
@@ -2567,13 +2681,21 @@ public sealed record MarkInventoryMovementRequestPostedCommand(
     string SourceDocumentId,
     string? SourceDocumentLineId,
     string IdempotencyKey,
-    string InventoryMovementId) : ICommand;
+    string InventoryMovementId,
+    (DateOnly? ProductionDate, DateOnly? ExpiryDate)? PostedDates = null) : ICommand;
 
 public sealed class MarkInventoryMovementRequestPostedCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<MarkInventoryMovementRequestPostedCommand>
 {
     public async Task Handle(MarkInventoryMovementRequestPostedCommand request, CancellationToken cancellationToken)
     {
+        if (request.MovementType == InventoryMovementTypes.Inbound)
+        {
+            await ErpReceiptPostingLock.AcquireAsync(dbContext, dbContext.InboundOrders.Where(order =>
+                order.OrganizationId == request.OrganizationId && order.EnvironmentId == request.EnvironmentId
+                && order.InboundOrderNo == request.SourceDocumentId), cancellationToken);
+        }
+
         var movementRequest = await dbContext.InventoryMovementRequests.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -2587,7 +2709,15 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
             return;
         }
 
-        movementRequest.MarkPosted(request.InventoryMovementId);
+        var alreadyPosted = movementRequest.Status == InventoryMovementRequestStatus.Posted;
+        var postedDates = movementRequest.MovementType == InventoryMovementTypes.Inbound
+            && movementRequest.QualityStatus == InventoryQualityStatuses.Blocked ? request.PostedDates : null;
+        movementRequest.MarkPosted(request.InventoryMovementId, postedDates);
+        if (request.MovementType == InventoryMovementTypes.Inbound && !alreadyPosted)
+        {
+            await AcknowledgeBoundReceiptAsync(movementRequest, cancellationToken);
+        }
+
         if (!string.Equals(request.MovementType, InventoryMovementTypes.Outbound, StringComparison.Ordinal)
             || movementRequest.SourceDocumentLineId is null)
         {
@@ -2623,6 +2753,38 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
             outbound.MarkInventoryPostingCompleted();
         }
     }
+
+    private async Task AcknowledgeBoundReceiptAsync(InventoryMovementRequest request, CancellationToken cancellationToken)
+    {
+        var inbound = await dbContext.InboundOrders.Include(order => order.Lines)
+            .SingleOrDefaultAsync(order => order.OrganizationId == request.OrganizationId
+                && order.EnvironmentId == request.EnvironmentId && order.InboundOrderNo == request.SourceDocumentId
+                && order.ErpReceiptAcceptedVersion != null, cancellationToken);
+        if (inbound is null || request.SourceDocumentLineId is not { } postedLine
+            || request.IdempotencyKey != inbound.ErpReceiptMovementKey(postedLine))
+        {
+            return;
+        }
+
+        var keys = inbound.Lines.Select(line => inbound.ErpReceiptMovementKey(line.LineNo)).ToArray();
+        var movements = await dbContext.InventoryMovementRequests
+            .Where(movement => movement.OrganizationId == inbound.OrganizationId
+                && movement.EnvironmentId == inbound.EnvironmentId && movement.SourceDocumentId == inbound.InboundOrderNo
+                && movement.MovementType == InventoryMovementTypes.Inbound && keys.Contains(movement.IdempotencyKey))
+            .ToArrayAsync(cancellationToken);
+        if (movements.Length == keys.Length && movements.All(movement => movement.Status == InventoryMovementRequestStatus.Posted))
+        {
+            foreach (var supplierReturn in inbound.AcknowledgeErpReceiptPosting())
+            {
+                var original = movements.Single(movement => movement.SourceDocumentLineId == supplierReturn.InboundOrderLineNo);
+                dbContext.SupplierReturnRequests.Add(supplierReturn);
+                dbContext.OutboundOrders.Add(SupplierReturnOutbound.Create(
+                    supplierReturn, inbound.ErpPurchaseReceiptNo!, InventoryQualityStatuses.Blocked,
+                    original.PostedProductionDate, original.PostedExpiryDate, matchReceiptStockDates: true));
+            }
+        }
+    }
+
 }
 
 public sealed record MarkInventoryMovementRequestFailedCommand(
@@ -2642,6 +2804,13 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(
 {
     public async Task Handle(MarkInventoryMovementRequestFailedCommand request, CancellationToken cancellationToken)
     {
+        if (request.MovementType == InventoryMovementTypes.Inbound)
+        {
+            await ErpReceiptPostingLock.AcquireAsync(dbContext, dbContext.InboundOrders.Where(order =>
+                order.OrganizationId == request.OrganizationId && order.EnvironmentId == request.EnvironmentId
+                && order.InboundOrderNo == request.SourceDocumentId), cancellationToken);
+        }
+
         var movementRequest = await dbContext.InventoryMovementRequests.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId

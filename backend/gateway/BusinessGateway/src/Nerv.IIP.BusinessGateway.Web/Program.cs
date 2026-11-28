@@ -146,7 +146,10 @@ builder.Services.AddHttpClient<IBusinessWmsClient, HttpBusinessWmsClient>(client
 builder.Services.AddHttpClient<IBusinessApprovalClient, HttpBusinessApprovalClient>(client =>
 {
     client.BaseAddress = approvalBaseAddress;
-}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
+    .RedactLoggedHeaders(_ => true)
+    .AddHttpMessageHandler<AcceptLanguageForwardingHandler>()
+    .AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessBarcodeLabelClient, HttpBusinessBarcodeLabelClient>(client =>
 {
     client.BaseAddress = barcodeLabelBaseAddress;
@@ -174,6 +177,10 @@ builder.Services.AddHttpClient<IBusinessFileTransferClient, HttpBusinessFileTran
     client.Timeout = Timeout.InfiniteTimeSpan;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayStreamingSafeResilience();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<HttpBusinessMesEngineeringChangeImpactClient>("MesEngineeringChangeImpacts", client =>
 {
     client.BaseAddress = mesBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();

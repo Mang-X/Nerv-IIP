@@ -1,3 +1,4 @@
+using Nerv.IIP.ServiceAuth;
 using System.Globalization;
 using System.Net;
 
@@ -18,7 +19,9 @@ public interface IBusinessApprovalClient
     Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
-        CancellationToken cancellationToken);
+        string authorizedActorRef,
+        CancellationToken cancellationToken,
+        string? principalBearer = null);
 
     Task<BusinessConsoleApprovalChainListResponse> ListChainsAsync(
         string internalBearerToken,
@@ -41,7 +44,7 @@ public interface IBusinessApprovalClient
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleResolveApprovalStepRequest request,
         CancellationToken cancellationToken);
 
@@ -51,25 +54,25 @@ public interface IBusinessApprovalClient
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateApprovalDelegationResponse> CreateDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleCreateApprovalDelegationRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> RevokeDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         string delegationId,
         BusinessConsoleRevokeApprovalDelegationRequest request,
         CancellationToken cancellationToken);
 }
 
-public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessApprovalClient
+public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfiguration? configuration = null) : BusinessServiceHttpClient(httpClient), IBusinessApprovalClient
 {
     public Task<BusinessConsoleApprovalTemplateListResponse> ListTemplatesAsync(
         string internalBearerToken,
         BusinessConsoleApprovalTemplateListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalTemplateListResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("ReadTemplates", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/templates?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -86,7 +89,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
         BusinessConsoleCreateOrUpdateApprovalTemplateRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCreateOrUpdateApprovalTemplateResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("WriteTemplates", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Post,
             "/api/business/v1/approvals/templates",
             request,
@@ -95,20 +98,39 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
     public Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
-        CancellationToken cancellationToken) =>
+        string authorizedActorRef,
+        CancellationToken cancellationToken,
+        string? principalBearer = null) =>
         SendAsync<BusinessConsoleStartApprovalChainResponse>(
-            internalBearerToken,
+            ScopedCallerOutboundToken.Resolve(configuration?.GetSection("Approval:CreateChain:OutboundCredentials"),
+                request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Post,
             "/api/business/v1/approvals/chains",
-            request,
-            cancellationToken);
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.TemplateCode,
+                request.SourceService,
+                request.DocumentType,
+                request.DocumentId,
+                request.DocumentLineId,
+                // 兼容滚动升级期间仍读取该字段的 Approval 实例。
+                StartedBy = authorizedActorRef,
+                request.Amount,
+                request.RoutingOrganizationId,
+                request.DepartmentId,
+            },
+            cancellationToken,
+            configureRequest: principalBearer is null ? null : message =>
+                message.Headers.Add("X-Nerv-IIP-Approval-Principal", $"Bearer {principalBearer}"));
 
     public Task<BusinessConsoleApprovalChainListResponse> ListChainsAsync(
         string internalBearerToken,
         BusinessConsoleApprovalChainListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalChainListResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("ReadCollections", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/chains?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -128,12 +150,25 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
         BusinessConsoleApprovalChainRequest request,
         CancellationToken cancellationToken)
     {
-        var chain = await SendAsync<BusinessConsoleApprovalChainResponse>(
-            internalBearerToken,
-            HttpMethod.Get,
-            $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}",
-            null,
-            cancellationToken);
+        var scopedCredentials = configuration?.GetSection("Approval:GetChain:OutboundCredentials");
+        var bearerToken = ScopedCallerOutboundToken.Resolve(
+            scopedCredentials, request.OrganizationId, request.EnvironmentId, internalBearerToken);
+        BusinessConsoleApprovalChainResponse chain;
+        try
+        {
+            chain = await SendAsync<BusinessConsoleApprovalChainResponse>(
+                bearerToken,
+                HttpMethod.Get,
+                $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}",
+                null,
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException exception) when (
+            scopedCredentials?.Exists() == true && exception.StatusCode == HttpStatusCode.Forbidden)
+        {
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.NotFound);
+        }
+
         if (string.IsNullOrWhiteSpace(chain.OrganizationId) || string.IsNullOrWhiteSpace(chain.EnvironmentId)
             || chain.OrganizationId != request.OrganizationId || chain.EnvironmentId != request.EnvironmentId)
         {
@@ -148,7 +183,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
         BusinessConsoleApprovalTaskListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalTaskListResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("ReadCollections", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/tasks?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -167,7 +202,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
         BusinessConsoleApprovalDecisionListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalDecisionListResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("ReadCollections", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/decisions?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -184,19 +219,16 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             cancellationToken);
 
     public Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleResolveApprovalStepRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleResolveApprovalStepResponse>(
-            internalBearerToken,
+            bearerToken,
             HttpMethod.Post,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}/steps/{request.StepNo.ToString(CultureInfo.InvariantCulture)}/resolve",
             new
             {
-                request.OrganizationId, request.EnvironmentId, request.ChainId, request.StepNo,
-                request.ActorType, request.ActorRef, request.Decision, request.Comment, request.TargetStepId,
-                RoleRefs = request.RoutingMembership?.RoleRefs,
-                DepartmentRef = request.RoutingMembership?.DepartmentRef,
+                request.OrganizationId, request.EnvironmentId, request.Decision, request.Comment, request.TargetStepId,
             },
             cancellationToken);
 
@@ -205,7 +237,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
         BusinessConsoleApprovalDelegationListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalDelegationListResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("ReadDelegations", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/delegations?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -220,27 +252,40 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             cancellationToken);
 
     public Task<BusinessConsoleCreateApprovalDelegationResponse> CreateDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleCreateApprovalDelegationRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCreateApprovalDelegationResponse>(
-            internalBearerToken,
+            bearerToken,
             HttpMethod.Post,
             "/api/business/v1/approvals/delegations",
             request,
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> RevokeDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         string delegationId,
         BusinessConsoleRevokeApprovalDelegationRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
-            internalBearerToken,
+            bearerToken,
             HttpMethod.Post,
             $"/api/business/v1/approvals/delegations/{Uri.EscapeDataString(delegationId)}/revoke?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId)),
             request,
             cancellationToken);
+
+    private string ResolveOperationBearer(string operation, string organizationId, string environmentId, string legacyBearer)
+    {
+        try
+        {
+            return ScopedCallerOutboundToken.Resolve(configuration?.GetSection($"Approval:{operation}:OutboundCredentials"),
+                organizationId, environmentId, legacyBearer);
+        }
+        catch (InvalidOperationException)
+        {
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.ServiceUnavailable);
+        }
+    }
 }

@@ -36,7 +36,8 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
 
     private async Task HandleValidEventAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (integrationEvent.EventType != WmsIntegrationEventTypes.InboundOrderCompleted)
+        if (integrationEvent.EventType != WmsIntegrationEventTypes.InboundOrderCompleted
+            || IsErpAcceptedReceipt(integrationEvent.Payload))
         {
             return;
         }
@@ -76,6 +77,9 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
 
         await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
+
+    // ERP records the accepted receipt before WMS posts stock. Its receipt number and lines own IQC.
+    internal static bool IsErpAcceptedReceipt(WmsIntegrationPayload payload) => payload.WmsReceiptBatchId.HasValue;
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
@@ -127,7 +131,8 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 sourceDocumentType: WmsSourceDocumentTypes.PurchaseReceipt,
                 occurredAtUtc: integrationEvent.OccurredAtUtc,
                 triggerIdempotencyKey: $"{integrationEvent.IdempotencyKey}:{line.LineReference}",
-                cancellationToken);
+                cancellationToken,
+                wmsReceiptBatchId: payload.WmsReceiptBatchId);
         }
 
         await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
@@ -409,7 +414,8 @@ internal static class InspectionTaskGeneration
         string? sourceDocumentType,
         DateTimeOffset occurredAtUtc,
         string triggerIdempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? wmsReceiptBatchId = null)
     {
         var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
         var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
@@ -467,7 +473,8 @@ internal static class InspectionTaskGeneration
             serialNo,
             occurredAtUtc,
             occurredAtUtc.AddHours(24),
-            normalizedTriggerIdempotencyKey));
+            normalizedTriggerIdempotencyKey,
+            wmsReceiptBatchId));
     }
 
     public static async Task SaveChangesIgnoreDuplicateTasksAsync(ApplicationDbContext dbContext, CancellationToken cancellationToken)

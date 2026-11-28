@@ -1,5 +1,6 @@
 using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 internal sealed partial class AppHostComposition
 {
@@ -73,7 +74,6 @@ internal sealed partial class AppHostComposition
             .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
             .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
             .WithEnvironment("Iam__EnterpriseIdentity__Mfa__DevelopmentCode", iamEnterpriseIdentityMfaCode)
-            .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
             .WithReference(iamDatabase, "IamDb")
             .WithReference(redis)
             .WaitFor(iamDatabase)
@@ -197,6 +197,7 @@ internal sealed partial class AppHostComposition
         var businessMasterData = infrastructure.WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")))
             .WithHttpEndpoint(port: fullStackEphemeral ? null : 5107, name: "http")
             .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
+            .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
             .WithEnvironment("MasterData__SchedulingTimeContext__SigningKey", schedulingTimeContextSigningKey)
             .WithEnvironment("Persistence__Provider", "PostgreSQL")
             .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
@@ -438,6 +439,8 @@ internal sealed partial class AppHostComposition
             .WithEnvironment("Approval__OverdueCheck__Scopes__0__EnvironmentId", "env-dev")
             .WithEnvironment("Approval__OverdueCheck__Interval", "00:05:00")
             .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+            .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
+            .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
             .WithReference(businessApprovalDatabase, "PostgreSQL")
             .WaitFor(businessApprovalDatabase);
         businessApproval = WithRedisMessagingTransport(businessApproval);
@@ -447,6 +450,8 @@ internal sealed partial class AppHostComposition
                 .WithReference(rabbitmq)
                 .WaitFor(rabbitmq);
         }
+
+        ConfigureApprovalMasterDataDepartment(businessApproval, businessMasterData);
 
         // Inventory 盘点调整审批链（HttpStockCountApprovalClient）、ProductEngineering 工程审批校验
         // （HttpEngineeringApprovalVerifier）与 Mes 工序开工审批（HttpMesOperationTaskStartApprovalClient）
@@ -595,6 +600,10 @@ internal sealed partial class AppHostComposition
                 .WaitFor(rabbitmq);
         }
 
+        ConfigurePurchaseOrderReceiving(businessErp, "WmsScopes", ["OrganizationId", "EnvironmentId", "SiteCode"]);
+        ConfigurePurchaseOrderReceiving(businessWms, "Routes",
+            ["OrganizationId", "EnvironmentId", "SiteCode", "StagingLocationCode", "QualityStatus", "OwnerType"]);
+
         businessWms = businessWms
             .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
             .WithReference(businessErp);
@@ -692,6 +701,86 @@ internal sealed partial class AppHostComposition
                 ? project.WithReference(redis).WaitFor(redis)
                 : project;
         }
+    }
+
+    private void ConfigurePurchaseOrderReceiving(
+        IResourceBuilder<ProjectResource> service,
+        string collection,
+        string[] fields)
+    {
+        foreach (var item in builder.Configuration.GetSection($"PurchaseOrderReceiving:{collection}").GetChildren())
+        {
+            foreach (var field in fields)
+            {
+                if (item[field] is { } value)
+                {
+                    service.WithEnvironment($"PurchaseOrderReceiving__{collection}__{item.Key}__{field}", value);
+                }
+            }
+        }
+    }
+
+    private void ConfigureApprovalMasterDataDepartment(
+        IResourceBuilder<ProjectResource> approval,
+        IResourceBuilder<ProjectResource> masterData)
+    {
+        var settings = builder.Configuration.GetSection("ApprovalMasterDataDepartment");
+        var production = builder.Environment.IsProduction();
+        var enabled = settings.GetValue("Enabled", production);
+        var configureSender = settings.GetValue("ConfigureSender", production && enabled);
+        if (!enabled)
+        {
+            if (configureSender)
+            {
+                throw new InvalidOperationException("ApprovalMasterDataDepartment requires the receiver before configuring the sender.");
+            }
+
+            if (production)
+            {
+                approval.WithEnvironment("Approval__MasterDataDepartment__UseScopedCaller", "false");
+            }
+
+            return;
+        }
+
+        var scopes = settings.GetSection("Scopes").GetChildren().ToArray();
+        if (scopes.Length == 0)
+        {
+            throw new InvalidOperationException("ApprovalMasterDataDepartment requires at least one organization and environment.");
+        }
+
+        var configuredScopes = new HashSet<(string, string)>();
+        for (var index = 0; index < scopes.Length; index++)
+        {
+            var organizationId = scopes[index]["OrganizationId"];
+            var environmentId = scopes[index]["EnvironmentId"];
+            if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId)
+                || organizationId != organizationId.Trim() || environmentId != environmentId.Trim()
+                || !configuredScopes.Add((organizationId, environmentId)))
+            {
+                throw new InvalidOperationException("ApprovalMasterDataDepartment scopes require unique, nonempty organization and environment IDs.");
+            }
+
+            var name = $"approval-master-data-department-{index}";
+            var credential = builder.AddParameter(name, secret: true);
+            var profile = $"MasterData__ApprovalDepartment__ScopedCallers__Profiles__{index}__";
+            masterData.WithEnvironment(profile + "Name", name)
+                .WithEnvironment(profile + "Subject", "business-approval")
+                .WithEnvironment(profile + "OrganizationId", organizationId)
+                .WithEnvironment(profile + "EnvironmentId", environmentId)
+                .WithEnvironment(profile + "Permissions__0", "internal.masterdata.approval-department.read")
+                .WithEnvironment(profile + "BearerToken", credential);
+
+            if (configureSender)
+            {
+                var outbound = $"Approval__MasterDataDepartment__OutboundCredentials__{index}__";
+                approval.WithEnvironment(outbound + "OrganizationId", organizationId)
+                    .WithEnvironment(outbound + "EnvironmentId", environmentId)
+                    .WithEnvironment(outbound + "BearerToken", credential);
+            }
+        }
+
+        approval.WithEnvironment("Approval__MasterDataDepartment__UseScopedCaller", configureSender ? "true" : "false");
     }
 
     private sealed record ServiceResources(

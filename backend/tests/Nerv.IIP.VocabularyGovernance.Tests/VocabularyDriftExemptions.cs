@@ -17,6 +17,23 @@ internal static class VocabularyDriftExemptions
 
     public static readonly IReadOnlyList<VocabularyExemption> Entries =
     [
+        ..Group("business-erp", "同值不同义：scoped caller 的已认证主体标识，与请求的审批来源服务分别校验。",
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/CreateApprovalChainAuthorization.cs"),
+        ..Group("inventory", "同值不同义：scoped caller 的已认证主体标识，与请求的审批来源服务分别校验。",
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/CreateApprovalChainAuthorization.cs"),
+        ..Group("business-mes", "同值不同义：scoped caller 的已认证主体标识，与审批链来源服务分别校验。",
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/GetApprovalChainAuthorization.cs"),
+        ..Group("quality", "同值不同义：scoped caller 的已认证主体标识，与审批链来源服务分别校验。",
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/GetApprovalChainAuthorization.cs"),
+        ..Group("product-engineering", "同值不同义：scoped caller 的已认证主体标识，与审批链来源服务分别校验。",
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/GetApprovalChainAuthorization.cs"),
+        ..Group("active", "同值不同义：主数据工人的在职状态，独立于工程版本状态。",
+            $"{Svc}/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/ResolveApprovalStepAuthority.cs"),
+        ..Group("purchase-receipt", "同值不同义：ERP 收货受理幂等记录的规则键，独立于仓储来源单据类型和质量检验来源。",
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/AcceptWmsPurchaseReceiptCommand.cs"),
+        ..Group("return", "同值不同义：ERP 退供结算的幂等摘要键命名空间，独立于审批退回决策。",
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/ErpReturnIntegrationEventHandlers.cs"),
+
         // #3044 的 ownerService 是退役 capability 绑定的文件资源所有者，不是集成事件来源。
         ..Group("business-barcode-label", "同值不同义：FileStorage 退役 capability 的资源 ownerService，非 BarcodeLabel 集成事件 Source。",
             "services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/TemplateAssetRetirementProof.cs"),
@@ -216,8 +233,6 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/ErpProcurementCommands.cs"),
         ..Group("purchase-order", "同值不同义：计划输入的供给源单据类型，非审批单据类型。",
             $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs"),
-        ..Group("purchase-receipt", "同值不同义：Coding 编码规则文档类型键，非 WMS 源单据类型。",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/ErpProcurementCommands.cs"),
 
         // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving / operation /
         //    final / first-article / maintenance / customer-return；后五值 #2976 补齐导出） ─────

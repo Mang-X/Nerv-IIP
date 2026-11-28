@@ -578,6 +578,51 @@ describe('ERP sales order and delivery pages', () => {
     expect(badge.attributes('data-mode')).toBe('level')
   })
 
+  it('shows sales order allocations and actual shipments by line and unit', async () => {
+    state.salesOrders = [
+      {
+        salesOrderNo: 'SO-2026-0007',
+        status: 'released',
+        lines: [
+          {
+            lineNo: '10',
+            skuCode: 'BRACKET',
+            uomCode: 'EA',
+            allocatedQuantity: 120,
+            shippedQuantity: 0,
+          },
+          {
+            lineNo: '20',
+            skuCode: 'COIL',
+            uomCode: 'KG',
+            allocatedQuantity: 8.5,
+            shippedQuantity: 2.5,
+          },
+          {
+            lineNo: '30',
+            skuCode: 'CLIP',
+            uomCode: 'EA',
+            allocatedQuantity: 12,
+            shippedQuantity: 12,
+          },
+        ],
+      },
+      { salesOrderNo: 'SO-2026-0008', status: 'released', lines: null },
+    ]
+    const wrapper = mount(OrdersPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const row = wrapper.findAll('tbody tr').find((tr) => tr.text().includes('SO-2026-0007'))!
+    expect(row.findAll('li').map((line) => line.text())).toEqual([
+      '10 · BRACKET已分配 120 EA实际已发运 0 EA',
+      '20 · COIL已分配 8.5 KG实际已发运 2.5 KG',
+      '30 · CLIP已分配 12 EA实际已发运 12 EA',
+    ])
+    const legacyRow = wrapper.findAll('tbody tr').find((tr) => tr.text().includes('SO-2026-0008'))!
+    expect(legacyRow.text()).toContain('—')
+    expect(legacyRow.text()).not.toContain('实际已发运 0')
+  })
+
   it('shows the credit-hold release entry only on credit-held rows', async () => {
     state.salesOrders = [
       {

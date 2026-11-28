@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("wms")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -318,6 +318,17 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<string>("ErpPurchaseReceiptNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("erp_purchase_receipt_no")
+                        .HasComment("Scoped ERP receipt number returned by committed batch acceptance.");
+
+                    b.Property<long?>("ErpReceiptAcceptedVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("erp_receipt_accepted_version")
+                        .HasComment("Inbound version returned by the original successful ERP receipt binding.");
+
                     b.Property<string>("InboundOrderNo")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -331,6 +342,41 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<Guid?>("ReceiptBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("receipt_batch_id")
+                        .HasComment("Stable ERP acceptance identity for an explicitly confirmed purchase order receipt.");
+
+                    b.Property<string>("ReceiptConfirmationFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("receipt_confirmation_fingerprint")
+                        .HasComment("SHA-256 fingerprint of the receipt confirmation intent.");
+
+                    b.Property<string>("ReceiptConfirmationKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("receipt_confirmation_key")
+                        .HasComment("Normalized idempotency key for confirming actual receipt quantities.");
+
+                    b.Property<decimal?>("ReceiptExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("receipt_exchange_rate")
+                        .HasComment("Exchange rate frozen when the ERP acceptance batch is staged.");
+
+                    b.Property<string>("ReceiptRequestFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("receipt_request_fingerprint")
+                        .HasComment("SHA-256 fingerprint of the frozen ERP receipt request.");
+
+                    b.Property<string>("ReceiptRequestKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("receipt_request_key")
+                        .HasComment("Normalized idempotency key of the frozen ERP receipt request.");
 
                     b.Property<string>("SiteCode")
                         .IsRequired()
@@ -371,6 +417,9 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "InboundOrderNo")
                         .IsUnique();
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReceiptBatchId")
+                        .IsUnique();
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceDocumentType", "SourceDocumentId", "Status")
                         .HasDatabaseName("ix_inbound_orders_source_status");
 
@@ -392,6 +441,37 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Inbound order line id.");
+
+                    b.Property<decimal?>("ErpReceiptInspectedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("erp_receipt_inspected_quantity")
+                        .HasComment("Quantity covered by the projected Quality decision.");
+
+                    b.Property<string>("ErpReceiptInspectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("erp_receipt_inspection_reason")
+                        .HasComment("Reason supplied by Quality for the projected decision.");
+
+                    b.Property<string>("ErpReceiptInspectionRecordId")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("erp_receipt_inspection_record_id")
+                        .HasComment("First Quality record projected for the accepted ERP receipt line.");
+
+                    b.Property<string>("ErpReceiptInspectionResult")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("erp_receipt_inspection_result")
+                        .HasComment("Projected Quality decision, independent of stock disposition.");
+
+                    b.Property<decimal?>("ExpectedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("expected_quantity")
+                        .HasComment("Expected quantity for a receipt requiring actual quantity confirmation; null for manual inbound lines.");
 
                     b.Property<DateOnly?>("ExpiryDate")
                         .HasColumnType("date")
@@ -468,6 +548,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("received_quantity")
                         .HasComment("Inbound received quantity.");
 
+                    b.Property<decimal?>("RequestedReceiptQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("requested_receipt_quantity")
+                        .HasComment("Quantity frozen in the ERP receipt request before acceptance.");
+
                     b.Property<string>("SerialNo")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -497,7 +583,8 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("InboundOrderId");
+                    b.HasIndex("InboundOrderId", "ErpReceiptInspectionRecordId")
+                        .IsUnique();
 
                     b.ToTable("inbound_order_lines", "wms", t =>
                         {
@@ -573,6 +660,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("lot_no")
                         .HasComment("Optional lot number.");
 
+                    b.Property<bool>("MatchReceiptStockDates")
+                        .HasColumnType("boolean")
+                        .HasColumnName("match_receipt_stock_dates")
+                        .HasComment("Use exact stock dates for an authoritative rejected receipt or its return.");
+
                     b.Property<string>("MovementType")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -604,6 +696,16 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("posted_at_utc")
                         .HasComment("UTC posted time.");
+
+                    b.Property<DateOnly?>("PostedExpiryDate")
+                        .HasColumnType("date")
+                        .HasColumnName("posted_expiry_date")
+                        .HasComment("Expiry date acknowledged by Inventory for the blocked inbound movement.");
+
+                    b.Property<DateOnly?>("PostedProductionDate")
+                        .HasColumnType("date")
+                        .HasColumnName("posted_production_date")
+                        .HasComment("Production date acknowledged by Inventory for the blocked inbound movement.");
 
                     b.Property<DateOnly?>("ProductionDate")
                         .HasColumnType("date")
@@ -823,6 +925,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("backorder_quantity")
                         .HasComment("Short-picked outbound quantity left as backorder.");
 
+                    b.Property<DateOnly?>("ExpiryDate")
+                        .HasColumnType("date")
+                        .HasColumnName("expiry_date")
+                        .HasComment("Expiry date of the original stock posted for a blocked supplier return.");
+
                     b.Property<bool>("FulfillmentRecorded")
                         .HasColumnType("boolean")
                         .HasColumnName("fulfillment_recorded")
@@ -853,6 +960,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("lot_no")
                         .HasComment("Optional lot number.");
 
+                    b.Property<bool>("MatchReceiptStockDates")
+                        .HasColumnType("boolean")
+                        .HasColumnName("match_receipt_stock_dates")
+                        .HasComment("Use the exact posted dates for an authoritative rejected receipt return.");
+
                     b.Property<Guid>("OutboundOrderId")
                         .HasColumnType("uuid")
                         .HasColumnName("outbound_order_id")
@@ -877,6 +989,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("pick_location_code")
                         .HasComment("Pick location for outbound stock.");
+
+                    b.Property<DateOnly?>("ProductionDate")
+                        .HasColumnType("date")
+                        .HasColumnName("production_date")
+                        .HasComment("Production date of the original stock posted for a blocked supplier return.");
 
                     b.Property<string>("QualityStatus")
                         .IsRequired()
@@ -1866,6 +1983,65 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.ToTable("processed_integration_events", "wms", t =>
                         {
                             t.HasComment("Integration events already processed by BusinessWMS for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Infrastructure.IntegrationEvents.PurchaseOrderCancellation", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("PurchaseOrderNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_order_no")
+                        .HasComment("ERP purchase order number unique within the organization and environment.");
+
+                    b.Property<DateTimeOffset>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at_utc")
+                        .HasComment("UTC time of the committed ERP cancellation.");
+
+                    b.Property<string>("PurchaseOrderId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("purchase_order_id")
+                        .HasComment("Stable ERP purchase order identity for consistency checks.");
+
+                    b.Property<int>("PurchaseOrderVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("purchase_order_version")
+                        .HasComment("ERP aggregate version at the committed cancellation.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason")
+                        .HasComment("Reason for closing the purchase order receiving source.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Site owning the cancelled purchase order.");
+
+                    b.HasKey("OrganizationId", "EnvironmentId", "PurchaseOrderNo");
+
+                    b.ToTable("purchase_order_cancellations", "wms", t =>
+                        {
+                            t.HasComment("Terminal ERP cancellation projection for WMS-owned purchase orders.");
                         });
                 });
 

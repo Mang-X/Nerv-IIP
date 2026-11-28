@@ -490,6 +490,7 @@ export function useWorkOrderDetailPage() {
     }
   }
   const closeOpen = ref(false)
+  const engineeringImpactsRefreshVersion = ref(0)
   const decisionOpen = ref(false)
   const decisionShowErrors = ref(false)
   const decisionForm = reactive({ changeNumber: '', decision: '', reason: '' })
@@ -550,6 +551,7 @@ export function useWorkOrderDetailPage() {
         reason: decisionForm.reason.trim(),
       })
       decisionOpen.value = false
+      engineeringImpactsRefreshVersion.value++
       notifySuccess(
         `工程变更决策已记录：${decisionForm.decision === 'continue-with-archived-version' ? '继续使用现行版本' : '停止工单'}。`,
       )
@@ -625,6 +627,7 @@ export function useWorkOrderDetailPage() {
   )
 
   function refreshAll() {
+    engineeringImpactsRefreshVersion.value++
     void refreshDetail()
     void refreshMaterialReadiness()
   }
@@ -716,6 +719,7 @@ export function useWorkOrderDetailPage() {
     decisionOpen,
     decisionShowErrors,
     decisionValidationSummary,
+    engineeringImpactsRefreshVersion,
     detail,
     detailError,
     detailErrorMessage,
@@ -816,6 +820,7 @@ export function useWorkOrderDetailPage() {
     unreturnableNoLotRows,
     workOrderLabel,
     workOrderManageScopeReady,
+    workOrderReadScope,
     workOrderReadScopeMessage,
     workOrderStatusPill,
     workOrderTone,

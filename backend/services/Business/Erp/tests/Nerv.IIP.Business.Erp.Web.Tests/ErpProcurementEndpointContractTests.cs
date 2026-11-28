@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
@@ -29,7 +30,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(22, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -719,6 +720,39 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Matches("^PO-[0-9]{8}-[0-9]{6}$", order.PurchaseOrderNo);
     }
 
+    [Theory]
+    [InlineData(PurchaseReceiptInventoryPostingRoute.Direct)]
+    [InlineData(PurchaseReceiptInventoryPostingRoute.Wms)]
+    public async Task Wms_owned_po_rejects_new_erp_receipt_even_when_request_selects_wms(
+        PurchaseReceiptInventoryPostingRoute requestedRoute)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var receiving = Options.Create(new ErpPurchaseOrderReceivingOptions
+        {
+            WmsScopes = [new("org-001", "env-dev", "SITE-01")],
+        });
+        var create = new CreatePurchaseOrderCommandHandler(db, approvalClient: new CapturingPurchaseOrderApprovalClient(),
+            receiving: receiving);
+        await create.Handle(new("org-001", "env-dev", "PO-WMS", "SUP-001", "SITE-01",
+            [new("10", "SKU", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]), CancellationToken.None);
+        await db.SaveChangesAsync();
+        var order = await db.PurchaseOrders.Include(x => x.Lines).SingleAsync();
+        order.ReleaseAfterApproval(order.ApprovalChainId!);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var receipt = new RecordPurchaseReceiptCommand("org-001", "env-dev", "RCV-WMS", "PO-WMS",
+            [new("10", 1m, "unrestricted", "LOCATION")], InventoryPostingRoute: requestedRoute);
+        var error = await Assert.ThrowsAsync<KnownException>(() =>
+            new RecordPurchaseReceiptCommandHandler(db).Handle(receipt, CancellationToken.None));
+        Assert.Equal("该采购订单由 WMS 收货，请在 WMS 完成收货。", error.Message);
+        await db.SaveChangesAsync();
+        Assert.Empty(await db.PurchaseReceipts.ToListAsync());
+        Assert.Equal(0m, (await db.PurchaseOrders.SelectMany(x => x.Lines).SingleAsync()).ReceivedQuantity);
+    }
+
     [Fact]
     public async Task Create_purchase_order_starts_approval_with_the_contract_template_code()
     {
@@ -767,7 +801,12 @@ public sealed class ErpProcurementEndpointContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+        var receiving = Options.Create(new ErpPurchaseOrderReceivingOptions
+        {
+            WmsScopes = [new("org-001", "env-dev", "SITE-01")],
+        });
+        var result = await new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
+            dbContext, approvalClient: approvalClient, receiving: receiving).Handle(
             new ConvertPurchaseRequisitionsToPurchaseOrderCommand(
                 "org-001",
                 "env-dev",
@@ -787,6 +826,7 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);
         Assert.Equal("purchase-order", approvalClient.LastRequest.DocumentType);
         var order = Assert.Single(dbContext.PurchaseOrders.Include(x => x.Lines).ThenInclude(x => x.SourceLinks));
+        Assert.Equal(PurchaseReceiptInventoryPostingRoute.Wms, order.ReceivingAuthority);
         var line = Assert.Single(order.Lines);
         Assert.Equal(7m, line.OrderedQuantity);
         Assert.Equal("kg", line.UomCode);

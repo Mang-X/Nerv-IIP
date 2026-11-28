@@ -2,6 +2,24 @@
   "schemaVersion": 1,
   "members": [
     {
+      "id": "scheduled-eco-mes-impact-redis-cap",
+      "service": "ProductEngineering+MES",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Acceptance.Tests.ScheduledEngineeringChangeAcceptanceTests.Future_eco_releases_at_due_scan_and_persists_scoped_work_order_decision_on_redis_cap",
+      "databasePrefix": "nerv_iip_eco_impact",
+      "capVersionPrefix": "n806eco",
+      "diagnosticSchemas": [
+        "product_engineering",
+        "mes",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.ScheduledEngineeringChangeAcceptanceTests.Future_eco_releases_at_due_scan_and_persists_scoped_work_order_decision_on_redis_cap"
+      ]
+    },
+    {
       "id": "demandplanning-sales-order-redis-cap",
       "service": "DemandPlanning",
       "tier": "core",

@@ -97,7 +97,8 @@ public sealed class PurchaseReceiptRecordedIntegrationEventConverter
                     x.LotNo,
                     x.ReceivedQuantity,
                     x.QualityStatus))
-                .ToArray());
+                .ToArray(),
+            domainEvent.WmsReceiptBatchId);
         return new PurchaseReceiptRecordedIntegrationEvent(
             EventIds.New(),
             ErpIntegrationEventTypes.PurchaseReceiptRecorded,

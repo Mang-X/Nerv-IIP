@@ -244,7 +244,6 @@ describe('business approval composable', () => {
         documentType: 'quality-ncr',
         documentId: 'NCR-260701-001',
         documentLineId: null,
-        startedBy: 'approver-a',
       },
     })
     expect(

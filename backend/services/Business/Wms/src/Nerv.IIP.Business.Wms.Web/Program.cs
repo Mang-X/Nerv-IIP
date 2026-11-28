@@ -40,6 +40,10 @@ try
     builder.Services.Configure<WcsRetryOptions>(builder.Configuration.GetSection("Wcs:Retry"));
     // MES 领料默认库位来自部署配置；留空即「未配置」，消费者进死信而不是兜底到演示库位（#1754）。
     builder.Services.Configure<WmsMaterialIssueLocationOptions>(builder.Configuration.GetSection("MaterialIssue"));
+    builder.Services.AddOptions<WmsPurchaseOrderReceivingOptions>()
+        .BindConfiguration(WmsPurchaseOrderReceivingOptions.SectionName)
+        .Validate(options => options.IsValid(), "Purchase order receiving routes require unique organization, environment and site, a staging location, quality/unrestricted status and company ownership.")
+        .ValidateOnStart();
     builder.Services.AddMvc();
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
@@ -54,6 +58,10 @@ try
     }).UseHttpClientMetrics();
     var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
     builder.Services.AddHttpClient<IWmsPurchaseReceiptPostingRouteClient, HttpWmsPurchaseReceiptPostingRouteClient>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IWmsPurchaseReceiptAcceptanceClient, HttpWmsPurchaseReceiptAcceptanceClient>(client =>
     {
         client.BaseAddress = erpBaseAddress;
     }).UseHttpClientMetrics();
@@ -124,6 +132,7 @@ try
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
             x.UseDashboard();
         });
+        builder.Services.AddNervIipCanonicalTopicSubscriptions(builder.Environment.EnvironmentName);
     }
 
     builder.Services.AddMediatR(cfg =>
@@ -133,6 +142,8 @@ try
             .AddOpenBehavior(typeof(WarehouseTaskActionReceiptRecoveryBehavior<,>))
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<ConfirmInboundReceiptCommand>, ConfirmInboundReceiptCommandLock>();
+    builder.Services.AddScoped<ICommandLock<BindInboundErpReceiptCommand>, BindInboundErpReceiptCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<RetryInboundInventoryPostingCommand>, RetryInboundInventoryPostingCommandLock>();
     builder.Services.AddScoped<ICommandLock<RetryOutboundInventoryPostingCommand>, RetryOutboundInventoryPostingCommandLock>();

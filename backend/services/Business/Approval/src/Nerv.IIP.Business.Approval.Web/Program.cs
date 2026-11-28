@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Approval.Web.Application.Auth;
 using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
@@ -34,6 +35,28 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    builder.Services.AddCreateApprovalChainAuthorization(builder.Configuration);
+    builder.Services.AddGetApprovalChainAuthorization(builder.Configuration);
+    ApprovalGatewayOperationAuthorization.ReadCollections.Register(builder.Services, builder.Configuration);
+    ApprovalGatewayOperationAuthorization.ReadTemplates.Register(builder.Services, builder.Configuration);
+    ApprovalGatewayOperationAuthorization.WriteTemplates.Register(builder.Services, builder.Configuration);
+    ApprovalGatewayOperationAuthorization.ReadDelegations.Register(builder.Services, builder.Configuration);
+    builder.Services.AddCheckOverdueApprovalStepsAuthorization(builder.Configuration);
+    builder.Services.AddScoped<ResolveApprovalStepAuthority>();
+    var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+        builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+        builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.IamClient, iamBaseAddress);
+    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.MasterDataClient, masterDataBaseAddress)
+        .RedactLoggedHeaders(_ => true);
+
+    IHttpClientBuilder AddApprovalAuthorityClient(string name, Uri baseAddress)
+    {
+        return builder.Services.AddHttpClient(name, client => client.BaseAddress = baseAddress)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
+    }
+
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)

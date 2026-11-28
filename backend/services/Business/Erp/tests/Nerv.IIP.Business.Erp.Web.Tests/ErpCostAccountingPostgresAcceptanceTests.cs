@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
@@ -17,10 +18,12 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
@@ -33,6 +36,161 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection("ERP PostgreSQL acceptance")]
 public sealed class ErpCostAccountingPostgresAcceptanceTests
 {
+    [ErpCostPostgresFact]
+    public async Task Shipment_migration_blocks_legacy_accrual_with_independent_outbound_number_and_retries_after_reconciliation()
+    {
+        const string previous = "20260915033607_AddJournalVoucherSourceDocumentUniqueIndex";
+        const string target = "20261127134330_AddSalesOrderLineShippedQuantity";
+
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var db = new ApplicationDbContext(ErpPostgresLaneDatabase.CreateOptions(), new NoopMediator());
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync(previous);
+
+        // Legacy completion carried PublicReference DO-1 and used OUT-1 for inbox deduplication.
+        // The old handler saved the AR and inbox, but left the delivery at its release state.
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO erp.sales_orders
+                (id, organization_id, environment_id, sales_order_no, customer_code, quotation_no,
+                 site_code, status, created_at_utc, total_amount, version)
+            VALUES
+                ('10000000-0000-0000-0000-000000000001', 'org-1', 'env-1', 'SO-1', 'CUS-1', 'Q-1',
+                 'SITE-1', 'released', '2026-06-01T00:00:00Z', 20, 2);
+
+            INSERT INTO erp.sales_order_lines
+                (id, sales_order_id, line_no, sku_code, uom_code, ordered_quantity, delivered_quantity,
+                 unit_price, required_date, cancelled)
+            VALUES
+                (gen_random_uuid(), '10000000-0000-0000-0000-000000000001', '10', 'SKU-1', 'EA', 2, 2,
+                 10, '2026-06-02', false);
+
+            INSERT INTO erp.delivery_orders
+                (id, organization_id, environment_id, delivery_order_no, sales_order_no, customer_code,
+                 site_code, status, released_at_utc, version)
+            VALUES
+                ('20000000-0000-0000-0000-000000000001', 'org-1', 'env-1', 'DO-1', 'SO-1', 'CUS-1',
+                 'SITE-1', 'released', '2026-06-01T00:00:00Z', 0);
+
+            INSERT INTO erp.delivery_order_lines
+                (id, delivery_order_id, sales_order_line_no, sku_code, uom_code, location_code,
+                 quantity, shipped_quantity)
+            VALUES
+                (gen_random_uuid(), '20000000-0000-0000-0000-000000000001', '10', 'SKU-1', 'EA', 'LOC-1', 2, 0);
+
+            INSERT INTO erp.processed_integration_events
+                ("Id", "ConsumerName", "EventId", "EventType", "EventVersion", "SourceService",
+                 "IdempotencyKey", "ProcessedAtUtc")
+            VALUES
+                (gen_random_uuid(), 'business-erp.wms-outbound-completed-ar-accrual', 'event-1',
+                 'wms.OutboundOrderCompleted', 1, 'business-wms', 'wms:outbound-completed:org-1:env-1:OUT-1',
+                 '2026-06-02T00:00:00Z');
+
+            INSERT INTO erp.account_receivables
+                (id, organization_id, environment_id, receivable_no, source_document_no, customer_code,
+                 amount, collected_amount, credit_note_amount, local_amount, local_collected_amount,
+                 local_credit_note_amount, currency_code, exchange_rate, invoice_date, due_date,
+                 payment_term_code, created_at_utc)
+            VALUES
+                (gen_random_uuid(), 'org-1', 'env-1', 'AR-1', 'DO-1', 'CUS-1',
+                 20, 0, 0, 20, 0, 0, 'CNY', 1, '2026-06-02', '2026-06-02',
+                 'DELIVERY-AR', '2026-06-02T00:00:00Z');
+
+            INSERT INTO erp.sales_orders
+                (id, organization_id, environment_id, sales_order_no, customer_code, quotation_no,
+                 site_code, status, created_at_utc, total_amount, version)
+            SELECT gen_random_uuid(), scope.org, scope.env, scope.so, customer_code, quotation_no,
+                   site_code, status, created_at_utc, total_amount, version
+            FROM erp.sales_orders
+            CROSS JOIN (VALUES ('org-1', 'env-1', 'SO-2'),
+                               ('org-1', 'env-2', 'SO-1'),
+                               ('org-2', 'env-1', 'SO-1')) AS scope(org, env, so);
+
+            INSERT INTO erp.sales_order_lines
+                (id, sales_order_id, line_no, sku_code, uom_code, ordered_quantity, delivered_quantity,
+                 unit_price, required_date, cancelled)
+            SELECT gen_random_uuid(), id, '10', 'SKU-1', 'EA', 2, 2, 10, '2026-06-02', false
+            FROM erp.sales_orders
+            WHERE id <> '10000000-0000-0000-0000-000000000001';
+
+            WITH unshipped_deliveries AS (
+                INSERT INTO erp.delivery_orders
+                    (id, organization_id, environment_id, delivery_order_no, sales_order_no, customer_code,
+                     site_code, status, released_at_utc, version)
+                SELECT gen_random_uuid(), organization_id, environment_id,
+                       CASE WHEN sales_order_no = 'SO-2' THEN 'DO-2' ELSE 'DO-1' END,
+                       sales_order_no, customer_code, site_code, 'released', '2026-06-01T00:00:00Z', 0
+                FROM erp.sales_orders
+                WHERE id <> '10000000-0000-0000-0000-000000000001'
+                RETURNING id
+            )
+            INSERT INTO erp.delivery_order_lines
+                (id, delivery_order_id, sales_order_line_no, sku_code, uom_code, location_code,
+                 quantity, shipped_quantity)
+            SELECT gen_random_uuid(), id, '10', 'SKU-1', 'EA', 'LOC-1', 2, 0 FROM unshipped_deliveries;
+            """);
+
+        var error = await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(target));
+        Assert.Equal("23000", error.SqlState);
+        Assert.Contains("org-1/env-1/DO-1", error.MessageText);
+        Assert.DoesNotContain(target, await db.Database.GetAppliedMigrationsAsync());
+        Assert.False(await db.Database.SqlQueryRaw<bool>("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'erp' AND table_name = 'sales_order_lines' AND column_name = 'shipped_quantity'
+            ) AS "Value"
+            """).SingleAsync());
+
+        // Simulate restoring projection facts from a verified actual issue of one unit against two allocated.
+        await db.Database.ExecuteSqlRawAsync("""
+            UPDATE erp.delivery_order_lines SET shipped_quantity = 1
+            WHERE delivery_order_id = '20000000-0000-0000-0000-000000000001';
+            UPDATE erp.delivery_orders
+            SET status = 'partially-shipped', shipped_at_utc = '2026-06-02T00:00:00Z', version = version + 1
+            WHERE id = '20000000-0000-0000-0000-000000000001';
+            """);
+        await migrator.MigrateAsync(target);
+        await migrator.MigrateAsync(target);
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var consumer = new WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable(
+            db, deadLetters, new ErpCodingService(),
+            NullLogger<WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable>.Instance);
+        var completion = new WmsIntegrationEvent(
+            "event-1", WmsIntegrationEventTypes.OutboundOrderCompleted, WmsIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-06-02T00:00:00Z"), WmsIntegrationEventSources.BusinessWms,
+            "correlation-1", "causation-1", "org-1", "env-1", "wms",
+            "wms:outbound-completed:org-1:env-1:OUT-1",
+            new WmsIntegrationPayload("DO-1", "10", "SKU-1", "EA", "SITE-1", "LOC-1", 1m, "Completed",
+                null, null, [new("10", "SKU-1", "EA", "SITE-1", "LOC-1", 1m, null)],
+                WmsSourceDocumentTypes.DeliveryOrder, "DO-1"));
+        await consumer.HandleCapAsync(completion, CancellationToken.None);
+
+        var orders = await db.SalesOrders.Include(x => x.Lines)
+            .OrderBy(x => x.OrganizationId).ThenBy(x => x.EnvironmentId).ThenBy(x => x.SalesOrderNo)
+            .ToListAsync();
+        Assert.Equal([1m, 0m, 0m, 0m], orders.Select(x => Assert.Single(x.Lines).ShippedQuantity));
+        Assert.All(orders, order => Assert.Equal(2m, Assert.Single(order.Lines).DeliveredQuantity));
+
+        var read = await new ListSalesOrdersQueryHandler(db).Handle(
+            new ListSalesOrdersQuery("org-1", "env-1", "released"), CancellationToken.None);
+        Assert.Equal(2, read.Total);
+        var lines = read.Items.ToDictionary(order => order.SalesOrderNo, order => Assert.Single(order.Lines!));
+        Assert.Equal(2m, lines["SO-1"].AllocatedQuantity);
+        Assert.Equal(1m, lines["SO-1"].ShippedQuantity);
+        Assert.Equal(2m, lines["SO-2"].AllocatedQuantity);
+        Assert.Equal(0m, lines["SO-2"].ShippedQuantity);
+
+        Assert.Equal(3, await db.DeliveryOrders.CountAsync(x => x.Status == "released"));
+        Assert.Single(await db.Database.GetAppliedMigrationsAsync(), x => x == target);
+        Assert.Empty(await deadLetters.ListAsync(
+            WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal("DO-1", (await db.AccountReceivables.SingleAsync()).SourceDocumentNo);
+        Assert.Equal("wms:outbound-completed:org-1:env-1:OUT-1",
+            (await db.ProcessedIntegrationEvents.SingleAsync()).IdempotencyKey);
+    }
+
     private const string VoucherOrganizationId = "org-voucher-no";
 
     private const string VoucherEnvironmentId = "env-voucher-no";

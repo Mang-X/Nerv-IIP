@@ -187,7 +187,20 @@ public sealed class ListSalesOrdersQueryValidator : AbstractValidator<ListSalesO
 }
 
 public sealed record ListSalesOrdersResponse(IReadOnlyCollection<SalesOrderResponse> Items, int Total);
-public sealed record SalesOrderResponse(string SalesOrderNo, string CustomerCode, string SiteCode, string Status, decimal TotalAmount);
+public sealed record SalesOrderResponse(
+    string SalesOrderNo,
+    string CustomerCode,
+    string SiteCode,
+    string Status,
+    decimal TotalAmount,
+    IReadOnlyCollection<SalesOrderLineResponse>? Lines = null);
+
+public sealed record SalesOrderLineResponse(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal AllocatedQuantity,
+    decimal ShippedQuantity);
 
 public sealed record ListDeliveryOrdersQuery(
     string OrganizationId,
@@ -329,7 +342,21 @@ public sealed class ListSalesOrdersQueryHandler(ApplicationDbContext dbContext)
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(page.Skip)
             .Take(page.Take)
-            .Select(x => new SalesOrderResponse(x.SalesOrderNo, x.CustomerCode, x.SiteCode, x.Status, x.TotalAmount))
+            .Select(x => new SalesOrderResponse(
+                x.SalesOrderNo,
+                x.CustomerCode,
+                x.SiteCode,
+                x.Status,
+                x.TotalAmount,
+                x.Lines
+                    .OrderBy(line => line.LineNo)
+                    .Select(line => new SalesOrderLineResponse(
+                        line.LineNo,
+                        line.SkuCode,
+                        line.UomCode,
+                        line.DeliveredQuantity,
+                        line.ShippedQuantity))
+                    .ToArray()))
             .ToArrayAsync(cancellationToken);
         return new ListSalesOrdersResponse(orders, total);
     }

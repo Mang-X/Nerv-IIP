@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
@@ -167,7 +168,8 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandValidator :
 public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
     ApplicationDbContext dbContext,
     ErpCodingService? codingService = null,
-    IPurchaseOrderApprovalClient? approvalClient = null)
+    IPurchaseOrderApprovalClient? approvalClient = null,
+    IOptions<ErpPurchaseOrderReceivingOptions>? receiving = null)
     : ICommandHandler<ConvertPurchaseRequisitionsToPurchaseOrderCommand, ConvertPurchaseRequisitionsToPurchaseOrderResult>
 {
     private const string RequisitionLineNo = "10";
@@ -337,7 +339,9 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             supplierCode,
             siteCodes[0],
             request.CurrencyCode,
-            lineDrafts);
+            lineDrafts,
+            receiving?.Value.Resolve(request.OrganizationId, request.EnvironmentId, siteCodes[0])
+                ?? PurchaseReceiptInventoryPostingRoute.Direct);
         var approvalResult = await _approvalClient.StartApprovalAsync(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
@@ -719,7 +723,8 @@ public sealed class CreatePurchaseOrderCommandValidator : AbstractValidator<Crea
 public sealed class CreatePurchaseOrderCommandHandler(
     ApplicationDbContext dbContext,
     ErpCodingService? codingService = null,
-    IPurchaseOrderApprovalClient? approvalClient = null)
+    IPurchaseOrderApprovalClient? approvalClient = null,
+    IOptions<ErpPurchaseOrderReceivingOptions>? receiving = null)
     : ICommandHandler<CreatePurchaseOrderCommand, PurchaseOrderId>
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
@@ -774,7 +779,9 @@ public sealed class CreatePurchaseOrderCommandHandler(
             request.SupplierCode,
             request.SiteCode,
             request.CurrencyCode,
-            request.Lines.Select(x => new PurchaseOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)));
+            request.Lines.Select(x => new PurchaseOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)),
+            receiving?.Value.Resolve(request.OrganizationId, request.EnvironmentId, request.SiteCode)
+                ?? PurchaseReceiptInventoryPostingRoute.Direct);
         var approvalResult = await _approvalClient.StartApprovalAsync(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
@@ -860,39 +867,98 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
-    public async Task<RecordPurchaseReceiptResult> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken)
+    public Task<RecordPurchaseReceiptResult> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken) =>
+        RecordAsync(request, fromWmsCompletion: false, cancellationToken);
+
+    internal Task<RecordPurchaseReceiptResult> HandleWmsCompletionAsync(
+        RecordPurchaseReceiptCommand request, CancellationToken cancellationToken) =>
+        RecordAsync(request with { InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Wms },
+            fromWmsCompletion: true, cancellationToken);
+
+    internal Task<RecordPurchaseReceiptResult> HandleWmsAcceptanceAsync(
+        RecordPurchaseReceiptCommand request, string siteCode, string fingerprint, Guid wmsReceiptBatchId, CancellationToken cancellationToken) =>
+        RecordAsync(request, fromWmsCompletion: false, cancellationToken, siteCode, fingerprint, wmsReceiptBatchId);
+
+    private async Task<RecordPurchaseReceiptResult> RecordAsync(
+        RecordPurchaseReceiptCommand request, bool fromWmsCompletion, CancellationToken cancellationToken,
+        string? acceptanceSiteCode = null, string? acceptanceFingerprint = null, Guid? wmsReceiptBatchId = null)
     {
-        // Direct 保留旧指纹，使升级前的幂等键仍可重放；WMS 显式绑定不同路径。
-        var fingerprint = ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}"));
-        if (request.InventoryPostingRoute != PurchaseReceiptInventoryPostingRoute.Direct)
+        // 先读实收的 PO 版本，再查批次。若同批次刚提交并关闭了订单，重试仍能读回结果。
+        var order = acceptanceSiteCode is null ? null : await ReadOrderAsync(request, cancellationToken);
+        var fingerprint = acceptanceFingerprint;
+        if (fingerprint is null)
         {
-            fingerprint = ErpCodingService.Fingerprint(fingerprint, request.InventoryPostingRoute);
+            // 保留 ERP Direct 和旧 WMS 完成投影的历史幂等指纹。
+            fingerprint = ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate,
+                request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}"));
+            if (request.InventoryPostingRoute != PurchaseReceiptInventoryPostingRoute.Direct)
+            {
+                fingerprint = ErpCodingService.Fingerprint(fingerprint, request.InventoryPostingRoute);
+            }
         }
+
+        var replay = await _codingService.TryPeekReplayAsync(
+            request.OrganizationId, request.EnvironmentId, WmsPurchaseReceiptAcceptanceIdentity.ReceiptRuleKey,
+            request.IdempotencyKey, fingerprint, cancellationToken);
+        if (replay is not null)
+        {
+            return await ReadReplayAsync(request, replay.Code, cancellationToken);
+        }
+
+        if (acceptanceSiteCode is null && request.IdempotencyKey?.Trim()
+                .StartsWith(WmsPurchaseReceiptAcceptanceIdentity.KeyPrefix, StringComparison.Ordinal) == true)
+        {
+            throw new KnownException("此幂等键前缀保留给 WMS 收货批次。");
+        }
+
+        if (acceptanceSiteCode is null)
+        {
+            order = await ReadOrderAsync(request, cancellationToken);
+        }
+        if (order is null)
+        {
+            throw new KnownException($"采购订单『{request.PurchaseOrderNo}』不存在。");
+        }
+
+        if (acceptanceSiteCode is not null)
+        {
+            if (order.ReceivingAuthority != PurchaseReceiptInventoryPostingRoute.Wms
+                || order.SiteCode != acceptanceSiteCode)
+            {
+                throw new KnownException("该采购订单不属于此站点的 WMS 收货范围。");
+            }
+
+            if (order.Status != PurchaseOrderStatus.Released)
+            {
+                throw new KnownException("该采购订单当前不可收货。");
+            }
+
+            var orderLines = order.Lines.ToDictionary(line => line.LineNo, StringComparer.Ordinal);
+            foreach (var actual in request.Lines)
+            {
+                if (!orderLines.TryGetValue(actual.PurchaseOrderLineNo, out var line)
+                    || actual.ReceivedQuantity > line.OpenQuantity)
+                {
+                    throw new KnownException("实收行不存在或实收数量超出采购订单行当前可收货数量。");
+                }
+            }
+        }
+        else if (!fromWmsCompletion && order.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms)
+        {
+            throw new KnownException("该采购订单由 WMS 收货，请在 WMS 完成收货。");
+        }
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId, "purchase-receipt",
+            request.EnvironmentId, WmsPurchaseReceiptAcceptanceIdentity.ReceiptRuleKey,
             request.PurchaseReceiptNo,
             request.IdempotencyKey,
             fingerprint,
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            var replayed = await dbContext.PurchaseReceipts.SingleAsync(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.PurchaseReceiptNo == allocation.Code,
-                cancellationToken);
-            return new RecordPurchaseReceiptResult(replayed.Id, replayed.PurchaseReceiptNo);
+            return await ReadReplayAsync(request, allocation.Code, cancellationToken);
         }
-
-        var order = await dbContext.PurchaseOrders
-            .Include(x => x.Lines)
-            .SingleOrDefaultAsync(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.PurchaseOrderNo == request.PurchaseOrderNo,
-                cancellationToken)
-            ?? throw new KnownException($"采购订单『{request.PurchaseOrderNo}』不存在。");
 
         PurchaseReceipt receipt;
         try
@@ -902,7 +968,8 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
                 allocation.Code,
                 request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus, x.LocationCode, x.LotNo, x.FinalDelivery)),
                 request.ExchangeRate,
-                request.InventoryPostingRoute);
+                request.InventoryPostingRoute,
+                wmsReceiptBatchId);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
@@ -911,6 +978,24 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
 
         dbContext.PurchaseReceipts.Add(receipt);
         return new RecordPurchaseReceiptResult(receipt.Id, receipt.PurchaseReceiptNo);
+    }
+
+    private Task<PurchaseOrder?> ReadOrderAsync(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken) =>
+        dbContext.PurchaseOrders.Include(x => x.Lines).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PurchaseOrderNo == request.PurchaseOrderNo,
+            cancellationToken);
+
+    private async Task<RecordPurchaseReceiptResult> ReadReplayAsync(
+        RecordPurchaseReceiptCommand request, string code, CancellationToken cancellationToken)
+    {
+        var replayed = await dbContext.PurchaseReceipts.SingleAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PurchaseReceiptNo == code,
+            cancellationToken);
+        return new RecordPurchaseReceiptResult(replayed.Id, replayed.PurchaseReceiptNo);
     }
 }
 
@@ -1014,6 +1099,12 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
                 && x.PurchaseReceiptNo == request.PurchaseReceiptNo,
                 cancellationToken)
             ?? throw new KnownException($"Purchase receipt '{request.PurchaseReceiptNo}' was not found.");
+        Dictionary<string, decimal>? returnedGrIrQuantities = null;
+        if (await PurchaseReceiptSettlement.IsAcceptedBatchAsync(dbContext, receipt, cancellationToken))
+        {
+            await PurchaseReceiptSettlement.LockAsync(dbContext, receipt, cancellationToken);
+            returnedGrIrQuantities = await PurchaseReceiptSettlement.ReadReturnedGrIrAsync(dbContext, receipt, cancellationToken);
+        }
         var alreadyInvoicedQuantitiesByReceiptLineNo = (await dbContext.SupplierInvoices
             .Include(x => x.Lines)
             .Where(x =>
@@ -1040,7 +1131,8 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
                 priceTolerancePercent,
                 invoiceLines,
                 alreadyInvoicedQuantitiesByReceiptLineNo,
-                request.ExchangeRate)
+                request.ExchangeRate,
+                returnedGrIrQuantities)
             : SupplierInvoice.Match(
                 order,
                 receipt,
@@ -1052,7 +1144,8 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
                 request.AmountTolerance,
                 invoiceLines,
                 alreadyInvoicedQuantitiesByReceiptLineNo,
-                request.ExchangeRate);
+                request.ExchangeRate,
+                returnedGrIrQuantities);
         dbContext.SupplierInvoices.Add(invoice);
 
         if (invoice.MatchStatus == SupplierInvoiceMatchStatus.PaymentHeld)
@@ -1152,6 +1245,8 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
                 && x.InvoiceNo == request.InvoiceNo,
                 cancellationToken)
             ?? throw new KnownException($"Supplier invoice '{request.InvoiceNo}' was not found.");
+
+        await PurchaseReceiptSettlement.EnsureHeldInvoiceCanClearAsync(dbContext, invoice, cancellationToken);
 
         var existingPayableForInvoice = await dbContext.AccountPayables.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
@@ -1436,6 +1531,12 @@ public sealed class CancelPurchaseOrderCommandHandler(
             throw new KnownException("Purchase orders with supplier invoices cannot be cancelled.");
         }
 
+        var wmsOwnsReceiving = order.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms;
+        if (wmsOwnsReceiving && order.Status == PurchaseOrderStatus.Cancelled)
+        {
+            return;
+        }
+
         if (order.Status != PurchaseOrderStatus.Released)
         {
             throw new KnownException("Only released purchase orders can be cancelled.");
@@ -1446,12 +1547,16 @@ public sealed class CancelPurchaseOrderCommandHandler(
             throw new KnownException("Purchase orders with received quantity cannot be cancelled.");
         }
 
-        await wmsInboundCancellationClient.CancelOpenInboundOrdersForPurchaseOrderAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.PurchaseOrderNo,
-            request.Reason,
-            cancellationToken);
+        if (!wmsOwnsReceiving)
+        {
+            await wmsInboundCancellationClient.CancelOpenInboundOrdersForPurchaseOrderAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.PurchaseOrderNo,
+                request.Reason,
+                cancellationToken);
+        }
+
         try { order.Cancel(request.Reason); }
         catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
     }

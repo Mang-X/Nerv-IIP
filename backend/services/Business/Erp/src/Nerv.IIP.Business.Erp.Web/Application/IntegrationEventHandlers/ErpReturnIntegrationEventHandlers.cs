@@ -1,16 +1,20 @@
+using System.Security.Cryptography;
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CreditNoteAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DebitNoteAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Validation;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
@@ -47,7 +51,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
     {
         try
         {
-            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
+            await ResolveReceiptAndRecordAsync(integrationEvent, cancellationToken);
         }
         catch (Exception exception) when (exception is KnownException or ArgumentException or InvalidOperationException)
         {
@@ -56,7 +60,48 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
         }
     }
 
-    private async Task HandleValidEventCoreAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    private static string PurchaseReturnAllocationKey(string eventKey)
+    {
+        var legacyKey = $"{ConsumerName}:{eventKey}";
+        return CanPreserveAllocationKey(legacyKey)
+            ? legacyKey
+            : DigestAllocationKey("return", eventKey);
+    }
+
+    private static string DebitNoteAllocationKey(string eventKey, string invoiceNo, string payableNo)
+    {
+        // The old format is reversible only when none of its fields contains the separator.
+        if (!eventKey.Contains('|') && !invoiceNo.Contains('|') && !payableNo.Contains('|'))
+        {
+            var legacyKey = $"{ConsumerName}|{eventKey}|{invoiceNo}|{payableNo}";
+            if (CanPreserveAllocationKey(legacyKey))
+            {
+                return legacyKey;
+            }
+        }
+
+        return DigestAllocationKey("debit", eventKey, invoiceNo, payableNo);
+    }
+
+    private static bool CanPreserveAllocationKey(string key) =>
+        !char.IsWhiteSpace(key[^1])
+        && key.EnumerateRunes().Count() <= CodeIdempotencyKey.IdempotencyKeyMaxLength;
+
+    private static string DigestAllocationKey(string kind, params string[] fields)
+    {
+        using var buffer = new MemoryStream();
+        using var writer = new BinaryWriter(buffer);
+        // BinaryWriter encodes each string as a length-prefixed UTF-8 field.
+        foreach (var field in fields)
+        {
+            writer.Write(field);
+        }
+
+        var digest = Convert.ToHexStringLower(SHA256.HashData(buffer.ToArray()));
+        return $"{ConsumerName}-v2-{kind}:{digest}";
+    }
+
+    private async Task ResolveReceiptAndRecordAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         if (!string.Equals(integrationEvent.SourceService, WmsIntegrationEventSources.BusinessWms, StringComparison.OrdinalIgnoreCase))
         {
@@ -88,6 +133,27 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             return;
         }
 
+        var acceptedBatch = await PurchaseReceiptSettlement.IsAcceptedBatchAsync(dbContext, receipt, cancellationToken);
+        Task RecordAsync() => HandleValidEventCoreAsync(integrationEvent, receipt, payload.Lines, acceptedBatch, cancellationToken);
+        if (acceptedBatch && dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null)
+        {
+            await CostingIntegrationEventUnitOfWork.ExecuteAsync(dbContext, dbContext, RecordAsync, cancellationToken);
+            return;
+        }
+
+        await RecordAsync();
+    }
+
+    private async Task HandleValidEventCoreAsync(
+        WmsIntegrationEvent integrationEvent, PurchaseReceipt receipt, IReadOnlyCollection<WmsIntegrationPayloadLine> lines,
+        bool acceptedBatch, CancellationToken cancellationToken)
+    {
+        if (acceptedBatch)
+        {
+            await PurchaseReceiptSettlement.LockAsync(dbContext, receipt, cancellationToken);
+        }
+
+        var payload = integrationEvent.Payload;
         if (await dbContext.PurchaseReturns.AnyAsync(x => x.OrganizationId == integrationEvent.OrganizationId
             && x.EnvironmentId == integrationEvent.EnvironmentId
             && x.WmsOutboundOrderNo == payload.PublicReference,
@@ -115,11 +181,12 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
         var invoices = await dbContext.SupplierInvoices.Include(x => x.Lines)
             .Where(x => x.OrganizationId == receipt.OrganizationId
                 && x.EnvironmentId == receipt.EnvironmentId
-                && x.PurchaseReceiptNo == receipt.PurchaseReceiptNo)
+                && x.PurchaseReceiptNo == receipt.PurchaseReceiptNo
+                && (!acceptedBatch || x.MatchStatus == SupplierInvoiceMatchStatus.Matched))
             .OrderBy(x => x.InvoiceDate)
             .ToListAsync(cancellationToken);
         var returnLines = new List<PurchaseReturnLineDraft>();
-        foreach (var wmsLine in payload.Lines)
+        foreach (var wmsLine in lines)
         {
             var receiptLine = receipt.Lines.SingleOrDefault(x => x.PurchaseOrderLineNo == wmsLine.LineReference)
                 ?? throw new KnownException($"Purchase receipt '{receipt.PurchaseReceiptNo}' has no line '{wmsLine.LineReference}' for supplier return.");
@@ -250,7 +317,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             receipt.EnvironmentId,
             "purchase-return",
             null,
-            $"{ConsumerName}:{integrationEvent.IdempotencyKey}",
+            PurchaseReturnAllocationKey(integrationEvent.IdempotencyKey),
             ErpCodingService.Fingerprint(receipt.PurchaseReceiptNo, payload.PublicReference, returnLines),
             cancellationToken);
         var purchaseReturn = PurchaseReturn.Record(
@@ -272,7 +339,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
                 receipt.EnvironmentId,
                 "debit-note",
                 null,
-                ErpCodingService.Fingerprint(ConsumerName, integrationEvent.IdempotencyKey, application.Invoice.InvoiceNo, application.Payable.PayableNo),
+                DebitNoteAllocationKey(integrationEvent.IdempotencyKey, application.Invoice.InvoiceNo, application.Payable.PayableNo),
                 ErpCodingService.Fingerprint(returnAllocation.Code, application.Invoice.InvoiceNo, application.Payable.PayableNo, application.Amount),
                 cancellationToken);
             application.Payable.ApplyDebitNote(application.Amount);

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Text;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
@@ -189,16 +190,26 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         }
     }
 
-    [Fact]
-    public async Task Approval_client_replaces_failed_envelope_message_with_a_stable_public_message()
+    [Theory]
+    [InlineData(false, "test-token")]
+    [InlineData(true, "synthetic-inventory-approval-token")]
+    public async Task Approval_client_replaces_failed_envelope_message_with_a_stable_public_message(bool scoped, string expectedBearer)
     {
-        using var httpClient = new HttpClient(new StubHttpMessageHandler(
+        using var handler = new StubHttpMessageHandler(
             HttpStatusCode.OK,
-            "{\"data\":null,\"success\":false,\"message\":\"downstream stack trace\",\"code\":500}"))
+            "{\"data\":null,\"success\":false,\"message\":\"downstream stack trace\",\"code\":500}");
+        using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://approval.test"),
         };
-        var client = new HttpStockCountApprovalClient(httpClient, new TestInternalServiceTokenProvider());
+        const string scope = "Approval:CreateChain:OutboundCredentials:0:";
+        var configuration = scoped ? new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [scope + "OrganizationId"] = "org-001",
+            [scope + "EnvironmentId"] = "env-dev",
+            [scope + "BearerToken"] = "synthetic-inventory-approval-token",
+        }).Build() : null;
+        var client = new HttpStockCountApprovalClient(httpClient, new TestInternalServiceTokenProvider(), configuration);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => client.StartApprovalAsync(
             new StockCountApprovalRequest(
@@ -213,6 +224,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
                 "adjustment-001"),
             CancellationToken.None));
 
+        Assert.Equal(expectedBearer, handler.BearerToken);
         Assert.Equal("审批服务未返回审批链，请稍后重试。", exception.Message);
         Assert.DoesNotContain("downstream", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -251,11 +263,13 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
 
     private sealed class StubHttpMessageHandler(HttpStatusCode statusCode, string content) : HttpMessageHandler
     {
+        public string? BearerToken { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            _ = request;
+            BearerToken = request.Headers.Authorization?.Parameter;
             _ = cancellationToken;
             return Task.FromResult(new HttpResponseMessage(statusCode)
             {

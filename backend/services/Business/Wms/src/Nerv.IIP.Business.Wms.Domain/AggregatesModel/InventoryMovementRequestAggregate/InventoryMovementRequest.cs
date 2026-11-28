@@ -41,7 +41,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         DateOnly? expiryDate,
         bool publishCreatedEvent = true,
         decimal? unitCost = null,
-        bool countWithoutVariance = false)
+        bool countWithoutVariance = false,
+        bool matchReceiptStockDates = false)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -63,6 +64,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         InventoryReservationId = WmsText.Optional(inventoryReservationId);
         ProductionDate = productionDate;
         ExpiryDate = expiryDate;
+        MatchReceiptStockDates = matchReceiptStockDates;
         Status = InventoryMovementRequestStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
         if (publishCreatedEvent)
@@ -89,6 +91,9 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
     public string? InventoryReservationId { get; private set; }
     public DateOnly? ProductionDate { get; private set; }
     public DateOnly? ExpiryDate { get; private set; }
+    public bool MatchReceiptStockDates { get; private set; }
+    public DateOnly? PostedProductionDate { get; private set; }
+    public DateOnly? PostedExpiryDate { get; private set; }
     /// <summary>
     /// Signed movement quantity sent to Inventory. Inbound increases stock, outbound decreases stock,
     /// and count-adjustment uses the counted-minus-expected variance.
@@ -122,7 +127,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string? inventoryReservationId = null,
         DateOnly? ProductionDate = null,
         DateOnly? ExpiryDate = null,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        bool matchReceiptStockDates = false)
     {
         return new InventoryMovementRequest(
             organizationId,
@@ -144,7 +150,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             inventoryReservationId,
             ProductionDate,
             ExpiryDate,
-            unitCost: unitCost);
+            unitCost: unitCost,
+            matchReceiptStockDates: matchReceiptStockDates);
     }
 
     public static InventoryMovementRequest RecordCountApprovalPending(
@@ -236,7 +243,20 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         return receipt;
     }
 
-    public void MarkPosted(string inventoryMovementId)
+    public void RetryFailedPosting()
+    {
+        if (Status != InventoryMovementRequestStatus.Failed)
+        {
+            throw new InvalidOperationException("Only a failed movement request can be retried.");
+        }
+
+        Status = InventoryMovementRequestStatus.Pending;
+        FailureCode = null;
+        FailureMessage = null;
+        this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
+    }
+
+    public void MarkPosted(string inventoryMovementId, (DateOnly? ProductionDate, DateOnly? ExpiryDate)? postedDates = null)
     {
         var requiredMovementId = WmsText.Required(inventoryMovementId, nameof(inventoryMovementId));
         if (Status == InventoryMovementRequestStatus.Posted)
@@ -247,6 +267,12 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             }
 
             throw new InvalidOperationException("Inventory movement request was already posted with a different Inventory movement id.");
+        }
+
+        if (postedDates is { } dates)
+        {
+            PostedProductionDate = dates.ProductionDate;
+            PostedExpiryDate = dates.ExpiryDate;
         }
 
         InventoryMovementId = requiredMovementId;

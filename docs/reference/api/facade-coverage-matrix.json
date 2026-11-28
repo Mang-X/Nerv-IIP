@@ -142,7 +142,7 @@
       "route": "/api/business/v1/approvals/chains/{chainId}/resubmit",
       "operationId": "resubmitApprovalChain",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the approval-governance (withdraw/resubmit/add-signer/transfer) Business Console menu phase (#488)."
+      "followUp": "BusinessGateway facade 随审批治理菜单交付（#488），调用服务端重新提交时转发经 IAM 校验的最终主体凭据及组织环境。"
     },
     {
       "service": "Approval",
@@ -150,7 +150,7 @@
       "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer",
       "operationId": "addApprovalStepSigner",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+      "followUp": "Approval verifies the end-principal bearer and selected scope; BusinessGateway facade pending and follows the approval-governance Business Console menu phase (#488)."
     },
     {
       "service": "Approval",
@@ -171,7 +171,7 @@
       "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer",
       "operationId": "transferApprovalStep",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+      "followUp": "BusinessGateway facade 随审批治理菜单交付（#488），调用服务端转交时转发经 IAM 校验的最终主体凭据及组织环境。"
     },
     {
       "service": "Approval",
@@ -252,7 +252,7 @@
       "route": "/api/business/v1/approvals/tasks/overdue/check",
       "operationId": "checkOverdueApprovalSteps",
       "classification": "internal",
-      "rationale": "Internal server-clock overdue scheduler endpoint invoked by the Approval OverdueCheck background scanner (#488); not a user action."
+      "rationale": "Manual overdue check for a scoped internal Approval operator. The Approval OverdueCheck background scanner dispatches the application command directly."
     },
     {
       "service": "Approval",
@@ -1307,6 +1307,22 @@
     },
     {
       "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/wms-purchase-receipt-acceptances",
+      "operationId": "acceptErpWmsPurchaseReceipt",
+      "classification": "internal",
+      "rationale": "WMS submits a receipt batch for authoritative ERP acceptance."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/wms-purchase-receipt-acceptances/{wmsReceiptBatchId}",
+      "operationId": "getErpWmsPurchaseReceiptAcceptance",
+      "classification": "internal",
+      "rationale": "WMS recovers the committed ERP result for an existing receipt batch."
+    },
+    {
+      "service": "Erp",
       "method": "GET",
       "route": "/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document",
       "operationId": "getErpPurchaseReceiptSourceDocument",
@@ -1440,7 +1456,7 @@
       "route": "/api/business/v1/erp/sales-orders",
       "operationId": "listErpSalesOrders",
       "classification": "exposed",
-      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与销售订单专属状态语义。",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与销售订单专属状态语义。 #1389：订单项新增可选行明细，分别透传 ERP 持久化的开单分配与实际发运数量。",
       "gateways": [
         "business"
       ],
@@ -2660,6 +2676,14 @@
       "operationId": "getBusinessMasterDataPartnerCredit",
       "classification": "internal",
       "rationale": "Service-to-service public credit read consumed by ERP sales-order credit check (#436)."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/internal/master-data/v1/approval-principal-department",
+      "operationId": "getBusinessMasterDataApprovalPrincipalDepartment",
+      "classification": "internal",
+      "rationale": "仅供持有专用 scoped caller 凭据的 Approval 服务读取经 IAM 验证的最终用户部门。"
     },
     {
       "service": "MasterData",
@@ -3966,6 +3990,19 @@
       ],
       "gatewayOperationIds": [
         "recordBusinessConsoleMesEngineeringChangeDecision"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-order-engineering-change-impacts",
+      "operationId": "listBusinessMesEngineeringChangeWorkOrderImpacts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesEngineeringChangeWorkOrderImpacts"
       ]
     },
     {
@@ -5396,6 +5433,19 @@
       ],
       "gatewayOperationIds": [
         "assignBusinessConsoleWmsInboundOrder"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/confirm-receipt",
+      "operationId": "confirmWmsInboundReceipt",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "confirmBusinessConsoleWmsInboundReceipt"
       ]
     },
     {

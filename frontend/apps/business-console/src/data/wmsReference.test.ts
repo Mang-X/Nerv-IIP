@@ -29,6 +29,7 @@ describe('WMS PC 服务端状态契约', () => {
     expect(WMS_INBOUND_ORDER_STATUS_OPTIONS.map(({ value }) => value)).toEqual([
       'Open',
       'PendingQualityCheck',
+      'InventoryPostingPending',
       'Completed',
       'InventoryPostingFailed',
       'Cancelled',

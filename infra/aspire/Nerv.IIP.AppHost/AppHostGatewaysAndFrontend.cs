@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+
 internal sealed partial class AppHostComposition
 {
     private void RegisterGatewaysAndFrontend(InfrastructureResources infrastructure, ServiceResources services)
@@ -156,6 +159,27 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessMaintenance)
             .WaitFor(redis);
 
+        ConfigureApprovalCallers(businessApproval, "CreateChain", "create-chain", "internal.approval-chains.create",
+            (businessErp, "business-erp", "erp"),
+            (businessInventory, "inventory", "inventory"),
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "GetChain", "get-chain", "internal.approval-chains.read",
+            (businessMes, "business-mes", "mes"),
+            (businessQuality, "quality", "quality"),
+            (businessProductEngineering, "product-engineering", "product-engineering"),
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "ReadCollections", "read-collections", "internal.approval-chains.list",
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "ReadTemplates", "read-templates", "internal.approval-templates.read",
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "WriteTemplates", "write-templates", "internal.approval-templates.write",
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "ReadDelegations", "read-delegations", "internal.approval-delegations.list",
+            (businessGateway, "business-gateway", "gateway"));
+
+        ConfigureApprovalCallers(businessApproval, "OverdueCheck", "check-overdue", "internal.approval-tasks.check-overdue",
+            (null, "approval-overdue-operator", "operator"));
+
         if (platformGatewayDownloadToken is not null && businessGatewayDownloadToken is not null)
         {
             gateway.WithEnvironment("FileStorage__DownloadBearerToken", platformGatewayDownloadToken);
@@ -285,5 +309,75 @@ internal sealed partial class AppHostComposition
             .WithReference(businessGateway)
             .WaitFor(gateway)
             .WaitFor(businessGateway);
+    }
+
+    private void ConfigureApprovalCallers(
+        IResourceBuilder<ProjectResource> approval,
+        string operation,
+        string parameterOperation,
+        string permissionPrefix,
+        params (IResourceBuilder<ProjectResource>? Resource, string Subject, string Capability)[] callers)
+    {
+        var configuration = builder.Configuration.GetSection($"Approval{operation}");
+        var production = builder.Environment.IsProduction();
+        if (!configuration.GetValue("Enabled", production))
+        {
+            if (production)
+            {
+                throw new InvalidOperationException($"Approval{operation} scoped credentials are required in Production.");
+            }
+
+            return;
+        }
+
+        var settings = operation == "OverdueCheck" ? "OverdueCheck__HttpAuthorization" : operation;
+        var scopes = configuration.GetSection("Scopes").GetChildren().ToArray();
+        if (scopes.Length == 0)
+        {
+            throw new InvalidOperationException($"Approval{operation} requires at least one organization and environment.");
+        }
+
+        var configureSenders = configuration.GetValue("ConfigureSenders", true);
+        var allowLegacy = configuration.GetValue("AllowLegacyBearer", !production);
+        if (!configureSenders && !allowLegacy && callers.Any(caller => caller.Resource is not null))
+        {
+            throw new InvalidOperationException($"Approval{operation} requires scoped senders when legacy authentication is disabled.");
+        }
+
+        approval.WithEnvironment($"Approval__{settings}__AllowLegacyBearer", allowLegacy ? "true" : "false");
+        var configuredScopes = new HashSet<(string, string)>();
+        var profileIndex = 0;
+        for (var index = 0; index < scopes.Length; index++)
+        {
+            var organizationId = scopes[index]["OrganizationId"];
+            var environmentId = scopes[index]["EnvironmentId"];
+            if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId)
+                || organizationId != organizationId.Trim() || environmentId != environmentId.Trim()
+                || !configuredScopes.Add((organizationId, environmentId)))
+            {
+                throw new InvalidOperationException($"Approval{operation} scopes require unique, nonempty organization and environment IDs.");
+            }
+
+            foreach (var (resource, subject, capability) in callers)
+            {
+                var name = $"approval-{parameterOperation}-{capability}-{index}";
+                var secret = builder.AddParameter(name, secret: true);
+                var profile = $"Approval__{settings}__ScopedCallers__Profiles__{profileIndex++}__";
+                approval.WithEnvironment(profile + "Name", name)
+                    .WithEnvironment(profile + "Subject", subject)
+                    .WithEnvironment(profile + "OrganizationId", organizationId)
+                    .WithEnvironment(profile + "EnvironmentId", environmentId)
+                    .WithEnvironment(profile + "Permissions__0", resource is null ? permissionPrefix : $"{permissionPrefix}-{capability}")
+                    .WithEnvironment(profile + "BearerToken", secret);
+
+                if (configureSenders && resource is not null)
+                {
+                    var outbound = $"Approval__{operation}__OutboundCredentials__{index}__";
+                    resource.WithEnvironment(outbound + "OrganizationId", organizationId)
+                        .WithEnvironment(outbound + "EnvironmentId", environmentId)
+                        .WithEnvironment(outbound + "BearerToken", secret);
+                }
+            }
+        }
     }
 }

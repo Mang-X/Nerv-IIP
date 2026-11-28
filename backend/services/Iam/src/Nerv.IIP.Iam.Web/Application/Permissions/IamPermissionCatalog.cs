@@ -11,7 +11,20 @@ public static class IamPermissionCatalog
 {
     private static readonly IReadOnlyDictionary<string, string> Descriptions = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        [NervIipPermissionCodes.InternalApprovalChainsCreateErp] = "Create approval chains from the scoped ERP caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsCreateInventory] = "Create approval chains from the scoped Inventory caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsCreateGateway] = "Create approval chains from the scoped BusinessGateway caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsReadMes] = "Read approval chain details from the scoped MES caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsReadQuality] = "Read approval chain details from the scoped Quality caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsReadProductEngineering] = "Read approval chain details from the scoped ProductEngineering caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsReadGateway] = "Read approval chain details from the scoped BusinessGateway caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsListGateway] = "List approval chains, pending tasks and decisions from the scoped BusinessGateway caller.",
+        [NervIipPermissionCodes.InternalApprovalTemplatesReadGateway] = "List approval templates from the scoped BusinessGateway caller.",
+        [NervIipPermissionCodes.InternalApprovalTemplatesWriteGateway] = "Create or update approval templates from the scoped BusinessGateway caller.",
+        [NervIipPermissionCodes.InternalApprovalDelegationsListGateway] = "List approval delegations from the scoped BusinessGateway caller.",
+        [NervIipPermissionCodes.InternalApprovalTasksCheckOverdue] = "Check overdue approval steps in one organization and environment as a scoped operator.",
         [NervIipPermissionCodes.InternalGatewayCacheInvalidate] = "Invalidate one organization/environment of PlatformGateway read caches via a scoped internal caller.",
+        [NervIipPermissionCodes.InternalMasterDataApprovalDepartmentRead] = "Read an approval actor’s department from MasterData as a scoped Approval caller.",
         [NervIipPermissionCodes.IamUsersRead] = "Read IAM users.",
         [NervIipPermissionCodes.IamUsersManage] = "Create, update, disable and reset IAM users.",
         [NervIipPermissionCodes.IamRolesRead] = "Read IAM roles and permission catalog.",

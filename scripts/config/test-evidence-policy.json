@@ -86,6 +86,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP release-projection backfill proof\\.\";$"
     },
     {
+      "id": "scheduled-eco-mes-impact-postgres-redis",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/ScheduledEngineeringChangeAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Requires the governed scheduled ECO Redis/CAP lane member and its isolated database\\.\";$"
+    },
+    {
       "id": "mes-asset-unavailable-postgres-redis",
       "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesAssetUnavailableRedisCapTransportTests.cs",
       "sourceOrdinal": 1,
@@ -108,6 +114,12 @@
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/MaterialSupplyEtaPostgresTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP material supply ETA acceptance test\\.\";$"
+    },
+    {
+      "id": "erp-purchase-order-release-outbox",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/PurchaseOrderReleaseOutboxPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase order release outbox acceptance test\\.\";$"
     },
     {
       "id": "erp-purchase-receipt-route",
@@ -240,6 +252,12 @@
       "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP return closure acceptance test\\.\";$"
+    },
+    {
+      "id": "fullchain-warehouse-purchase-receipt",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/WarehousePurchaseReceiptBrokerAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the warehouse receipt broker acceptance\\.\";$"
     },
     {
       "id": "fullchain-erp-wms",
@@ -600,6 +618,26 @@
       "expectedRuntimeTestCount": 1
     },
     {
+      "id": "fullchain-warehouse-purchase-receipt",
+      "sourceId": "fullchain-warehouse-purchase-receipt",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.WarehousePurchaseReceiptBrokerAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the warehouse receipt broker acceptance\\.$",
+      "allowedLanes": ["backend"],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Warehouse_release_explicit_receipt_and_inventory_completion_converge_to_one_valued_erp_receipt",
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Passed_receiving_inspection_posts_unrestricted_inventory",
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Concession_receiving_inspection_posts_restricted_inventory",
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Rejected_receiving_inspection_posts_blocked_inventory_and_opens_one_return"
+      ],
+      "expectedRuntimeTestCount": 4
+    },
+    {
       "id": "acceptance-runtime-maintenance",
       "sourceId": "acceptance-runtime-maintenance",
       "classification": "environment-gated",
@@ -835,6 +873,25 @@
       "expectedRuntimeTestCount": 1
     },
     {
+      "id": "scheduled-eco-mes-impact-postgres-redis",
+      "sourceId": "scheduled-eco-mes-impact-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.ScheduledEngineeringChangeAcceptanceTests\\.Future_eco_releases_at_due_scan_and_persists_scoped_work_order_decision_on_redis_cap$",
+      "reasonPattern": "^Requires the governed scheduled ECO Redis/CAP lane member and its isolated database\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.ScheduledEngineeringChangeAcceptanceTests.Future_eco_releases_at_due_scan_and_persists_scoped_work_order_decision_on_redis_cap"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
       "id": "mes-asset-unavailable-postgres-redis",
       "sourceId": "mes-asset-unavailable-postgres-redis",
       "classification": "environment-gated",
@@ -891,11 +948,12 @@
       "testIdentities": [
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Movement_http_replay_reads_persisted_stock_and_rejection_without_duplicate_posting",
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Restricted_wms_inbound_replay_persists_frozen_valuation_once",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Reservation_replay_releases_original_scope_and_does_not_hide_missing_ledger",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Quality_replay_recovers_two_status_legs_and_preserves_failure_and_scope",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Approval_replay_requires_original_adjustment_and_posts_once"
       ],
-      "expectedRuntimeTestCount": 5
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "inventory-directory-postgres",
@@ -1572,6 +1630,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_fault_after_save_rolls_back_settlement_inbox_lineage_and_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_machine_overhead_reads_translate_and_isolate_work_order_period_and_scope",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_material_posting_during_uncommitted_report_is_costed_once",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.Shipment_migration_blocks_legacy_accrual_with_independent_outbound_number_and_retries_after_reconciliation",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_nonzero_machine_overhead_still_fails_closed_for_priced_labor_in_another_currency",
@@ -1591,7 +1650,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Original_rate_time_recovers_cost_through_single_and_batch_http_without_duplicate_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Existing_receipt_business_dedup_replays_without_inbox_and_preserves_rejection_and_scope"
       ],
-      "expectedRuntimeTestCount": 27
+      "expectedRuntimeTestCount": 28
     },
     {
       "id": "erp-journal-voucher-no",
@@ -1632,6 +1691,28 @@
       "expectedRuntimeTestCount": 1
     },
     {
+      "id": "erp-purchase-order-release-outbox",
+      "sourceId": "erp-purchase-order-release-outbox",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.PurchaseOrderReleaseOutboxPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase order release outbox acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Approval_commits_both_release_versions_once_and_outbox_failure_rolls_back",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Wms_owned_cancellation_commits_one_event_across_late_retry",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Accepted_wms_receipt_wins_against_stale_cancellation_without_publishing",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Cancellation_outbox_failure_rolls_back_order_and_can_retry"
+      ],
+      "expectedRuntimeTestCount": 4
+    },
+    {
       "id": "erp-purchase-receipt-route",
       "sourceId": "erp-purchase-receipt-route",
       "classification": "environment-gated",
@@ -1647,9 +1728,37 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Routes_persist_replay_without_events_and_keep_financial_facts_on_postgres",
-        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Legacy_receipt_migrates_to_direct_and_old_key_replays_on_postgres"
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Legacy_receipt_migrates_to_direct_and_old_key_replays_on_postgres",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Partial_direct_receipt_and_order_closure_cannot_both_commit_from_same_snapshot",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Inbound_projection_conflict_rolls_back_and_redelivery_applies_once",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Bound_completion_rejects_wrong_reference_and_acknowledges_only_the_accepted_receipt",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Bound_completion_acknowledges_restricted_stock_without_rebooking_the_inspected_receipt",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Bound_completion_acknowledges_blocked_stock_without_rebooking_the_inspected_receipt",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Accepted_receipt_invoice_and_supplier_return_use_the_committed_winner",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Accepted_receipt_only_grir_returns_limit_invoice_matching_and_hold_release",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Supplier_return_keeps_distinct_debits_and_replays_once_with_delimited_business_numbers",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Wms_batches_and_cancellation_share_the_purchase_order_write_boundary"
       ],
-      "expectedRuntimeTestCount": 2
+      "expectedRuntimeTestCount": 11
+    },
+    {
+      "id": "erp-wms-purchase-receipt-acceptance",
+      "sourceId": "erp-purchase-receipt-route",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.WmsPurchaseReceiptAcceptancePostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase-receipt route acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.WmsPurchaseReceiptAcceptancePostgresTests.Committed_batch_can_be_read_and_retried_with_frozen_facts"
+      ],
+      "expectedRuntimeTestCount": 1
     },
     {
       "id": "performance-baseline-erp",
@@ -1935,7 +2044,7 @@
       "id": "wms-deadletter-replay",
       "sourceId": "wms-deadletter-replay",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.(WmsDeadLetterReplayPostgresTests|WmsDeadLetterBusinessReplayPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.(WmsDeadLetterReplayPostgresTests|WmsDeadLetterBusinessReplayPostgresTests|WmsPurchaseOrderReleasePostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS dead-letter HTTP recovery tests\\.$",
       "allowedLanes": [
         "backend"
@@ -1946,15 +2055,32 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Erp_receipt_quality_result_replays_after_exact_batch_binding_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Quality_rejection_does_not_commit_inbox_and_recovers_original_event_through_http_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Legacy_failed_inbox_recovers_only_matching_unfinished_quality_fact_and_preserves_existing_effect_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Inventory_receipts_select_original_success_or_failure_and_batch_reads_persistent_results_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Outbound_material_issue_return_and_expiration_restore_original_documents_without_duplicates_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Wcs_adapter_failure_rolls_back_inbox_before_http_retry_and_duplicate_replay_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Delivery_normalized_document_replays_original_event_without_duplicates_on_postgres",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Rma_normalized_document_replays_original_event_without_duplicates_on_postgres"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Rma_normalized_document_replays_original_event_without_duplicates_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Replay_creates_expected_only_receipt_with_original_order_and_line_numbers",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Concurrent_deliveries_with_distinct_envelopes_create_one_receipt_for_the_scoped_po",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Missing_scoped_route_can_be_corrected_before_original_event_replay",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Manual_receipt_requires_reconciliation_before_replay_can_create_an_expectation",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Running_wms_subscribes_to_the_concrete_canonical_topic",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_before_release_replays_without_creating_an_inbound_order",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_closes_only_the_scoped_unreceived_auto_order",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Concurrent_cancellation_replays_and_release_converge_to_the_closed_source",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Failed_inbound_update_rolls_back_cancellation_and_inbox_then_original_replay_commits",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_rejects_foreign_source_invalid_version_and_conflicting_source_facts",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Staged_receipt_keeps_actual_zero_and_cancellation_closes_the_expectation",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Ambiguous_ack_replays_the_frozen_batch_and_committed_actual_survives_cancellation",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_unrestricted_receipt_posts_frozen_cost_and_retries_the_same_movement",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_inspected_receipt_posts_pass_and_concession_at_frozen_cost_after_both_decisions",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_rejection_posts_quarantine_stock_and_opens_one_return_after_all_acknowledgements",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Migration_separates_unbound_candidate_requests_from_confirmed_history"
       ],
-      "expectedRuntimeTestCount": 7
+      "expectedRuntimeTestCount": 24
     }
   ]
 }

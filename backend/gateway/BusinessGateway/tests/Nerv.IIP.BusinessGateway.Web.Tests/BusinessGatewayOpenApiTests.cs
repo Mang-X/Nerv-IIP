@@ -16,6 +16,35 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Wms_purchase_receipt_openapi_exposes_the_five_wire_statuses()
+    {
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        const string prefix = "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt";
+        var status = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(prefix).GetProperty("properties").GetProperty("status");
+        Assert.Equal($"#/components/schemas/{prefix}Status", status.GetProperty("$ref").GetString());
+        AssertStringEnumSchema(document, prefix + "Status",
+            "awaiting-confirmation", "erp-pending", "erp-accepted", "wms-confirmed", "unavailable");
+    }
+
+    [Fact]
+    public async Task Mes_engineering_change_impacts_openapi_exposes_only_public_filters_and_valid_dispositions()
+    {
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var operation = document.RootElement.GetProperty("paths")
+            .GetProperty("/api/business-console/v1/mes/work-order-engineering-change-impacts").GetProperty("get");
+        Assert.Equal("listBusinessConsoleMesEngineeringChangeWorkOrderImpacts", operation.GetProperty("operationId").GetString());
+        Assert.Equal(
+            ["changeNumber", "environmentId", "organizationId", "scopeId", "scopeKind", "skip", "take", "workOrderId"],
+            operation.GetProperty("parameters").EnumerateArray()
+                .Select(parameter => parameter.GetProperty("name").GetString()).Order(StringComparer.Ordinal));
+        AssertStringEnumSchema(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition",
+            "pending-decision", "auto-rebound", "blocked-for-manual-confirmation", "continue-with-archived-version", "abort-work-order");
+    }
+
+    [Fact]
     public async Task Code_rule_scope_openapi_lists_all_nonempty_flag_combinations()
     {
         using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
@@ -774,6 +803,15 @@ public sealed class BusinessGatewayOpenApiTests
             "purchaseOrderNo",
             "lines");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "get", "listBusinessConsoleErpSalesOrders");
+        var salesOrderProperties = FindSchemaBySuffix(document, "BusinessConsoleErpSalesOrderItem").GetProperty("properties");
+        Assert.Equal("array", salesOrderProperties.GetProperty("lines").GetProperty("type").GetString());
+        var salesLineProperties = FindSchemaBySuffix(document, "BusinessConsoleErpSalesOrderLineItem").GetProperty("properties");
+        var allocatedQuantity = salesLineProperties.GetProperty("allocatedQuantity");
+        var shippedQuantity = salesLineProperties.GetProperty("shippedQuantity");
+        Assert.Equal("number", allocatedQuantity.GetProperty("type").GetString());
+        Assert.Equal("number", shippedQuantity.GetProperty("type").GetString());
+        Assert.Contains("已分配数量", allocatedQuantity.GetProperty("description").GetString(), StringComparison.Ordinal);
+        Assert.Contains("实际已发运数量", shippedQuantity.GetProperty("description").GetString(), StringComparison.Ordinal);
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "get", "listBusinessConsoleErpOpportunities");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "post", "openBusinessConsoleErpOpportunity");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/quotations", "get", "listBusinessConsoleErpQuotations");
@@ -949,6 +987,12 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "post", "createOrUpdateBusinessConsoleApprovalTemplate");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains", "get", "listBusinessConsoleApprovalChains");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains", "post", "startBusinessConsoleApprovalChain");
+        var startApprovalSchema = paths.GetProperty("/api/business-console/v1/approval/chains")
+            .GetProperty("post").GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var startApprovalProperties = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(startApprovalSchema.Split('/')[^1]).GetProperty("properties");
+        Assert.False(startApprovalProperties.TryGetProperty("startedBy", out _));
         AssertOperationId(paths, "/api/business-console/v1/approval/chains/{chainId}", "get", "getBusinessConsoleApprovalChain");
         AssertOperationId(paths, "/api/business-console/v1/approval/tasks", "get", "listBusinessConsoleApprovalTasks");
         AssertOperationId(paths, "/api/business-console/v1/approval/decisions", "get", "listBusinessConsoleApprovalDecisions");

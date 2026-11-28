@@ -19,7 +19,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("quality")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -659,6 +659,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("updated_at_utc")
                         .HasComment("UTC time when the inspection record was last changed.");
 
+                    b.Property<Guid?>("WmsReceiptBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("wms_receipt_batch_id")
+                        .HasComment("Original WMS acceptance batch for ERP receiving inspections.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ReinspectionOfInspectionRecordId")
@@ -912,6 +917,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("version")
                         .HasComment("Optimistic version advanced for assignment and lifecycle changes.");
+
+                    b.Property<Guid?>("WmsReceiptBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("wms_receipt_batch_id")
+                        .HasComment("Original WMS acceptance batch for ERP receiving inspections.");
 
                     b.HasKey("Id");
 

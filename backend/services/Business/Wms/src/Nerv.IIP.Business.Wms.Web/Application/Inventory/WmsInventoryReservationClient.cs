@@ -23,7 +23,8 @@ public sealed record WmsInventoryReservationRequest(
     string? OwnerId,
     decimal Quantity,
     DateOnly? ProductionDate = null,
-    DateOnly? ExpiryDate = null);
+    DateOnly? ExpiryDate = null,
+    bool MatchReceiptStockDates = false);
 
 public sealed record WmsInventoryReservationResult(
     string ReservationId,

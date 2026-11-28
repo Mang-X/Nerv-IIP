@@ -53,6 +53,15 @@ public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the inbound order is created.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Inbound execution status.");
         builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
+        builder.Property(x => x.ReceiptConfirmationKey).HasColumnName("receipt_confirmation_key").HasMaxLength(128).HasComment("Normalized idempotency key for confirming actual receipt quantities.");
+        builder.Property(x => x.ReceiptRequestKey).HasColumnName("receipt_request_key").HasMaxLength(128).HasComment("Normalized idempotency key of the frozen ERP receipt request.");
+        builder.Property(x => x.ReceiptRequestFingerprint).HasColumnName("receipt_request_fingerprint").HasMaxLength(64).HasComment("SHA-256 fingerprint of the frozen ERP receipt request.");
+        builder.Property(x => x.ReceiptBatchId).HasColumnName("receipt_batch_id").HasComment("Stable ERP acceptance identity for an explicitly confirmed purchase order receipt.");
+        builder.Property(x => x.ReceiptExchangeRate).HasColumnName("receipt_exchange_rate").HasPrecision(18, 8).HasComment("Exchange rate frozen when the ERP acceptance batch is staged.");
+        builder.Property(x => x.ErpPurchaseReceiptNo).HasColumnName("erp_purchase_receipt_no").HasMaxLength(100).HasComment("Scoped ERP receipt number returned by committed batch acceptance.");
+        builder.Property(x => x.ErpReceiptAcceptedVersion).HasColumnName("erp_receipt_accepted_version").HasComment("Inbound version returned by the original successful ERP receipt binding.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReceiptBatchId }).IsUnique();
+        builder.Property(x => x.ReceiptConfirmationFingerprint).HasColumnName("receipt_confirmation_fingerprint").HasMaxLength(64).HasComment("SHA-256 fingerprint of the receipt confirmation intent.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when the open inbound expectation was cancelled.");
@@ -85,11 +94,18 @@ public sealed class InboundOrderLineEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Inbound order line id.");
         builder.Property<InboundOrderId>("InboundOrderId").HasColumnName("inbound_order_id").IsRequired().HasComment("Owning inbound order id.");
         AddLineColumns(builder, "received_quantity", "Inbound received quantity.");
+        builder.Property(x => x.RequestedReceiptQuantity).HasColumnName("requested_receipt_quantity").HasPrecision(18, 6).HasComment("Quantity frozen in the ERP receipt request before acceptance.");
+        builder.Property(x => x.ExpectedQuantity).HasColumnName("expected_quantity").HasPrecision(18, 6).HasComment("Expected quantity for a receipt requiring actual quantity confirmation; null for manual inbound lines.");
         builder.Property(x => x.StagingLocationCode).HasColumnName("staging_location_code").IsRequired().HasMaxLength(100).HasComment("Staging location for received stock.");
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional received batch production date captured by WMS.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional received batch expiry date captured by WMS.");
         builder.Property(x => x.QualityGateStatus).HasColumnName("quality_gate_status").IsRequired().HasMaxLength(50).HasDefaultValue(InboundQualityGateStatuses.NotRequired).HasComment("WMS inbound quality gate state: pending, passed, conditional-release, rejected or not-required.");
         builder.Property(x => x.InspectionRecordId).HasColumnName("inspection_record_id").HasMaxLength(150).HasComment("Quality inspection record id that released or rejected this inbound line.");
+        builder.Property(x => x.ErpReceiptInspectionRecordId).HasColumnName("erp_receipt_inspection_record_id").HasMaxLength(150).IsConcurrencyToken().HasComment("First Quality record projected for the accepted ERP receipt line.");
+        builder.Property(x => x.ErpReceiptInspectionResult).HasColumnName("erp_receipt_inspection_result").HasMaxLength(50).HasComment("Projected Quality decision, independent of stock disposition.");
+        builder.Property(x => x.ErpReceiptInspectedQuantity).HasColumnName("erp_receipt_inspected_quantity").HasPrecision(18, 6).HasComment("Quantity covered by the projected Quality decision.");
+        builder.Property(x => x.ErpReceiptInspectionReason).HasColumnName("erp_receipt_inspection_reason").HasMaxLength(500).HasComment("Reason supplied by Quality for the projected decision.");
+        builder.HasIndex("InboundOrderId", nameof(InboundOrderLine.ErpReceiptInspectionRecordId)).IsUnique();
         builder.Property(x => x.QualityDispositionReason).HasColumnName("quality_disposition_reason").HasMaxLength(1000).HasComment("Optional Quality disposition reason copied from the inspection result.");
     }
 
@@ -179,6 +195,9 @@ public sealed class OutboundOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Outbound order line id.");
         builder.Property<OutboundOrderId>("OutboundOrderId").HasColumnName("outbound_order_id").IsRequired().HasComment("Owning outbound order id.");
         InboundOrderLineEntityTypeConfiguration.AddLineColumns(builder, "requested_quantity", "Outbound requested quantity.");
+        builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Production date of the original stock posted for a blocked supplier return.");
+        builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Expiry date of the original stock posted for a blocked supplier return.");
+        builder.Property(x => x.MatchReceiptStockDates).HasColumnName("match_receipt_stock_dates").HasComment("Use the exact posted dates for an authoritative rejected receipt return.");
         builder.Property(x => x.PickLocationCode).HasColumnName("pick_location_code").IsRequired().HasMaxLength(100).HasComment("Pick location for outbound stock.");
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Public Inventory reservation id allocated for this outbound line.");
         builder.Property(x => x.IssuedQuantity).HasColumnName("issued_quantity").IsRequired().HasPrecision(18, 6).HasComment("Actual outbound quantity issued after picking and pack review.");
@@ -467,6 +486,9 @@ public sealed class InventoryMovementRequestEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Optional Inventory reservation id used to allocate outbound stock.");
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional production date carried to Inventory for inbound postings.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional expiry date carried to Inventory for FEFO-managed batches.");
+        builder.Property(x => x.MatchReceiptStockDates).HasColumnName("match_receipt_stock_dates").HasComment("Use exact stock dates for an authoritative rejected receipt or its return.");
+        builder.Property(x => x.PostedProductionDate).HasColumnName("posted_production_date").HasComment("Production date acknowledged by Inventory for the blocked inbound movement.");
+        builder.Property(x => x.PostedExpiryDate).HasColumnName("posted_expiry_date").HasComment("Expiry date acknowledged by Inventory for the blocked inbound movement.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Movement quantity requested from Inventory.");
         builder.Property(x => x.UnitCost).HasColumnName("unit_cost").HasPrecision(18, 6).HasComment("Frozen receipt cost per movement UOM in base currency; null for legacy or unvalued requests.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Posting status for the Inventory request.");

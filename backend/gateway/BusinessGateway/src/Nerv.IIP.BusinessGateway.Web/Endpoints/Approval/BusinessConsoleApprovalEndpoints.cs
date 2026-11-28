@@ -96,8 +96,10 @@ public sealed class StartBusinessConsoleApprovalChainEndpoint(
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
         return approval.StartChainAsync(
             tokenProvider.BearerToken,
-            request with { StartedBy = actorRef },
-            cancellationToken);
+            request,
+            actorRef,
+            cancellationToken,
+            principalBearer: bearerToken);
     }
 }
 
@@ -199,15 +201,11 @@ public sealed class ListBusinessConsoleApprovalDecisionsEndpoint(
 [BusinessGatewayOperationId("resolveBusinessConsoleApprovalStep")]
 public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessApprovalClient approval,
-    IBusinessMasterDataClient masterData,
-    IInternalServiceTokenProvider tokenProvider)
+    IBusinessApprovalClient approval)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleResolveApprovalStepRequest, BusinessConsoleResolveApprovalStepResponse>(
         auth,
         BusinessGatewayPermissions.ApprovalsManage)
 {
-    protected override bool IncludePrincipalContext => true;
-
     protected override string OrganizationId(BusinessConsoleResolveApprovalStepRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleResolveApprovalStepRequest request) => request.EnvironmentId;
@@ -217,25 +215,15 @@ public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
     protected override string? ResourceId(BusinessConsoleResolveApprovalStepRequest request) =>
         Route<string>("chainId") ?? request.ChainId;
 
-    protected override async Task<BusinessConsoleResolveApprovalStepResponse> ForwardAsync(
+    protected override Task<BusinessConsoleResolveApprovalStepResponse> ForwardAsync(
         BusinessConsoleResolveApprovalStepRequest request,
         string bearerToken,
-        CancellationToken cancellationToken)
-    {
-        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
-
-        var membership = await ApprovalRoutingMembership.LoadAsync(masterData, tokenProvider.BearerToken,
-            request.OrganizationId, request.EnvironmentId, AuthorizationResult!, cancellationToken);
-        var downstreamRequest = request with
+        CancellationToken cancellationToken) =>
+        approval.ResolveStepAsync(bearerToken, request with
         {
             ChainId = Route<string>("chainId") ?? request.ChainId,
             StepNo = Route<int>("stepNo"),
-            ActorType = actorType,
-            ActorRef = actorRef,
-            RoutingMembership = membership,
-        };
-        return await approval.ResolveStepAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
-    }
+        }, cancellationToken);
 }
 
 [Tags("Business Console Approval")]
@@ -265,8 +253,7 @@ public sealed class ListBusinessConsoleApprovalDelegationsEndpoint(
 [BusinessGatewayOperationId("createBusinessConsoleApprovalDelegation")]
 public sealed class CreateBusinessConsoleApprovalDelegationEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessApprovalClient approval,
-    IInternalServiceTokenProvider tokenProvider)
+    IBusinessApprovalClient approval)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateApprovalDelegationRequest, BusinessConsoleCreateApprovalDelegationResponse>(
         auth,
         BusinessGatewayPermissions.ApprovalsManage)
@@ -282,7 +269,7 @@ public sealed class CreateBusinessConsoleApprovalDelegationEndpoint(
     {
         var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
         return approval.CreateDelegationAsync(
-            tokenProvider.BearerToken,
+            bearerToken,
             request with
             {
                 DelegatorActorType = actorType,
@@ -298,8 +285,7 @@ public sealed class CreateBusinessConsoleApprovalDelegationEndpoint(
 [BusinessGatewayOperationId("revokeBusinessConsoleApprovalDelegation")]
 public sealed class RevokeBusinessConsoleApprovalDelegationEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessApprovalClient approval,
-    IInternalServiceTokenProvider tokenProvider)
+    IBusinessApprovalClient approval)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRevokeApprovalDelegationRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.ApprovalsManage)
@@ -321,7 +307,7 @@ public sealed class RevokeBusinessConsoleApprovalDelegationEndpoint(
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var delegationId = Route<string>("delegationId") ?? request.DelegationId;
         return approval.RevokeDelegationAsync(
-            tokenProvider.BearerToken,
+            bearerToken,
             delegationId,
             request with
             {

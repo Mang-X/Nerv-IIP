@@ -23,7 +23,8 @@ public interface IMesOperationTaskStartApprovalClient
 
 public sealed class HttpMesOperationTaskStartApprovalClient(
     HttpClient httpClient,
-    IInternalServiceTokenProvider tokenProvider) : IMesOperationTaskStartApprovalClient
+    IInternalServiceTokenProvider tokenProvider,
+    IConfiguration? configuration = null) : IMesOperationTaskStartApprovalClient
 {
     public async Task<MesOperationTaskStartApproval?> GetApprovedAsync(
         string approvalChainId,
@@ -42,7 +43,9 @@ public sealed class HttpMesOperationTaskStartApprovalClient(
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(canonicalApprovalChainId)}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ScopedCallerOutboundToken.Resolve(
+            configuration?.GetSection("Approval:GetChain:OutboundCredentials"),
+            organizationId, environmentId, tokenProvider.BearerToken));
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)

@@ -246,9 +246,9 @@ Assert-ConsumerPolicy $policy $sources
 
 $missing = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; $missing.consumers = @($missing.consumers | Select-Object -Skip 1)
 $rejected = $false; try { Assert-ConsumerPolicy $missing $sources } catch { $rejected = $_.Exception.Message.Contains('exactly once', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Deleting a ledger entry must fail closed.'
-$downgraded = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; (@($downgraded.consumers | Where-Object { ([string] $_.sourcePath).Contains('ErpReturnClosurePostgresAcceptanceTests', [StringComparison]::Ordinal) })[0].ownerships[0]).strategy = 'best-effort-dispose'
-$rejected = $false; try { Assert-ConsumerPolicy $downgraded $sources } catch { $rejected = $_.Exception.Message.Contains('required ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Downgrading required explicit ownership must fail closed.'
 $targetPath = 'backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs'
+$downgraded = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; (@($downgraded.consumers | Where-Object { [string]::Equals([string] $_.sourcePath, $targetPath, [StringComparison]::Ordinal) })[0].ownerships[0]).strategy = 'best-effort-dispose'
+$rejected = $false; try { Assert-ConsumerPolicy $downgraded $sources } catch { $rejected = $_.Exception.Message.Contains('required ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Downgrading required explicit ownership must fail closed.'
 $mutatedSource = ([string] $sources[$targetPath].Source).Replace('await database.DropAsync();', 'if (DateTime.UtcNow.Ticks < 0) await database.DropAsync();', [StringComparison]::Ordinal)
 $rejected = $false; try { Assert-ConsumerPolicy $policy (Copy-SourcesWithMutation $sources $targetPath $mutatedSource) } catch { $rejected = $_.Exception.Message.Contains('direct cleanup ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'A conditional DropAsync must not count as guaranteed cleanup.'
 $commented = "// Retain the cleanup owner while editing this comment.`n" + [string] $sources[$targetPath].Source

@@ -1327,6 +1327,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         seedCapabilities[Identity("Interface", "IBusinessBarcodeResolverClient")] = "BarcodeLabel";
         seedCapabilities[Identity("Class", "HttpBusinessBarcodeResolverClient")] = "BarcodeLabel";
         seedCapabilities.Add(Identity("Interface", "IBusinessMesWorkOrderTransformationClient"), "Mes");
+        seedCapabilities.Add(Identity("Class", "HttpBusinessMesEngineeringChangeImpactClient"), "Mes");
         seedCapabilities.Add(Identity("Class", "HttpBusinessMesWorkOrderTransformationClient"), "Mes");
         seedCapabilities[Identity("Interface", "IBusinessMesMaterialPrevalidationClient")] = "Mes";
         seedCapabilities[Identity("Class", "HttpBusinessMesMaterialPrevalidationClient")] = "Mes";

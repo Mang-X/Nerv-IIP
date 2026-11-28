@@ -15,7 +15,10 @@ import {
   type ReceivingQualityGateLine,
 } from '@/composables/wms'
 import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
-import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
+import {
+  BusinessOperationPendingError,
+  type BusinessConsoleWmsInboundOrderItem,
+} from '@nerv-iip/api-client'
 import {
   expiryToneFromDate,
   expiryToneLabel,
@@ -40,7 +43,7 @@ import {
   NvNoticeBar,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -115,7 +118,9 @@ const selectedOrderId = computed(() => selectedOrder.value?.inboundOrderId ?? ''
 const selectedOrderNo = computed(() => selectedOrder.value?.inboundOrderNo ?? '')
 const sheetOpen = ref(false)
 const completed = ref(false)
+const postingPending = shallowRef(false)
 const completionTitle = computed(() => {
+  if (postingPending.value) return '入库已提交，库存正在过账'
   const gate = selectedOrder.value?.qualityGateStatus?.toLowerCase()
   if (gate === RECEIVING_QUALITY_GATE_STATUS.pending) return '入库完成，待质检'
   if (gate === RECEIVING_QUALITY_GATE_STATUS.notRequired) return '入库完成，免检'
@@ -398,7 +403,15 @@ async function confirmComplete() {
     completed.value = true
     void refresh()
   } catch (e) {
-    if (sessionKey.value !== submittingSession || (await lifecycleRecovery.handle(e))) return
+    if (sessionKey.value !== submittingSession) return
+    if (e instanceof BusinessOperationPendingError) {
+      sheetOpen.value = false
+      postingPending.value = true
+      completed.value = true
+      void refresh()
+      return
+    }
+    if (await lifecycleRecovery.handle(e)) return
     const info = intent.recordFailure(e, '完成收货入库失败')
     submitError.value = intentLocked.value
       ? `${info.message}。提交结果未知，仅可按原内容重试。`
@@ -409,6 +422,7 @@ async function confirmComplete() {
 function resetFlow() {
   sheetOpen.value = false
   completed.value = false
+  postingPending.value = false
   selectedOrder.value = null
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
   intent.reset()

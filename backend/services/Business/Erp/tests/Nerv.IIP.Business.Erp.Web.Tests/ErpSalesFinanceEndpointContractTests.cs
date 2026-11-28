@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -419,6 +420,38 @@ public sealed class ErpSalesFinanceEndpointContractTests
         var item = Assert.Single(response.Items);
         Assert.Equal("SO-002", item.SalesOrderNo);
         Assert.Equal("released", item.Status);
+    }
+
+    [Fact]
+    public async Task List_sales_orders_reports_persisted_allocation_and_actual_shipment_per_line()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-PENDING", "QUO-PENDING", "CUS-001", "SKU-FG-001");
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-PARTIAL", "QUO-PARTIAL", "CUS-001", "SKU-FG-001");
+        var pending = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(x => x.SalesOrderNo == "SO-PENDING");
+        var partial = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(x => x.SalesOrderNo == "SO-PARTIAL");
+        pending.RegisterDelivery("LINE-001", 2m);
+        partial.RegisterDelivery("LINE-001", 2m);
+        partial.RegisterShipment("LINE-001", 0.75m);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var response = await new ListSalesOrdersQueryHandler(dbContext).Handle(
+            new ListSalesOrdersQuery("org-001", "env-dev", "released"),
+            CancellationToken.None);
+
+        var payload = JsonSerializer.SerializeToElement(response, JsonSerializerOptions.Web);
+        var items = payload.GetProperty("items").EnumerateArray()
+            .ToDictionary(item => item.GetProperty("salesOrderNo").GetString()!);
+        var pendingLine = Assert.Single(items["SO-PENDING"].GetProperty("lines").EnumerateArray());
+        Assert.Equal("LINE-001", pendingLine.GetProperty("lineNo").GetString());
+        Assert.Equal(2m, pendingLine.GetProperty("allocatedQuantity").GetDecimal());
+        Assert.Equal(0m, pendingLine.GetProperty("shippedQuantity").GetDecimal());
+        var partialLine = Assert.Single(items["SO-PARTIAL"].GetProperty("lines").EnumerateArray());
+        Assert.Equal(2m, partialLine.GetProperty("allocatedQuantity").GetDecimal());
+        Assert.Equal(0.75m, partialLine.GetProperty("shippedQuantity").GetDecimal());
     }
 
     [Fact]
@@ -885,8 +918,11 @@ internal sealed class TestInternalServiceTokenProvider : IInternalServiceTokenPr
 
 internal sealed class StubHttpMessageHandler(HttpStatusCode statusCode, string body, string mediaType) : HttpMessageHandler
 {
+    public string? BearerToken { get; private set; }
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        BearerToken = request.Headers.Authorization?.Parameter;
         return Task.FromResult(new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(body, Encoding.UTF8, mediaType),

@@ -1,8 +1,10 @@
 ﻿# Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Builds and publishes two temporary Aspire Docker Compose artifacts and probes rejected Production ephemeral publish
+#     - Builds and publishes temporary Aspire Docker Compose artifacts and probes rejected Production ephemeral publish
 #     - Validates environment-gated BarcodeLabel printer and retirement proof configuration and its FileStorage endpoint
+#     - Validates Production Compose internal service port isolation
+#     - Validates synthetic Approval department caller wiring and rollout in generated Compose
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
 #     - .ryugi/artifacts/script-logs/**
@@ -24,6 +26,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $root 'scripts/lib/ProductionComposePorts.ps1')
 
 function Get-ComposeProjectEnvironments {
     param([Parameter(Mandatory)][string] $ComposePath)
@@ -233,12 +236,154 @@ function Assert-EnvironmentArtifact {
     }
 }
 
+function Assert-PurchaseReceivingArtifact {
+    param([hashtable] $Services, [hashtable] $Inputs)
+
+    foreach ($service in $Services.GetEnumerator()) {
+        $expected = [hashtable]::new([StringComparer]::Ordinal)
+        foreach ($entry in $Inputs.GetEnumerator()) {
+            if (([string]::Equals($service.Key, 'business-erp', [StringComparison]::Ordinal) -and $entry.Key.StartsWith('PurchaseOrderReceiving__WmsScopes__', [StringComparison]::Ordinal)) -or
+                ([string]::Equals($service.Key, 'business-wms', [StringComparison]::Ordinal) -and $entry.Key.StartsWith('PurchaseOrderReceiving__Routes__', [StringComparison]::Ordinal))) {
+                $expected[$entry.Key] = $entry.Value
+            }
+        }
+        $actual = @($service.Value.Keys | Where-Object { $_.StartsWith('PurchaseOrderReceiving__', [StringComparison]::Ordinal) })
+        if (-not (Test-OrdinalSetEquals -Actual $actual -Expected @($expected.Keys))) {
+            throw "Unexpected purchase receiving settings for $($service.Key) in published Compose."
+        }
+        foreach ($entry in $expected.GetEnumerator()) {
+            if (-not [string]::Equals($service.Value[$entry.Key], $entry.Value, [StringComparison]::Ordinal)) {
+                throw "Published Compose changed $($service.Key) purchase receiving setting $($entry.Key)."
+            }
+        }
+    }
+}
+
+function Assert-ApprovalDepartmentArtifact {
+    param([hashtable] $Services, [bool] $ConfigureSender)
+
+    $expectedRecipients = if ($ConfigureSender) { @('business-master-data', 'business-approval') } else { @('business-master-data') }
+    $masterData = $Services['business-master-data']
+    if (-not [string]::Equals($masterData['Iam__BaseUrl'], 'http://iam:${IAM_PORT}', [StringComparison]::Ordinal)) {
+        throw 'MasterData must receive the generated IAM endpoint for the Approval department receiver.'
+    }
+
+    $scopes = @(
+        @{ OrganizationId = 'verify-approval-org-a'; EnvironmentId = 'verify-approval-env-a' }
+        @{ OrganizationId = 'verify-approval-org-b'; EnvironmentId = 'verify-approval-env-b' }
+    )
+    for ($index = 0; $index -lt $scopes.Count; $index++) {
+        $parameter = 'APPROVAL_MASTER_DATA_DEPARTMENT_' + $index
+        $reference = '${' + $parameter + '}'
+        $receiver = "MasterData__ApprovalDepartment__ScopedCallers__Profiles__${index}__"
+        $sender = "Approval__MasterDataDepartment__OutboundCredentials__${index}__"
+        $targets = @($Services.GetEnumerator() | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($_.Value.Values), [StringComparer]::Ordinal).Contains($reference) } | ForEach-Object Key)
+        if (-not (Test-OrdinalSetEquals -Actual $targets -Expected $expectedRecipients)) {
+            throw 'The Approval department credential has an invalid Compose service set.'
+        }
+        $expectedReceiver = $scopes[$index] + @{
+            Name = "approval-master-data-department-$index"
+            Subject = 'business-approval'
+            Permissions__0 = 'internal.masterdata.approval-department.read'
+            BearerToken = $reference
+        }
+        foreach ($entry in $expectedReceiver.GetEnumerator()) {
+            if (-not [string]::Equals($masterData[$receiver + $entry.Key], $entry.Value, [StringComparison]::Ordinal)) {
+                throw 'MasterData must receive the scoped Approval department caller profile.'
+            }
+        }
+        if ($ConfigureSender) {
+            $approval = $Services['business-approval']
+            $expectedSender = $scopes[$index] + @{ BearerToken = $reference }
+            foreach ($entry in $expectedSender.GetEnumerator()) {
+                if (-not [string]::Equals($approval[$sender + $entry.Key], $entry.Value, [StringComparison]::Ordinal)) {
+                    throw 'Approval must receive the scoped MasterData department credential.'
+                }
+            }
+        }
+    }
+    $approval = $Services['business-approval']
+    if ($ConfigureSender) {
+        if (-not [string]::Equals($approval['Approval__MasterDataDepartment__UseScopedCaller'], 'true', [StringComparison]::Ordinal)) {
+            throw 'Approval must explicitly enable the configured department caller.'
+        }
+    }
+    elseif (-not [string]::Equals($approval['Approval__MasterDataDepartment__UseScopedCaller'], 'false', [StringComparison]::Ordinal) -or
+        @($approval.Keys | Where-Object { $_.StartsWith('Approval__MasterDataDepartment__OutboundCredentials__', [StringComparison]::Ordinal) }).Count -ne 0) {
+        throw 'Receiver-first deployment must explicitly keep the compatibility sender and omit scoped credentials.'
+    }
+}
+
+$approvalCallers = [ordered]@{
+    CreateChain = @('business-erp', 'business-inventory', 'business-gateway')
+    GetChain = @('business-mes', 'business-quality', 'business-product-engineering', 'business-gateway')
+    ReadCollections = @('business-gateway')
+    ReadTemplates = @('business-gateway')
+    WriteTemplates = @('business-gateway')
+    ReadDelegations = @('business-gateway')
+    OverdueCheck = @('approval-overdue-operator')
+}
+
+function Assert-ApprovalCallerArtifact {
+    param([hashtable] $Services, [bool] $AllowLegacy)
+
+    if ($Services['iam'].ContainsKey('InternalService__BearerToken')) {
+        throw 'IAM must receive no shared internal credential.'
+    }
+    $approval = $Services['business-approval']
+    $tokens = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($operation in $approvalCallers.Keys) {
+        $settings = if ([string]::Equals($operation, 'OverdueCheck', [StringComparison]::Ordinal)) { 'OverdueCheck__HttpAuthorization' } else { $operation }
+        if (-not [string]::Equals($approval["Approval__${settings}__AllowLegacyBearer"], $AllowLegacy.ToString().ToLowerInvariant(), [StringComparison]::Ordinal)) {
+            throw "Unexpected legacy authentication policy for Approval $operation."
+        }
+        $index = 0
+        foreach ($caller in $approvalCallers[$operation]) {
+            $profile = "Approval__${settings}__ScopedCallers__Profiles__${index}__"
+            $token = [string] $approval[$profile + 'BearerToken']
+            if ($token -cnotmatch '^\$\{APPROVAL_[A-Z0-9_]+\}$' -or -not $tokens.Add($token)) {
+                throw "Approval $operation must receive a unique secret for $caller."
+            }
+            $expectedRecipients = @('business-approval')
+            if (-not $AllowLegacy -and $Services.ContainsKey($caller)) {
+                $expectedRecipients += $caller
+                $outbound = "Approval__${operation}__OutboundCredentials__0__"
+                foreach ($field in @('OrganizationId', 'EnvironmentId', 'BearerToken')) {
+                    if ([string]::IsNullOrEmpty($approval[$profile + $field]) -or -not [string]::Equals($approval[$profile + $field], $Services[$caller][$outbound + $field], [StringComparison]::Ordinal)) {
+                        throw "Approval $operation and $caller must receive matching $field."
+                    }
+                }
+            }
+            $recipients = @($Services.GetEnumerator() | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($_.Value.Values), [StringComparer]::Ordinal).Contains($token) } | ForEach-Object Key)
+            if (-not (Test-OrdinalSetEquals -Actual $recipients -Expected $expectedRecipients)) {
+                throw "Approval $operation has an invalid recipient set for $caller."
+            }
+            $index++
+        }
+    }
+}
+
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-apphost-environment-artifacts-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($temporaryRoot) | Out-Null
     $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
-    foreach ($environmentName in @('Development', 'Production')) {
-        $outputPath = Join-Path $temporaryRoot $environmentName.ToLowerInvariant()
+    foreach ($profile in @('Development', 'ProductionScoped', 'ProductionCompatibility')) {
+        $environmentName = if ([string]::Equals($profile, 'Development', [StringComparison]::Ordinal)) { 'Development' } else { 'Production' }
+        $outputPath = Join-Path $temporaryRoot $profile.ToLowerInvariant()
+        $receivingInputs = @{}
+        if ([string]::Equals($profile, 'ProductionScoped', [StringComparison]::Ordinal)) {
+            $receivingInputs = @{
+                PurchaseOrderReceiving__WmsScopes__0__OrganizationId = 'verify-receiving-org'
+                PurchaseOrderReceiving__WmsScopes__0__EnvironmentId = 'verify-receiving-env'
+                PurchaseOrderReceiving__WmsScopes__0__SiteCode = 'verify-site'
+                PurchaseOrderReceiving__Routes__0__OrganizationId = 'verify-receiving-org'
+                PurchaseOrderReceiving__Routes__0__EnvironmentId = 'verify-receiving-env'
+                PurchaseOrderReceiving__Routes__0__SiteCode = 'verify-site'
+                PurchaseOrderReceiving__Routes__0__StagingLocationCode = 'verify-staging'
+                PurchaseOrderReceiving__Routes__0__QualityStatus = 'unrestricted'
+                PurchaseOrderReceiving__Routes__0__OwnerType = 'company'
+            }
+        }
         $publishEnvironment = @{ NERV_IIP_EPHEMERAL = 'false' }
         if ([string]::Equals($environmentName, 'Production', [StringComparison]::Ordinal)) {
             $publishEnvironment += @{
@@ -250,13 +395,42 @@ try {
                 ConnectorHost__EnvironmentId = 'verify-environment'
             }
         }
+        $allowLegacyApproval = [string]::Equals($environmentName, 'Development', [StringComparison]::Ordinal)
+        foreach ($operation in $approvalCallers.Keys) {
+            $publishEnvironment["Approval${operation}__Scopes__0__OrganizationId"] = 'verify-approval-org-a'
+            $publishEnvironment["Approval${operation}__Scopes__0__EnvironmentId"] = 'verify-approval-env-a'
+            if ($allowLegacyApproval) {
+                $publishEnvironment["Approval${operation}__Enabled"] = 'true'
+                $publishEnvironment["Approval${operation}__AllowLegacyBearer"] = 'true'
+                $publishEnvironment["Approval${operation}__ConfigureSenders"] = 'false'
+            }
+        }
+        $configureApprovalDepartmentSender = -not [string]::Equals($profile, 'ProductionCompatibility', [StringComparison]::Ordinal)
+        $publishEnvironment += @{
+            ApprovalMasterDataDepartment__Scopes__0__OrganizationId = 'verify-approval-org-a'
+            ApprovalMasterDataDepartment__Scopes__0__EnvironmentId = 'verify-approval-env-a'
+            ApprovalMasterDataDepartment__Scopes__1__OrganizationId = 'verify-approval-org-b'
+            ApprovalMasterDataDepartment__Scopes__1__EnvironmentId = 'verify-approval-env-b'
+        }
+        if (-not [string]::Equals($profile, 'ProductionScoped', [StringComparison]::Ordinal)) {
+            $publishEnvironment['ApprovalMasterDataDepartment__Enabled'] = 'true'
+            $publishEnvironment['ApprovalMasterDataDepartment__ConfigureSender'] = $configureApprovalDepartmentSender.ToString()
+        }
+        $publishEnvironment += $receivingInputs
         Invoke-WithScopedEnvironment -Variables $publishEnvironment -ScriptBlock {
-            Invoke-Aspire -Arguments @('publish', '--output-path', $outputPath, '--environment', $environmentName, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name "verify-apphost-$($environmentName.ToLowerInvariant())-publish" | Out-Null
+            Invoke-Aspire -Arguments @('publish', '--output-path', $outputPath, '--environment', $environmentName, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name "verify-apphost-$($profile.ToLowerInvariant())-publish" | Out-Null
         }
         $composePath = Join-Path $outputPath 'docker-compose.yaml'
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
-        Assert-EnvironmentArtifact -Services (Get-ComposeProjectEnvironments -ComposePath $composePath) -EnvironmentName $environmentName
+        $services = Get-ComposeProjectEnvironments -ComposePath $composePath
+        Assert-EnvironmentArtifact -Services $services -EnvironmentName $environmentName
+        Assert-ApprovalCallerArtifact -Services $services -AllowLegacy $allowLegacyApproval
+        Assert-PurchaseReceivingArtifact -Services $services -Inputs $receivingInputs
+        Assert-ApprovalDepartmentArtifact -Services $services -ConfigureSender $configureApprovalDepartmentSender
         $composeText = [IO.File]::ReadAllText($composePath)
+        if ([string]::Equals($environmentName, 'Production', [StringComparison]::Ordinal)) {
+            Assert-ProductionComposeInternalPorts -ServiceBlocks (Get-ComposeServiceBlocks -ComposeText $composeText)
+        }
         $postgresService = [regex]::Match($composeText, '(?m)^  postgres:\s*\r?\n(?:^    .*\r?\n)*')
         if (-not $postgresService.Success) { throw 'Published Compose artifact must define postgres.' }
         $hasDevelopmentConnectionLimit = $postgresService.Value.Contains('max_connections=300', [StringComparison]::Ordinal)
@@ -298,7 +472,7 @@ try {
         throw 'Production ephemeral publish must fail before generating a Compose artifact.'
     }
     Write-Diagnostic 'Production rejects ephemeral publish before generating Compose.'
-    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, retirement proof, and FileStorage endpoint profiles.'
+    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, retirement proof, and FileStorage endpoint profiles. Production Compose keeps IAM and internal business services off host ports.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }

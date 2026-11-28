@@ -246,7 +246,8 @@ public sealed record ReserveStockRequest(
     DateOnly? ExpiryDate = null,
     DateOnly? AsOfDate = null,
     bool AllowExpiredStock = false,
-    bool ExpiryOverridePermissionGranted = false);
+    bool ExpiryOverridePermissionGranted = false,
+    bool MatchReceiptStockDates = false);
 
 public sealed record ReserveStockResponse(
     string ReservationId,
@@ -545,7 +546,8 @@ public sealed class ReserveStockEndpoint(ISender sender)
                 InventoryPermissionCodes.ExpiredStockOverride,
                 req.OrganizationId,
                 req.EnvironmentId,
-                req.IdempotencyKey)), ct);
+                req.IdempotencyKey),
+            MatchReceiptStockDates: req.MatchReceiptStockDates), ct);
         await Send.OkAsync(new ReserveStockResponse(result.ReservationId.ToString(), result.ReservedQuantity, result.AvailableQuantity, result.LotNo, result.ProductionDate, result.ExpiryDate).AsResponseData(), cancellation: ct);
     }
 }

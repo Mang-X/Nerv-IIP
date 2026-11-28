@@ -4636,6 +4636,114 @@
         ]
       }
     },
+    "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/confirm-receipt": {
+      "post": {
+        "tags": [
+          "Business Console WMS",
+          "Api"
+        ],
+        "operationId": "confirmBusinessConsoleWmsInboundReceipt",
+        "parameters": [
+          {
+            "name": "inboundOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleConfirmWmsInboundReceiptRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmWmsInboundReceiptRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsReceiptConfirmationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/telemetry/connectors/{connectorId}/collection-health": {
       "get": {
         "tags": [
@@ -22256,6 +22364,155 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/work-order-engineering-change-impacts": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleMesEngineeringChangeWorkOrderImpacts",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeNumber",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          },
+          {
+            "name": "scopeKind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "scopeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "504": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesEngineeringChangeImpactsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/line-side-inventory-balances": {
       "get": {
         "tags": [
@@ -37690,6 +37947,70 @@
             "items": {
               "type": "string"
             }
+          },
+          "purchaseReceipt": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt"
+              }
+            ]
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus"
+          },
+          "erpReceiptNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "AwaitingConfirmation",
+          "ErpPending",
+          "ErpAccepted",
+          "WmsConfirmed",
+          "Unavailable"
+        ],
+        "enum": [
+          "awaiting-confirmation",
+          "erp-pending",
+          "erp-accepted",
+          "wms-confirmed",
+          "unavailable"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "expectedQuantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -39795,6 +40116,112 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveWmsWorkPoolMemberRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsReceiptConfirmationResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptConfirmationResult"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptConfirmationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inboundOrderId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmWmsInboundReceiptRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "exchangeRate",
+          "scopeKind",
+          "scopeId",
+          "idempotencyKey",
+          "lines"
+        ],
+        "properties": {
+          "scopeKind": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
+          },
+          "scopeId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0.0,
+            "exclusiveMinimum": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          },
+          "lines": {
+            "type": "array",
+            "minLength": 1,
+            "nullable": false,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptQuantity"
+            }
+          },
+          "exchangeRate": {
+            "type": "number",
+            "format": "decimal",
+            "maximum": 10000000000.0,
+            "minimum": 0.0,
+            "exclusiveMaximum": true,
+            "exclusiveMinimum": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptQuantity": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lineNo",
+          "receivedQuantity"
+        ],
+        "properties": {
+          "lineNo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "receivedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse": {
         "allOf": [
@@ -59063,6 +59490,104 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesEngineeringChangeImpactsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpact"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpact": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "changeNumber",
+          "workOrderId",
+          "disposition"
+        ],
+        "properties": {
+          "changeNumber": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workOrderId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition"
+          },
+          "decidedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "decidedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "PendingDecision",
+          "AutoRebound",
+          "BlockedForManualConfirmation",
+          "ContinueWithArchivedVersion",
+          "AbortWorkOrder"
+        ],
+        "enum": [
+          "pending-decision",
+          "auto-rebound",
+          "blocked-for-manual-confirmation",
+          "continue-with-archived-version",
+          "abort-work-order"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse": {
         "allOf": [
           {
@@ -69459,6 +69984,38 @@
           "totalAmount": {
             "type": "number",
             "format": "decimal"
+          },
+          "lines": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "allocatedQuantity": {
+            "type": "number",
+            "description": "已分配数量。由已开立发货单占用，包含其中已发运的数量，以订单行计量单位计。",
+            "format": "decimal"
+          },
+          "shippedQuantity": {
+            "type": "number",
+            "description": "实际已发运数量。由 WMS 确认后累计，以订单行计量单位计。",
+            "format": "decimal"
           }
         }
       },
@@ -74253,9 +74810,6 @@
           "documentLineId": {
             "type": "string",
             "nullable": true
-          },
-          "startedBy": {
-            "type": "string"
           },
           "amount": {
             "type": "number",

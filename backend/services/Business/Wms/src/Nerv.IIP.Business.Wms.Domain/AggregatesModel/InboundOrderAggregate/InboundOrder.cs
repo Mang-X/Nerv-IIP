@@ -17,6 +17,7 @@ public enum InboundOrderStatus
     InventoryPostingFailed = 2,
     PendingQualityCheck = 3,
     Cancelled = 4,
+    InventoryPostingPending = 5,
 }
 
 public sealed record InboundOrderLineDraft(
@@ -39,6 +40,21 @@ public sealed record InboundOrderLineCapture(
     DateOnly? ProductionDate,
     DateOnly? ExpiryDate);
 
+public sealed record ExpectedInboundOrderLine(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal ExpectedQuantity,
+    string StagingLocationCode,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId);
+
+/// <summary>仓库核实的入库单行号和实际收货数量。</summary>
+public sealed record InboundReceiptQuantity(string LineNo, decimal ReceivedQuantity);
+
+public sealed record InboundReceiptConfirmation(string Key, string Fingerprint);
+
 public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 {
     private readonly List<InboundOrderLine> lines = [];
@@ -54,7 +70,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<InboundOrderLineDraft> lineDrafts,
+        IEnumerable<InboundOrderLine> inboundLines,
         string? assignedOperatorUserId,
         string? assignedPoolCode)
     {
@@ -69,14 +85,11 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         Status = InboundOrderStatus.Open;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
-        foreach (var draft in lineDrafts)
-        {
-            lines.Add(InboundOrderLine.Create(draft));
-        }
+        lines.AddRange(inboundLines);
 
         if (lines.Count == 0)
         {
-            throw new ArgumentException("At least one inbound line is required.", nameof(lineDrafts));
+            throw new ArgumentException("At least one inbound line is required.", nameof(inboundLines));
         }
     }
 
@@ -90,6 +103,21 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public string? AssignedPoolCode { get; private set; }
     public InboundOrderStatus Status { get; private set; }
     public long Version { get; private set; }
+
+    public string? ReceiptConfirmationKey { get; private set; }
+
+    public string? ReceiptConfirmationFingerprint { get; private set; }
+    public string? ReceiptRequestKey { get; private set; }
+    public string? ReceiptRequestFingerprint { get; private set; }
+    public Guid? ReceiptBatchId { get; private set; }
+    public decimal? ReceiptExchangeRate { get; private set; }
+    public string? ErpPurchaseReceiptNo { get; private set; }
+    public long? ErpReceiptAcceptedVersion { get; private set; }
+
+    public bool RequiresErpReceiptAcceptance =>
+        string.Equals(SourceDocumentType, WmsSourceDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase)
+        && lines.Any(line => line.ExpectedQuantity.HasValue);
+
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
@@ -114,9 +142,155 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             sourceDocumentType,
             sourceDocumentId,
             siteCode,
-            lines,
+            lines.Select(InboundOrderLine.Create),
             assignedOperatorUserId,
             assignedPoolCode);
+    }
+
+    public static InboundOrder CreatePendingReceipt(
+        string organizationId,
+        string environmentId,
+        string inboundOrderNo,
+        string sourceDocumentType,
+        string sourceDocumentId,
+        string siteCode,
+        IEnumerable<ExpectedInboundOrderLine> lines,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
+    {
+        var order = new InboundOrder(
+            organizationId,
+            environmentId,
+            inboundOrderNo,
+            sourceDocumentType,
+            sourceDocumentId,
+            siteCode,
+            lines.Select(InboundOrderLine.CreatePendingReceipt),
+            assignedOperatorUserId,
+            assignedPoolCode);
+        if (order.lines.Select(line => line.LineNo).Distinct(StringComparer.Ordinal).Count() != order.lines.Count)
+        {
+            throw new ArgumentException("Expected inbound line numbers must be unique.", nameof(lines));
+        }
+
+        return order;
+    }
+
+    public void ConfirmReceipt(
+        long expectedVersion,
+        IReadOnlyCollection<InboundReceiptQuantity> quantities,
+        InboundReceiptConfirmation? confirmation = null)
+    {
+        if (RequiresErpReceiptAcceptance)
+        {
+            throw new InvalidOperationException("ERP purchase order receipts require committed acceptance.");
+        }
+
+        foreach (var (line, receivedQuantity) in ValidateReceiptQuantities(expectedVersion, quantities))
+        {
+            line.RecordReceivedQuantity(receivedQuantity);
+        }
+
+        AdvanceVersion();
+        ReceiptConfirmationKey = confirmation?.Key;
+        ReceiptConfirmationFingerprint = confirmation?.Fingerprint;
+    }
+
+    public void StageErpReceipt(
+        long expectedVersion,
+        IReadOnlyCollection<InboundReceiptQuantity> quantities,
+        InboundReceiptConfirmation confirmation,
+        decimal exchangeRate)
+    {
+        if (!RequiresErpReceiptAcceptance)
+        {
+            throw new InvalidOperationException("Only an ERP purchase order receipt can stage an ERP acceptance batch.");
+        }
+
+        foreach (var (line, quantity) in ValidateReceiptQuantities(expectedVersion, quantities))
+        {
+            line.StageReceiptQuantity(quantity);
+        }
+
+        ReceiptRequestKey = confirmation.Key;
+        ReceiptRequestFingerprint = confirmation.Fingerprint;
+        ReceiptBatchId = Guid.NewGuid();
+        ReceiptExchangeRate = exchangeRate;
+        AdvanceVersion();
+    }
+
+    private Dictionary<InboundOrderLine, decimal> ValidateReceiptQuantities(
+        long expectedVersion, IReadOnlyCollection<InboundReceiptQuantity> quantities)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureOpen();
+        if (ReceiptBatchId is not null || quantities.Count != lines.Count
+            || lines.Any(line => !line.AwaitingReceiptConfirmation))
+        {
+            throw new InvalidOperationException("Receipt confirmation requires all lines of an unstaged expectation.");
+        }
+
+        var linesByNumber = lines.ToDictionary(line => line.LineNo, StringComparer.Ordinal);
+        var confirmed = new Dictionary<InboundOrderLine, decimal>();
+        foreach (var quantity in quantities)
+        {
+            var lineNo = WmsText.Required(quantity.LineNo, nameof(quantity.LineNo));
+            if (!linesByNumber.TryGetValue(lineNo, out var line)
+                || quantity.ReceivedQuantity != line.ExpectedQuantity
+                || !confirmed.TryAdd(line, quantity.ReceivedQuantity))
+            {
+                throw new InvalidOperationException($"Actual quantity for inbound line '{lineNo}' must be confirmed once and match its expected quantity.");
+            }
+        }
+
+        return confirmed;
+    }
+
+    public void BindErpPurchaseReceipt(Guid batchId, string receiptNo)
+    {
+        EnsureOpen();
+        if (ReceiptBatchId != batchId || ErpPurchaseReceiptNo is not null || ReceiptRequestKey is null
+            || lines.Any(line => line.RequestedReceiptQuantity is null))
+        {
+            throw new InvalidOperationException("Only the current pending receipt batch can bind an ERP receipt.");
+        }
+
+        ErpPurchaseReceiptNo = WmsText.Required(receiptNo, nameof(receiptNo));
+        foreach (var line in lines)
+        {
+            line.RecordReceivedQuantity(line.RequestedReceiptQuantity!.Value);
+        }
+
+        ReceiptConfirmationKey = ReceiptRequestKey;
+        ReceiptConfirmationFingerprint = ReceiptRequestFingerprint;
+        AdvanceVersion();
+        ErpReceiptAcceptedVersion = Version;
+    }
+
+    public void EnsureErpReceiptCanPost()
+    {
+        if (ReceiptBatchId is null || ErpPurchaseReceiptNo is null || ErpReceiptAcceptedVersion is null)
+        {
+            throw new InvalidOperationException("ERP must accept this receipt batch first.");
+        }
+
+        if (lines.Any(line => !line.CanPostErpReceiptStock))
+        {
+            throw new InvalidOperationException("ERP 收货批次的所有待检行须完成检验判定后才能过账。");
+        }
+    }
+
+    public string ErpReceiptMovementKey(string lineNo) =>
+        WmsText.LineIdempotencyKey($"wms-receipt:{ReceiptBatchId:N}", lineNo);
+
+    private void EnsureReceiptStockTransitionReady()
+    {
+        if (RequiresErpReceiptAcceptance)
+        {
+            throw new InvalidOperationException(ErpPurchaseReceiptNo is null
+                ? "ERP must accept this receipt batch first."
+                : "Inventory posting and inspection are not wired for the accepted ERP receipt batch.");
+        }
     }
 
     public void AssignWorkPool(
@@ -131,6 +305,15 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         AdvanceVersion();
         AddDomainEvent(new InboundOrderWorkPoolAssignedDomainEvent(
             OrganizationId, EnvironmentId, InboundOrderNo, SiteCode, AssignedPoolCode, AssignedOperatorUserId));
+    }
+
+    public void CancelUnreceivedExpectation(string reason)
+    {
+        if (Status == InboundOrderStatus.Open && ReceiptConfirmationKey is null
+            && lines.Count > 0 && lines.All(line => line.AwaitingReceiptConfirmation))
+        {
+            Cancel(reason);
+        }
     }
 
     public void Cancel(string reason)
@@ -176,7 +359,13 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     /// </summary>
     public InboundOrderLine EnsureCanCreatePutawayTask(string lineNo, decimal quantity)
     {
+        EnsureReceiptStockTransitionReady();
         var line = FindLine(lineNo);
+        if (line.AwaitingReceiptConfirmation)
+        {
+            throw new InvalidOperationException("Inbound line requires receipt confirmation before putaway.");
+        }
+
         EnsureCanCreatePutawayTask(line);
         if (quantity > line.ReceivedQuantity)
         {
@@ -197,16 +386,43 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
+        if (RequiresErpReceiptAcceptance)
+        {
+            EnsureErpReceiptCanPost();
+            if (unitCostsByLine is null || lines.Any(line => !unitCostsByLine.ContainsKey(line.LineNo)))
+            {
+                throw new InvalidOperationException("Accepted ERP receipt requires a frozen cost for every original line.");
+            }
+        }
+
+        if (lines.Any(line => line.AwaitingReceiptConfirmation))
+        {
+            throw new InvalidOperationException("Inbound order requires receipt confirmation before completion.");
+        }
+
         var validatedCaptures = ValidateCaptures(captures);
         foreach (var (line, capture) in validatedCaptures)
         {
+            if (RequiresErpReceiptAcceptance && WmsText.Optional(capture.LotNo) != line.LotNo)
+            {
+                throw new InvalidOperationException("The lot of an ERP accepted receipt cannot be changed.");
+            }
+
             line.Capture(capture);
         }
 
-        Status = lines.Any(x => x.RequiresQualityInspection)
-            ? InboundOrderStatus.PendingQualityCheck
-            : InboundOrderStatus.Completed;
-        CompletedAtUtc = DateTime.UtcNow;
+        if (RequiresErpReceiptAcceptance)
+        {
+            Status = InboundOrderStatus.InventoryPostingPending;
+        }
+        else
+        {
+            Status = lines.Any(x => x.RequiresQualityInspection)
+                ? InboundOrderStatus.PendingQualityCheck
+                : InboundOrderStatus.Completed;
+            CompletedAtUtc = DateTime.UtcNow;
+        }
+
         AdvanceVersion();
         var singleLine = lines.Count == 1;
         var requests = lines.Select(line => InventoryMovementRequest.Create(
@@ -215,23 +431,44 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 "inbound",
                 InboundOrderNo,
                 line.LineNo,
-                singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                RequiresErpReceiptAcceptance
+                    ? ErpReceiptMovementKey(line.LineNo)
+                    : singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                InventoryLocationFor(line, inventoryLocationByLine),
+                line.ErpReceiptInspectionResult == InboundQualityGateStatuses.Rejected
+                    ? line.StagingLocationCode : InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
-                line.ReceiptQualityStatus,
+                RequiresErpReceiptAcceptance ? line.ErpReceiptPostingQualityStatus : line.ReceiptQualityStatus,
                 line.OwnerType,
                 line.OwnerId,
                 line.ReceivedQuantity,
                 ProductionDate: line.ProductionDate,
                 ExpiryDate: line.ExpiryDate,
-                unitCost: unitCostsByLine?[line.LineNo]))
+                unitCost: unitCostsByLine?[line.LineNo],
+                matchReceiptStockDates: RequiresErpReceiptAcceptance
+                    && line.ErpReceiptInspectionResult == InboundQualityGateStatuses.Rejected))
             .ToArray();
-        this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
+        if (!RequiresErpReceiptAcceptance)
+        {
+            this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
+        }
         return requests;
+    }
+
+    public void ProjectErpReceiptInspection(
+        string lineNo, string inspectionRecordId, string result, decimal quantity, string? reason)
+    {
+        if (!RequiresErpReceiptAcceptance || ErpPurchaseReceiptNo is null || Status == InboundOrderStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Only a bound ERP receipt can record a quality decision.");
+        }
+
+        var line = lines.Single(x => x.LineNo == lineNo);
+        line.ProjectErpReceiptInspection(inspectionRecordId, result, quantity, reason);
+        AdvanceVersion();
     }
 
     public SupplierReturnRequest? ApplyInspectionResult(
@@ -243,7 +480,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         decimal inspectedQuantity,
         string? dispositionReason)
     {
-        if (Status != InboundOrderStatus.PendingQualityCheck && Status != InboundOrderStatus.Completed)
+        if (RequiresErpReceiptAcceptance || Status is not (InboundOrderStatus.PendingQualityCheck or InboundOrderStatus.Completed))
         {
             throw new InvalidOperationException("Quality inspection result can only be applied after inbound completion.");
         }
@@ -261,6 +498,12 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             return null;
         }
 
+        return CreateSupplierReturn(line, inspectionRecordId, inspectedQuantity, dispositionReason);
+    }
+
+    private SupplierReturnRequest CreateSupplierReturn(
+        InboundOrderLine line, string inspectionRecordId, decimal inspectedQuantity, string? dispositionReason)
+    {
         return SupplierReturnRequest.Create(
             OrganizationId,
             EnvironmentId,
@@ -286,12 +529,55 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             return;
         }
 
-        if (Status != InboundOrderStatus.Completed)
+        if (Status is not (InboundOrderStatus.Completed or InboundOrderStatus.InventoryPostingPending))
         {
-            throw new InvalidOperationException("Only completed inbound orders can be marked as Inventory posting failed.");
+            throw new InvalidOperationException("Only completed or posting inbound orders can be marked as Inventory posting failed.");
+        }
+
+        if (Status == InboundOrderStatus.InventoryPostingPending)
+        {
+            AdvanceVersion();
         }
 
         Status = InboundOrderStatus.InventoryPostingFailed;
+    }
+
+    public void ResumeErpReceiptPosting()
+    {
+        EnsureErpReceiptCanPost();
+        if (Status == InboundOrderStatus.InventoryPostingFailed)
+        {
+            Status = InboundOrderStatus.InventoryPostingPending;
+            CompletedAtUtc = null;
+            AdvanceVersion();
+        }
+    }
+
+    public IReadOnlyCollection<SupplierReturnRequest> AcknowledgeErpReceiptPosting()
+    {
+        EnsureErpReceiptCanPost();
+        if (Status is not (InboundOrderStatus.InventoryPostingPending or InboundOrderStatus.InventoryPostingFailed))
+        {
+            throw new InvalidOperationException("Only pending or failed ERP receipt posting can be acknowledged.");
+        }
+
+        var supplierReturns = new List<SupplierReturnRequest>();
+        foreach (var line in lines.Where(line => line.RequiresQualityInspection))
+        {
+            var recordId = line.ErpReceiptInspectionRecordId!;
+            var quantity = line.ErpReceiptInspectedQuantity!.Value;
+            line.ApplyInspectionResult(line.ErpReceiptInspectionResult!, recordId, quantity, line.ErpReceiptInspectionReason);
+            if (line.QualityGateStatus == InboundQualityGateStatuses.Rejected)
+            {
+                supplierReturns.Add(CreateSupplierReturn(line, recordId, quantity, line.ErpReceiptInspectionReason));
+            }
+        }
+
+        Status = InboundOrderStatus.Completed;
+        CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
+        this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
+        return supplierReturns;
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
@@ -307,6 +593,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
+        EnsureReceiptStockTransitionReady();
         var retryLines = RetryLines(failedLineNos);
         Status = InboundOrderStatus.Completed;
         var singleLine = lines.Count == 1;
@@ -506,12 +793,15 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     {
     }
 
-    private InboundOrderLine(InboundOrderLineDraft draft)
+    private InboundOrderLine(InboundOrderLineDraft draft, decimal? expectedQuantity = null)
     {
         LineNo = WmsText.Required(draft.LineNo, nameof(draft.LineNo));
         SkuCode = WmsText.Required(draft.SkuCode, nameof(draft.SkuCode));
         UomCode = WmsText.Required(draft.UomCode, nameof(draft.UomCode));
-        ReceivedQuantity = WmsText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
+        ExpectedQuantity = expectedQuantity;
+        ReceivedQuantity = expectedQuantity.HasValue
+            ? 0m
+            : WmsText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
         StagingLocationCode = WmsText.Required(draft.StagingLocationCode, nameof(draft.StagingLocationCode));
         LotNo = WmsText.Optional(draft.LotNo);
         SerialNo = WmsText.Optional(draft.SerialNo);
@@ -529,12 +819,19 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public string SkuCode { get; private set; } = string.Empty;
     public string UomCode { get; private set; } = string.Empty;
     public decimal ReceivedQuantity { get; private set; }
+    public decimal? ExpectedQuantity { get; private set; }
+    public decimal? RequestedReceiptQuantity { get; private set; }
+    internal bool AwaitingReceiptConfirmation => ExpectedQuantity.HasValue && ReceivedQuantity == 0m;
     public string StagingLocationCode { get; private set; } = string.Empty;
     public string? LotNo { get; private set; }
     public string? SerialNo { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
     public string QualityGateStatus { get; private set; } = InboundQualityGateStatuses.Pending;
     public string? InspectionRecordId { get; private set; }
+    public string? ErpReceiptInspectionRecordId { get; private set; }
+    public string? ErpReceiptInspectionResult { get; private set; }
+    public decimal? ErpReceiptInspectedQuantity { get; private set; }
+    public string? ErpReceiptInspectionReason { get; private set; }
     public string? QualityDispositionReason { get; private set; }
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
@@ -542,12 +839,54 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public DateOnly? ExpiryDate { get; private set; }
     public bool RequiresQualityInspection => QualityGateStatus != InboundQualityGateStatuses.NotRequired;
     public bool HasQualityResult => QualityGateStatus is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased or InboundQualityGateStatuses.Rejected;
+    internal void ProjectErpReceiptInspection(string inspectionRecordId, string result, decimal quantity, string? reason)
+    {
+        ErpReceiptInspectionRecordId = inspectionRecordId;
+        ErpReceiptInspectionResult = result;
+        ErpReceiptInspectedQuantity = quantity;
+        ErpReceiptInspectionReason = reason;
+    }
+
     public bool IsReleasedForPutaway => QualityGateStatus is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased;
     public string ReceiptQualityStatus => RequiresQualityInspection ? "quality" : "unrestricted";
+
+    internal bool CanPostErpReceiptStock => !RequiresQualityInspection
+        || (ErpReceiptInspectionResult is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased
+            or InboundQualityGateStatuses.Rejected
+            && ErpReceiptInspectionRecordId is not null && ErpReceiptInspectedQuantity == ReceivedQuantity);
+
+    public string ErpReceiptPostingQualityStatus => CanPostErpReceiptStock
+        ? ErpReceiptInspectionResult switch
+        {
+            InboundQualityGateStatuses.ConditionalReleased => "restricted",
+            InboundQualityGateStatuses.Rejected => "blocked",
+            _ => "unrestricted",
+        }
+        : throw new InvalidOperationException("ERP 收货行缺少检验判定。");
 
     public static InboundOrderLine Create(InboundOrderLineDraft draft)
     {
         return new InboundOrderLine(draft);
+    }
+
+    internal static InboundOrderLine CreatePendingReceipt(ExpectedInboundOrderLine line)
+    {
+        var expected = line.ExpectedQuantity;
+        if (expected <= 0m || expected >= 1_000_000_000_000m || decimal.Round(expected, 6) != expected)
+        {
+            throw new ArgumentOutOfRangeException(nameof(line), expected, "Expected quantity must be positive and fit the inbound quantity precision (18,6).");
+        }
+
+        return new InboundOrderLine(new InboundOrderLineDraft(
+            line.LineNo, line.SkuCode, line.UomCode, 0m, line.StagingLocationCode,
+            null, null, line.QualityStatus, line.OwnerType, line.OwnerId), expected);
+    }
+
+    internal void StageReceiptQuantity(decimal quantity) => RequestedReceiptQuantity = quantity;
+
+    internal void RecordReceivedQuantity(decimal receivedQuantity)
+    {
+        ReceivedQuantity = receivedQuantity;
     }
 
     internal void Capture(InboundOrderLineCapture capture)

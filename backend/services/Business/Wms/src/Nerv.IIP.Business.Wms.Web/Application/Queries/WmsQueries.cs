@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Queries;
 
@@ -530,7 +531,16 @@ public sealed record InboundOrderListItem(
     long Version,
     string? InventoryPostingStatus = null,
     IReadOnlyCollection<string>? InventoryMovementIds = null,
-    IReadOnlyCollection<string>? PostingFailureHistory = null);
+    IReadOnlyCollection<string>? PostingFailureHistory = null,
+    InboundPurchaseReceiptReadModel? PurchaseReceipt = null);
+
+public sealed record InboundPurchaseReceiptReadModel(
+    string Status,
+    string? ErpReceiptNo,
+    IReadOnlyCollection<InboundPurchaseReceiptLineReadModel> Lines);
+
+public sealed record InboundPurchaseReceiptLineReadModel(
+    string LineNo, string SkuCode, string UomCode, decimal ExpectedQuantity);
 
 internal static class InboundOrderQualityAggregate
 {
@@ -646,7 +656,21 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 x.AssignedOperatorUserId,
                 x.AssignedPoolCode,
                 x.Version,
+                x.ReceiptBatchId,
+                x.ErpPurchaseReceiptNo,
+                HasReceiptConfirmation = x.ReceiptConfirmationKey != null,
+                AllLinesAwaitingReceipt = x.Lines.All(l => l.ExpectedQuantity != null && l.ReceivedQuantity == 0m),
+                PurchaseReceiptLines = x.Lines
+                    .Where(l => x.SourceDocumentType.ToLower() == WmsSourceDocumentTypes.PurchaseOrder
+                        && l.ExpectedQuantity.HasValue)
+                    .OrderBy(l => l.LineNo)
+                    .Select(l => new InboundPurchaseReceiptLineReadModel(
+                        l.LineNo, l.SkuCode, l.UomCode, l.ExpectedQuantity!.Value))
+                    .ToArray(),
                 HasAnyLine = x.Lines.Any(),
+                HasReceiptPutawayBlock = x.SourceDocumentType.ToLower() == WmsSourceDocumentTypes.PurchaseOrder
+                    ? x.Lines.Any(l => l.ExpectedQuantity != null)
+                    : x.Lines.Any(l => l.ExpectedQuantity != null && l.ReceivedQuantity == 0m),
                 HasRejected = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Rejected),
                 HasPending = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Pending),
                 HasConditional = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.ConditionalReleased),
@@ -674,7 +698,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                     x.StatusValue.ToString(),
                     x.CreatedAtUtc,
                     InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
-                    InboundOrderQualityAggregate.ReleasedForPutaway(
+                    !x.HasReceiptPutawayBlock && InboundOrderQualityAggregate.ReleasedForPutaway(
                         x.StatusValue,
                         x.HasAnyLine,
                         x.HasRejected,
@@ -690,7 +714,15 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                         : latest.Length > 0 ? "posted" : null,
                     latest.Select(a => a.InventoryMovementId).OfType<string>().ToArray(),
                     attempts.OrderByDescending(a => a.CreatedAtUtc).Select(a => a.FailureMessage)
-                        .OfType<string>().Distinct(StringComparer.Ordinal).ToArray());
+                        .OfType<string>().Distinct(StringComparer.Ordinal).ToArray(),
+                    x.PurchaseReceiptLines.Length == 0 ? null : new InboundPurchaseReceiptReadModel(
+                        x.ErpPurchaseReceiptNo is not null ? "erp-accepted"
+                            : x.StatusValue != InboundOrderStatus.Open ? "unavailable"
+                            : x.HasReceiptConfirmation ? "wms-confirmed"
+                            : x.ReceiptBatchId is not null ? "erp-pending"
+                            : x.AllLinesAwaitingReceipt ? "awaiting-confirmation" : "unavailable",
+                        x.ErpPurchaseReceiptNo,
+                        x.PurchaseReceiptLines));
             })
             .ToArray();
         return new ListInboundOrdersResponse(items, total);

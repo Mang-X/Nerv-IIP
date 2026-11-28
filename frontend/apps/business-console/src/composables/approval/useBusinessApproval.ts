@@ -422,7 +422,6 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
           documentType: payload.documentType.trim(),
           documentId: payload.documentId.trim(),
           documentLineId: optionalNullableText(payload.documentLineId),
-          startedBy: actor.value.actorRef,
         },
       })
       return result as BusinessConsoleStartApprovalChainEnvelope

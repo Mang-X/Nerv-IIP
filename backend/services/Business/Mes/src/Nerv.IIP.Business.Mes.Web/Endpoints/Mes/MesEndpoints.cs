@@ -2141,6 +2141,7 @@ public static class MesEndpointContracts
         new(typeof(ConvertPlanToWorkOrderEndpoint), "POST", "/api/business/v1/mes/production-plans/{productionPlanId}/work-orders", MesPermissionCodes.WorkOrdersManage, "convertBusinessMesPlanToWorkOrder"),
         new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", MesPermissionCodes.WorkOrdersManage, "createBusinessMesRushWorkOrder"),
         new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
+        new(typeof(ListEngineeringChangeWorkOrderImpactsEndpoint), "GET", "/api/business/v1/mes/work-order-engineering-change-impacts", MesPermissionCodes.WorkOrdersRead, "listBusinessMesEngineeringChangeWorkOrderImpacts"),
         new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
         new(typeof(GetAssemblyChildWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/assembly-children", MesPermissionCodes.WorkOrdersRead, "getBusinessMesAssemblyChildWorkOrders"),
         new(typeof(GetBatchAssemblyChildWorkOrdersEndpoint), "POST", "/api/business/v1/mes/work-orders/assembly-children/batch", MesPermissionCodes.WorkOrdersRead, "getBusinessMesBatchAssemblyChildWorkOrders"),

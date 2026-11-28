@@ -167,7 +167,8 @@ public sealed class CreateInspectionRecordFromTaskCommandHandler(
             null,
             lines,
             request.DispositionReason,
-            request.DispositionAttachmentFileIds);
+            request.DispositionAttachmentFileIds,
+            wmsReceiptBatchId: task.WmsReceiptBatchId);
 
         task.Complete(record.Id, DateTimeOffset.UtcNow);
         await inspectionRecordRepository.AddAsync(record, cancellationToken);

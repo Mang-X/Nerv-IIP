@@ -30,12 +30,22 @@ public sealed class InventoryDeadLetterReplayPostgresTests
     private static readonly DateTimeOffset OriginalTime = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
 
     [InventoryPostgresFact]
-    public async Task Movement_http_replay_reads_persisted_stock_and_rejection_without_duplicate_posting()
+    public Task Movement_http_replay_reads_persisted_stock_and_rejection_without_duplicate_posting() =>
+        AssertMovementReplayAsync("unrestricted");
+
+    [InventoryPostgresFact]
+    public Task Restricted_wms_inbound_replay_persists_frozen_valuation_once() =>
+        AssertMovementReplayAsync("restricted");
+
+    private static async Task AssertMovementReplayAsync(string stockStatus)
     {
         await ResetSchemaAsync();
         await using var factory = await CreateFactoryAsync();
         using var client = Client(factory);
-        var original = Movement() with { Payload = Movement().Payload with { SourceDocumentId = " IN-REPLAY " } };
+        var original = Movement() with
+        {
+            Payload = Movement().Payload with { SourceDocumentId = " IN-REPLAY ", QualityStatus = stockStatus },
+        };
         var letter = await AddAsync(factory, InventoryMovementRequestedIntegrationEventHandlerForPostingMovement.ConsumerName, original);
         // Location is absent: the consumer publishes a rejection and returns normally.
         await ReplayAsync(client, letter, "failed");
@@ -55,7 +65,11 @@ public sealed class InventoryDeadLetterReplayPostgresTests
             Assert.Equal("IN-REPLAY", movement.SourceDocumentId);
             Assert.Equal(original.Payload.IdempotencyKey, movement.IdempotencyKey);
             Assert.Equal(5m, movement.Quantity);
-            Assert.Equal(10m, Assert.Single(await db.StockLedgers.AsNoTracking().ToListAsync()).InventoryValue);
+            Assert.Equal(stockStatus, movement.QualityStatus);
+            Assert.Equal(2m, movement.UnitCost);
+            var ledger = Assert.Single(await db.StockLedgers.AsNoTracking().ToListAsync());
+            Assert.Equal(stockStatus, ledger.QualityStatus);
+            Assert.Equal(10m, ledger.InventoryValue);
             var stored = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().GetAsync(letter.Id, default);
             Assert.Equal(IntegrationEventDeadLetterStatus.Replayed, stored!.Status);
             Assert.Equal(letter.EventJson, stored.EventJson);

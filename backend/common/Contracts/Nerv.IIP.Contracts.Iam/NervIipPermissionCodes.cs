@@ -8,7 +8,20 @@ namespace Nerv.IIP.Contracts.Iam;
 public static class NervIipPermissionCodes
 {
     // Internal scoped callers only; not a Console user action.
+    public const string InternalApprovalChainsCreateErp = "internal.approval-chains.create-erp";
+    public const string InternalApprovalChainsCreateInventory = "internal.approval-chains.create-inventory";
+    public const string InternalApprovalChainsCreateGateway = "internal.approval-chains.create-gateway";
+    public const string InternalApprovalChainsReadMes = "internal.approval-chains.read-mes";
+    public const string InternalApprovalChainsReadQuality = "internal.approval-chains.read-quality";
+    public const string InternalApprovalChainsReadProductEngineering = "internal.approval-chains.read-product-engineering";
+    public const string InternalApprovalChainsReadGateway = "internal.approval-chains.read-gateway";
+    public const string InternalApprovalChainsListGateway = "internal.approval-chains.list-gateway";
+    public const string InternalApprovalTemplatesReadGateway = "internal.approval-templates.read-gateway";
+    public const string InternalApprovalTemplatesWriteGateway = "internal.approval-templates.write-gateway";
+    public const string InternalApprovalDelegationsListGateway = "internal.approval-delegations.list-gateway";
+    public const string InternalApprovalTasksCheckOverdue = "internal.approval-tasks.check-overdue";
     public const string InternalGatewayCacheInvalidate = "internal.gateway-cache.invalidate";
+    public const string InternalMasterDataApprovalDepartmentRead = "internal.masterdata.approval-department.read";
 
     // iam.*
     public const string IamUsersRead = "iam.users.read";

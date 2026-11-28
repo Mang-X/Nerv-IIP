@@ -16,7 +16,7 @@ public sealed record ResolveApprovalStepCommand(
     string? Comment,
     string? RoleRefs = null,
     string? DepartmentRef = null,
-    string? TargetStepId = null) : ICommand<ApprovalDecisionId?>;
+    ApprovalStepId? TargetStepId = null) : ICommand<ApprovalDecisionId?>;
 
 public sealed class ResolveApprovalStepCommandValidator : AbstractValidator<ResolveApprovalStepCommand>
 {
@@ -69,7 +69,7 @@ public sealed class ResolveApprovalStepCommandHandler(ApplicationDbContext dbCon
                 .ThenBy(x => x.ApproverType, StringComparer.Ordinal)
                 .ThenBy(x => x.ApproverRef, StringComparer.Ordinal)
                 .FirstOrDefault()
-            : eligibleSteps.SingleOrDefault(x => x.Id.ToString() == request.TargetStepId)
+            : eligibleSteps.SingleOrDefault(x => x.Id == request.TargetStepId)
                 ?? throw new KnownException("当前账号不能处理此审批任务。");
         var onBehalfOf = step is not null && !step.MatchesApprover(actorType, actorRef) ? step : null;
         try

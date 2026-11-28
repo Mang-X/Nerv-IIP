@@ -6,6 +6,7 @@ using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
@@ -14,7 +15,8 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IErpIntegrationEventContextAccessor? integrationEventContext = null)
+    IErpIntegrationEventContextAccessor? integrationEventContext = null,
+    ITransactionUnitOfWork? unitOfWork = null)
     : IIntegrationEventHandler<ApprovalCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.purchase-order-approval-completed";
@@ -122,6 +124,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
             return;
         }
 
+        var releasesOrder = false;
         try
         {
             if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Approved, StringComparison.OrdinalIgnoreCase))
@@ -129,6 +132,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
                 if (order.Status == Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus.PendingApproval)
                 {
                     order.ReleaseAfterApproval(integrationEvent.Payload.ChainId);
+                    releasesOrder = true;
                 }
                 else
                 {
@@ -151,6 +155,13 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         catch (InvalidOperationException exception)
         {
             throw new KnownException(exception.Message, exception);
+        }
+
+        if (releasesOrder && dbContext.Database.IsRelational())
+        {
+            // 使用 CAP 接线包装过的 UoW，使审批 inbox、订单与下达事件共享同一事务。
+            await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork ?? dbContext, cancellationToken);
+            return;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

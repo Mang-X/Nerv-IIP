@@ -45,7 +45,8 @@ public interface IStockCountApprovalClient
 
 public sealed class HttpStockCountApprovalClient(
     HttpClient httpClient,
-    IInternalServiceTokenProvider internalTokenProvider) : IStockCountApprovalClient
+    IInternalServiceTokenProvider internalTokenProvider,
+    IConfiguration? configuration = null) : IStockCountApprovalClient
 {
     public async Task<StockCountApprovalResult> StartApprovalAsync(StockCountApprovalRequest request, CancellationToken cancellationToken)
     {
@@ -64,7 +65,9 @@ public sealed class HttpStockCountApprovalClient(
                 request.OrganizationId,
                 null)),
         };
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ScopedCallerOutboundToken.Resolve(
+            configuration?.GetSection("Approval:CreateChain:OutboundCredentials"),
+            request.OrganizationId, request.EnvironmentId, internalTokenProvider.BearerToken));
 
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         response.EnsureSuccessStatusCode();

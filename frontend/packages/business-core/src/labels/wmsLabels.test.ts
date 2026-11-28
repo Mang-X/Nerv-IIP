@@ -26,6 +26,7 @@ describe('WMS status labels (Chinese, no engineering codes leak to UI)', () => {
     expect(inboundOrderStatusLabel('Completed')).toBe('已完成')
     expect(inboundOrderStatusLabel('InventoryPostingFailed')).toBe('库存过账失败')
     expect(inboundOrderStatusLabel('PendingQualityCheck')).toBe('待质检')
+    expect(inboundOrderStatusLabel('InventoryPostingPending')).toBe('库存过账中')
     expect(inboundOrderStatusLabel('Cancelled')).toBe('已取消')
   })
 

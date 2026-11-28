@@ -840,27 +840,22 @@ Assert-ImpactCase -Name 'bootstrap-seed-platform-service' -Paths @('backend/serv
     backend = $true; redis_cap = $false; full_chain = $true
 }
 
-# ⚠️ #3338：下面这几条反例的夹具服务从 Mes 换成 Quality，**换的是夹具、不是期望值**。
-# 原因：#3338 起 Mes / Wms / Maintenance / Erp / DemandPlanning 因**被 FullChain 直接 ProjectReference**
-# 而无条件选中 full_chain，用 Mes 当夹具会让这几条反例的 full_chain 维度恒为 true、**失去鉴别力**
-# （本仓判例：结构变更会静默抽掉上一票断言的前提，而断言还在跑、还在绿）。
-# Quality 同样是已登记业务服务，但**不**被 FullChain 引用、也不在 sales-order-demand 集合里，
-# 因此 full_chain 对它仍是干净的指示器，这几条反例要钉的「按目录段整段比对、不做前缀包含」
-# 与「相邻 Application 子目录不扩面」原样成立。⛔ 别把夹具换回 Mes。
+# Scheduling 是已登记业务服务，且没有 FullChain 或 sales-order-demand 依赖边。
+# 用它验证相似目录名不会误选 FullChain，避免依赖边预先选中该 lane。
 # NERV-1711 反例：同前缀但不同目录不得触发，钉住「按目录段整段比对」而不是前缀包含。
-Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
+Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('quality')
+} -Services @('scheduling')
 
-Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('quality')
+} -Services @('scheduling')
 
 # NERV-1711 反例：同一服务的相邻 Application 子目录仍然只是普通后端改动，
 # 钉住新规则没有退化成「任何 backend/services 路径都跑重 lane」。
-Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
+Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('quality')
+} -Services @('scheduling')
 
 # NERV-1711 反例：测试工程里的同名目录不在 backend/services/ 之下，
 # 钉住新规则带着服务前缀限定（处理器的 redis_cap 仍由既有 messaging 规则给出）。
@@ -872,9 +867,9 @@ Assert-ImpactCase -Name 'test-project-integration-event-handlers-not-a-service' 
     backend = $true; redis_cap = $true; full_chain = $false
 }
 
-Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Quality/src/CapitalizedUnitCost.cs') -Flags @{
+Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Scheduling/src/CapitalizedUnitCost.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
-} -Services @('quality')
+} -Services @('scheduling')
 
 Assert-ImpactCase -Name 'capacity-is-not-cap' -Paths @('backend/services/Business/Scheduling/src/FiniteCapacityScheduler.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false

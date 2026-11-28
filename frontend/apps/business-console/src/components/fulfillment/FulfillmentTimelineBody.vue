@@ -10,6 +10,8 @@ import FulfillmentTimelineNode from './FulfillmentTimelineNode.vue'
 
 const props = defineProps<{ order: BusinessConsoleErpSalesOrderItem | null | undefined }>()
 
+const emit = defineEmits<{ 'refresh-order': [] }>()
+
 const timeline = useFulfillmentTimeline(toRef(props, 'order'))
 
 const toneByStatus: Record<FulfillmentNodeStatus, TimelineTone> = {
@@ -29,6 +31,11 @@ const items = computed<TimelineItem[]>(() =>
   })),
 )
 
+function refresh() {
+  timeline.refreshAll()
+  emit('refresh-order')
+}
+
 function nodeFor(key: string): FulfillmentNode | undefined {
   return timeline.nodes.value.find((node) => node.key === key)
 }
@@ -42,7 +49,7 @@ function nodeFor(key: string): FulfillmentNode | undefined {
         variant="outline"
         type="button"
         :disabled="timeline.pending.value"
-        @click="timeline.refreshAll()"
+        @click="refresh"
       >
         <RefreshCwIcon aria-hidden="true" />
         刷新

@@ -93,7 +93,8 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                     ReservationId: ParseReservationId(payload.InventoryReservationId),
                     ProductionDate: payload.ProductionDate,
                     ExpiryDate: payload.ExpiryDate,
-                    ShelfLifeDays: payload.ShelfLifeDays),
+                    ShelfLifeDays: payload.ShelfLifeDays,
+                    MatchReceiptStockDates: payload.MatchReceiptStockDates),
                 cancellationToken);
         }
         catch (InventoryUnitCostAuthorityPendingException ex)

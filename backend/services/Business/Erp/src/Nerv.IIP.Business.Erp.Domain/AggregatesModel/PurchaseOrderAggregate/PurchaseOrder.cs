@@ -1,6 +1,8 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 
+using Nerv.IIP.Contracts.Erp;
+
 namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 
 public partial record PurchaseOrderId : IGuidStronglyTypedId;
@@ -60,7 +62,8 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         string supplierCode,
         string siteCode,
         string currencyCode,
-        IEnumerable<PurchaseOrderLineDraft> lineDrafts)
+        IEnumerable<PurchaseOrderLineDraft> lineDrafts,
+        PurchaseReceiptInventoryPostingRoute receivingAuthority)
     {
         OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
@@ -68,6 +71,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         SupplierCode = ErpText.Required(supplierCode, nameof(supplierCode));
         SiteCode = ErpText.Required(siteCode, nameof(siteCode));
         CurrencyCode = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
+        ReceivingAuthority = receivingAuthority;
         Status = PurchaseOrderStatus.PendingApproval;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
@@ -85,6 +89,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
     public string PurchaseOrderNo { get; private set; } = string.Empty;
     public string SupplierCode { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
+    public PurchaseReceiptInventoryPostingRoute ReceivingAuthority { get; private set; }
     public string CurrencyCode { get; private set; } = string.Empty;
     public PurchaseOrderStatus Status { get; private set; }
     public decimal TotalAmount { get; private set; }
@@ -102,7 +107,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         string siteCode,
         IEnumerable<PurchaseOrderLineDraft> lines)
     {
-        return new PurchaseOrder(organizationId, environmentId, purchaseOrderNo, supplierCode, siteCode, "CNY", lines);
+        return Create(organizationId, environmentId, purchaseOrderNo, supplierCode, siteCode, "CNY", lines);
     }
 
     public static PurchaseOrder Create(
@@ -112,9 +117,10 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         string supplierCode,
         string siteCode,
         string currencyCode,
-        IEnumerable<PurchaseOrderLineDraft> lines)
+        IEnumerable<PurchaseOrderLineDraft> lines,
+        PurchaseReceiptInventoryPostingRoute receivingAuthority = PurchaseReceiptInventoryPostingRoute.Direct)
     {
-        return new PurchaseOrder(organizationId, environmentId, purchaseOrderNo, supplierCode, siteCode, currencyCode, lines);
+        return new PurchaseOrder(organizationId, environmentId, purchaseOrderNo, supplierCode, siteCode, currencyCode, lines, receivingAuthority);
     }
 
     public void MarkApprovalRequested(string approvalChainId)
@@ -209,6 +215,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         var line = lines.SingleOrDefault(x => x.LineNo == lineNo)
             ?? throw new InvalidOperationException($"Purchase order line '{lineNo}' was not found.");
         line.RegisterReceipt(quantity, finalDelivery);
+        Version++;
         if (lines.All(x => x.OpenQuantity == 0 || x.FinalDelivery))
         {
             Status = PurchaseOrderStatus.Closed;
@@ -359,9 +366,15 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
             throw new InvalidOperationException("Purchase orders with received quantity cannot be cancelled.");
         }
 
-        changeHistory.Add(PurchaseOrderChange.Applied("cancel", [], reason));
+        var change = PurchaseOrderChange.Applied("cancel", [], reason);
+        changeHistory.Add(change);
         Version++;
         Status = PurchaseOrderStatus.Cancelled;
+        if (ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms)
+        {
+            this.AddDomainEvent(new PurchaseOrderCancelledDomainEvent(this, Version, change.Reason));
+        }
+
         AddMaterialSupplyEtaChanged(
             "purchase-order-cancelled",
             $"purchase-order:{PurchaseOrderNo}:cancel:{Version}",

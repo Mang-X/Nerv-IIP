@@ -280,7 +280,7 @@ try {
     $member = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'inventory-postgres-profile' -RepositoryRoot $repoRoot
     # 拆解②的单条试点在 #1561 之后扩为两条；#2228 再加入线边余额聚合的真实 PostgreSQL 翻译证据。
     # 两条 InventoryDirectory external 用例形态与成员一致，已并入本成员；同类 Docker 夹具仍留在 deferred 条目里。
-    Assert-Contract (@($member.expectedTestIdentities).Count -eq 7) 'The Inventory member must freeze its profile test, both external directory-backed tests and four dead-letter recovery proofs.'
+    Assert-Contract (@($member.expectedTestIdentities).Count -eq 8) 'The Inventory member must freeze its profile test, both external directory-backed tests and five dead-letter recovery proofs.'
     $expectedTestIdentitySet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@($member.expectedTestIdentities),
         [StringComparer]::Ordinal)
@@ -701,14 +701,10 @@ try {
     $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
     Assert-Contract $silentSkipDetected 'The silent-return detector must recognize the pattern it forbids.'
 
-    # WMS：六个类只有 11 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
-    # 归属 test-owned：NERV-822③ 的 #1563 已把这些类的手写建库收敛到共享 PostgreSqlTestDatabase，
-    # lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
-    # 第 11 条由 #3305 加入（WcsTaskCallbackValidatorTests）：failure_message 改无界后，
-    # 「物理列类型是 text」「越界 failure_code 仍是 22001」两个方向只有真库分得开，
-    # InMemory provider 对两者都无感、在那上面跑会双向假绿。
+    # WMS 的 filter 逐条精确到方法。#1752 覆盖采购待收货和已提交取消投影。
+    # 各测试通过共享 PostgreSqlTestDatabase 管理独立数据库，lane 校验实际执行数及冻结身份。
     $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 19) 'The WMS member must freeze exactly its nineteen governed PostgreSQL identities.'
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 36) 'The WMS member must freeze exactly its thirty-six governed PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
     Assert-MethodScopedFilter -Member $wmsMember
     foreach ($wmsSource in @(
@@ -718,7 +714,8 @@ try {
             'WcsTaskCallbackValidatorTests.cs',
             'WmsQualityInspectionGateConsumerTests.cs',
             'WmsShortPickBackorderTests.cs',
-            'WmsWorkAssignmentMigrationPostgresTests.cs')) {
+            'WmsWorkAssignmentMigrationPostgresTests.cs',
+            'WmsPurchaseOrderReleasePostgresTests.cs')) {
         $wmsSourcePath = Join-Path $repoRoot "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/$wmsSource"
         Assert-Contract (Test-Path -LiteralPath $wmsSourcePath -PathType Leaf) "WMS lane source '$wmsSource' must exist."
         $wmsSourceText = [IO.File]::ReadAllText($wmsSourcePath)
@@ -772,7 +769,7 @@ try {
     # ErpJournalVoucherNoPostgresAcceptanceTests 与 PostgreSQL_dedup_sites_key_on_the_source_document_*
     # 在来源键那一面承担。⛔ 这是「要证的事没了」，不是「测试碍事」。
     # 完工与末笔材料过账的两个并发顺序都需要真库事务证明。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 32) 'The ERP member must freeze exactly its thirty-two PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 47) 'The ERP member must freeze exactly its forty-seven PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'

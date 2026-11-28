@@ -227,6 +227,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     inventoryPostingStatus?: string | null;
     inventoryMovementIds?: Array<string> | null;
     postingFailureHistory?: Array<string> | null;
+    purchaseReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt = {
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus;
+    erpReceiptNo?: string | null;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus = 'awaiting-confirmation' | 'erp-pending' | 'erp-accepted' | 'wms-confirmed' | 'unavailable';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine = {
+    lineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    expectedQuantity?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext = {
@@ -793,6 +809,29 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveWmsWorkPoolMemberRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsReceiptConfirmationResult = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptConfirmationResult | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptConfirmationResult = {
+    inboundOrderId?: string;
+    version?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmWmsInboundReceiptRequest = {
+    scopeKind: string;
+    scopeId: string;
+    expectedVersion: number;
+    idempotencyKey: string;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptQuantity>;
+    exchangeRate: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptQuantity = {
+    lineNo: string;
+    receivedQuantity: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6154,6 +6193,30 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesEngineeringChangeImpactsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsResponse = {
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpact>;
+    total: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpact = {
+    changeNumber: string;
+    workOrderId: string;
+    disposition: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition;
+    decidedBy?: string | null;
+    decidedAtUtc?: string | null;
+    decisionReason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition = 'pending-decision' | 'auto-rebound' | 'blocked-for-manual-confirmation' | 'continue-with-archived-version' | 'abort-work-order';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsInventoryLineSideInventoryBalancesResponse | null;
 };
@@ -8722,6 +8785,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     siteCode?: string;
     status?: string;
     totalAmount?: number;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem = {
+    lineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    /**
+     * 已分配数量。由已开立发货单占用，包含其中已发运的数量，以订单行计量单位计。
+     */
+    allocatedQuantity?: number;
+    /**
+     * 实际已发运数量。由 WMS 确认后累计，以订单行计量单位计。
+     */
+    shippedQuantity?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpOpportunityListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -10095,7 +10173,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     documentType?: string;
     documentId?: string;
     documentLineId?: string | null;
-    startedBy?: string;
     amount?: number | null;
     routingOrganizationId?: string | null;
     departmentId?: string | null;
@@ -12105,6 +12182,46 @@ export type RemoveBusinessConsoleWmsWorkPoolMemberResponses = {
 };
 
 export type RemoveBusinessConsoleWmsWorkPoolMemberResponse = RemoveBusinessConsoleWmsWorkPoolMemberResponses[keyof RemoveBusinessConsoleWmsWorkPoolMemberResponses];
+
+export type ConfirmBusinessConsoleWmsInboundReceiptData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmWmsInboundReceiptRequest;
+    path: {
+        inboundOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/confirm-receipt';
+};
+
+export type ConfirmBusinessConsoleWmsInboundReceiptErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    409: NetCorePalExtensionsDtoResponseData;
+    422: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ConfirmBusinessConsoleWmsInboundReceiptError = ConfirmBusinessConsoleWmsInboundReceiptErrors[keyof ConfirmBusinessConsoleWmsInboundReceiptErrors];
+
+export type ConfirmBusinessConsoleWmsInboundReceiptResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsReceiptConfirmationResult;
+};
+
+export type ConfirmBusinessConsoleWmsInboundReceiptResponse = ConfirmBusinessConsoleWmsInboundReceiptResponses[keyof ConfirmBusinessConsoleWmsInboundReceiptResponses];
 
 export type QueryBusinessConsoleTelemetryConnectorCollectionHealthData = {
     body?: never;
@@ -20043,6 +20160,51 @@ export type ListBusinessConsoleMesCapacityImpactsResponses = {
 };
 
 export type ListBusinessConsoleMesCapacityImpactsResponse = ListBusinessConsoleMesCapacityImpactsResponses[keyof ListBusinessConsoleMesCapacityImpactsResponses];
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        changeNumber?: string | null;
+        workOrderId?: string | null;
+        skip?: number;
+        take?: number;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-order-engineering-change-impacts';
+};
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsError = ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsErrors[keyof ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsErrors];
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesEngineeringChangeImpactsResponse;
+};
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponse = ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponses[keyof ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponses];
 
 export type ListBusinessConsoleMesLineSideInventoryBalancesData = {
     body?: never;
