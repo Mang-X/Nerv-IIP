@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.StandardOperations;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries.StandardOperations;
 using Nerv.IIP.ServiceAuth;
 
@@ -38,7 +39,7 @@ public sealed record ListStandardOperationsRequest(
     bool? Enabled,
     string? Search,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed class ListStandardOperationsEndpoint(ISender sender)
     : StandardOperationEndpoint<ListStandardOperationsRequest, ResponseData<ListStandardOperationsResponse>>
