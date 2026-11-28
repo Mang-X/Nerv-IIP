@@ -81,10 +81,9 @@ internal sealed partial class AppHostComposition
 
         if (localDevelopmentAppHost)
         {
-            const string demoWorkerPasswordKey = "Iam__Seed__DemoWorkerPassword";
             if (iamSeedDemoWorkerPassword is not null)
             {
-                iam.WithEnvironment(demoWorkerPasswordKey, iamSeedDemoWorkerPassword);
+                iam.WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword);
             }
             else
             {
@@ -93,7 +92,7 @@ internal sealed partial class AppHostComposition
                     new GenerateParameterDefault { MinLength = 32 },
                     secret: true,
                     persist: true);
-                iam.WithEnvironment(demoWorkerPasswordKey, demoWorkerPassword);
+                iam.WithEnvironment("Iam__Seed__DemoWorkerPassword", demoWorkerPassword);
             }
         }
 
