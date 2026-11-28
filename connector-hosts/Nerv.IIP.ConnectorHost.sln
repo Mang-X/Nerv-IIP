@@ -57,6 +57,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Contracts.Integrat
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.ConnectorHost.DevSimulator", "src\Nerv.IIP.ConnectorHost.DevSimulator\Nerv.IIP.ConnectorHost.DevSimulator.csproj", "{7F29C117-8000-4D3E-A34F-CCB6E74671FA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Contracts.IndustrialTelemetry", "..\backend\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj", "{319AACBF-EA98-477D-B184-B8968684112C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -367,6 +369,18 @@ Global
 		{7F29C117-8000-4D3E-A34F-CCB6E74671FA}.Release|x64.Build.0 = Release|Any CPU
 		{7F29C117-8000-4D3E-A34F-CCB6E74671FA}.Release|x86.ActiveCfg = Release|Any CPU
 		{7F29C117-8000-4D3E-A34F-CCB6E74671FA}.Release|x86.Build.0 = Release|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Debug|x64.Build.0 = Debug|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Debug|x86.Build.0 = Debug|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Release|x64.ActiveCfg = Release|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Release|x64.Build.0 = Release|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Release|x86.ActiveCfg = Release|Any CPU
+		{319AACBF-EA98-477D-B184-B8968684112C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
