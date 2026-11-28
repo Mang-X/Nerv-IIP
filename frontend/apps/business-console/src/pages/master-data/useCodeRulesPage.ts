@@ -5,7 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import { useCodeRules } from '@/composables/master-data/useCodeRules'
-import { computed, reactive, ref, shallowRef } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 export function parsePositiveInt32(value: string | number): number | undefined {
@@ -148,9 +148,19 @@ export function useCodeRulesPage() {
   const page = ref(1)
   const pageSize = ref('10')
   const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
+  const search = ref('')
+  const filteredRules = computed(() => {
+    const keyword = search.value.trim().toLowerCase()
+    return rules.value.filter((rule) =>
+      [rule.ruleKey, rule.displayName].some((value) => value?.toLowerCase().includes(keyword)),
+    )
+  })
+  watch([search, pageSize], () => {
+    page.value = 1
+  })
   const pagedRules = computed(() => {
     const startIndex = (page.value - 1) * pageSizeNumber.value
-    return rules.value.slice(startIndex, startIndex + pageSizeNumber.value)
+    return filteredRules.value.slice(startIndex, startIndex + pageSizeNumber.value)
   })
 
   const columns: NvDataTableColumn<BusinessConsoleCodeRuleItem>[] = [
@@ -506,6 +516,8 @@ export function useCodeRulesPage() {
     page,
     pageSize,
     pagedRules,
+    search,
+    filteredRules,
     previewFormSample,
     previewViewSample,
     refresh,

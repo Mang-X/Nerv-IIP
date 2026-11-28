@@ -223,7 +223,9 @@ beforeEach(() => {
 
 describe('engineering production-versions page', () => {
   it('渲染标题、版本行（物料显名 + 绑定 + 有效期 + 批量 + 默认 + 状态）', async () => {
-    const wrapper = mount(ProductionVersionsPage, { global: { stubs: { ...layoutStub } } })
+    const wrapper = mount(ProductionVersionsPage, {
+      global: { stubs: { ...layoutStub, DirectoryPicker: formSelectStubs.DirectoryPicker } },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('生产版本')
@@ -397,15 +399,7 @@ describe('engineering production-versions page', () => {
     const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
     await flushPromises()
 
-    // <select> 顺序：表单内 物料/MBOM/路线（3）、resolve 卡物料（第 4）、状态筛选（第 5）。
-    await wrapper
-      .findAll('select')
-      .find(
-        (select) =>
-          select.find('option[value="SKU-1"]').exists() &&
-          !select.find('option[value="SKU-2"]').exists(),
-      )!
-      .setValue('SKU-1')
+    await wrapper.get('#resolve-sku').setValue('SKU-1')
     await flushPromises()
 
     await wrapper

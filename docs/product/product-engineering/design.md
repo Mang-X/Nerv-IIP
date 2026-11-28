@@ -65,7 +65,7 @@ ECO 已生效后，详情的「在制影响」按 MES 实际记录分页展示�
 - **纠反模式**：index.vue 三 Tab 拆成上述独立页后，旧 `/engineering` 收敛/下线。状态枚举统一改用后端真值 `Draft/Published/Archived`（修 `Released` bug）。
 
 ## 4. 与基础数据的衔接（引用关系，写清避免误解）
-- **工程物料 EngineeringItem ≠ 基础数据 SKU**：非同源。MBOM/PV 用 `skuCode` 字符串引用**基础数据 SKU**；EngineeringItem（itemCode+修订）是工程自管对象，主要供 EBOM。表单 SKU 选择器从基础数据 SKU 列表取。工程物料可以选择已有 SKU，用同一码创建工程修订，仍可独立创建自动编码的工程物料。EBOM 展开和反查可按工程物料或基础数据 SKU 查找，文档可关联工程物料，MBOM 展开和反查使用基础数据 SKU。
+- **工程物料 EngineeringItem ≠ 基础数据 SKU**：非同源。MBOM/PV 用 `skuCode` 字符串引用**基础数据 SKU**；EngineeringItem（itemCode+修订）是工程自管对象，主要供 EBOM。表单 SKU 选择器从基础数据 SKU 列表取。工程物料可以选择已有 SKU，用同一码创建工程修订，仍可独立创建自动编码的工程物料。EBOM 展开和反查可按工程物料或基础数据 SKU 查找，文档可关联工程物料或基础数据 SKU，工程物料修订在创建时发布。MBOM 展开和反查使用基础数据 SKU。
 - **工艺路线工序 → 基础数据工作中心**：`WorkCenterCode` 指向 facilities 树叶子；选择器从基础数据工作中心取，缺则给「去基础数据维护」出路。
 - **生产版本 → MES/计划**：PV 是工程域出海口，`resolve` + readiness 供 MES/计划消费，是工程↔执行的契约边界。
 

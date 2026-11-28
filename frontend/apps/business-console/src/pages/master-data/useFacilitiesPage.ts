@@ -26,11 +26,6 @@ export function useFacilitiesPage() {
   // 真正全量需后端全量端点（#373），超过此阈值的层级在树底给出提示。
   const TREE_TAKE = 5000
   const DEFAULT_TIMEZONE = DEFAULT_TIME_ZONE
-  const WORK_CENTER_DEFAULTS = {
-    capacityUnit: 'minutes',
-    capacityMinutesPerDay: 480,
-    finiteCapacity: true,
-  }
 
   const sites = useMasterDataResource('site', { all: true })
   const workshops = useBusinessWorkshops(true)
@@ -54,7 +49,7 @@ export function useFacilitiesPage() {
     stations.filters,
   ])
 
-  // 工作日历列表（仅供"默认工作日历"在详情面板解析编码→名称）。
+  // 工作日历目录用于详情显名和工作中心编辑。
   const calendars = useMasterDataResource('work-calendar', { all: true })
 
   // 归属 / 日历 编码 → 名称解析（详情面板显示名称而非裸编码；列表加载后 computed 实时更新）。
@@ -534,7 +529,13 @@ export function useFacilitiesPage() {
       case 'production-line':
         return isNonEmpty(editForm.siteCode)
       case 'work-center':
-        return isNonEmpty(editForm.plantCode) && isNonEmpty(editForm.lineCode)
+        return (
+          isNonEmpty(editForm.plantCode) &&
+          isNonEmpty(editForm.lineCode) &&
+          isNonEmpty(editForm.defaultCalendarCode) &&
+          Number.isInteger(Number(editForm.capacityMinutesPerDay)) &&
+          Number(editForm.capacityMinutesPerDay) > 0
+        )
       case 'station':
         return isNonEmpty(editForm.lineCode)
       default:
@@ -672,10 +673,7 @@ export function useFacilitiesPage() {
             plantCode: editForm.plantCode.trim(),
             lineCode: editForm.lineCode.trim(),
             defaultCalendarCode: editForm.defaultCalendarCode.trim(),
-            capacityMinutesPerDay:
-              Number(editForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
-            capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
-            finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
+            capacityMinutesPerDay: Number(editForm.capacityMinutesPerDay),
           })
           break
         case 'station':
@@ -740,6 +738,7 @@ export function useFacilitiesPage() {
     detailLoading,
     editCode,
     editForm,
+    editCalendars: calendars.items,
     editLoading,
     editOpen,
     editPending,

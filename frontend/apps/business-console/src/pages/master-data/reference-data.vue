@@ -58,6 +58,7 @@ interface CodeSetMeta {
 }
 const CODE_SETS: CodeSetMeta[] = [
   { codeSet: 'material-type', label: '物料类型', kind: 'system-enum' },
+  { codeSet: 'asset-class', label: '设备类别', kind: 'platform-preset' },
   // 产品/物料分类已升为分类树主数据（#400，见 /master-data/product-categories），从数据字典迁出。
   { codeSet: 'uom-dimension', label: '计量量纲', kind: 'system-enum' },
   { codeSet: 'batch-tracking-policy', label: '批次策略', kind: 'system-enum' },

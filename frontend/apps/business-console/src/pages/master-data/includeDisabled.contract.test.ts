@@ -53,13 +53,17 @@ describe('主数据列表页的「包含停用」开关', () => {
   it('接了开关的页面都把它绑到了过滤器上（不是个摆设）', () => {
     const offenders = pageSources()
       .filter((page) => rendersFilter(page.source))
-      .filter(({ setup }) => !setup.includes('useIncludeDisabledFilter('))
+      .filter(
+        ({ setup }) =>
+          !setup.includes('useIncludeDisabledFilter(') &&
+          !setup.includes('filters.enabled = include ? undefined : true'),
+      )
       .map(({ name }) => name)
 
     expect(offenders).toEqual([])
   })
 
-  it('覆盖面回归基线：当前 8 个页面接了开关', () => {
+  it('覆盖面回归基线：当前 10 个页面接了开关', () => {
     const wired = pageSources()
       .filter((page) => rendersFilter(page.source))
       .map(({ name }) => name)
@@ -71,8 +75,10 @@ describe('主数据列表页的「包含停用」开关', () => {
       'facilities.vue',
       'organization.vue',
       'partners.vue',
+      'product-categories.vue',
       'reference-data.vue',
       'scheduling.vue',
+      'skill-catalog.vue',
       'skus.vue',
       'units.vue',
     ])

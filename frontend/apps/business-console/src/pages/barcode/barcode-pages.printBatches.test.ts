@@ -20,6 +20,32 @@ import ScansPage from './scans.vue'
 describe('barcode pages', () => {
   beforeEach(resetFixture)
 
+  it('previews the selected batch and downloads the compiled ZPL in sequence', async () => {
+    barcode.route.query = { printBatchId: 'pb-1' }
+    barcode.previewPrintBatch.mockResolvedValue([
+      { sequenceNo: 1, labelValue: 'FG-001', zpl: '^XA^FDFG-001^FS^XZ' },
+      { sequenceNo: 2, labelValue: 'FG-002', zpl: '^XA^FDFG-002^FS^XZ' },
+    ])
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '预览标签 / 下载 ZPL')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(barcode.previewPrintBatch).toHaveBeenCalledWith('pb-1')
+    expect(barcode.dispatchPrintBatch).not.toHaveBeenCalled()
+    expect(wrapper.findAll('pre').map((item) => item.text())).toEqual([
+      '^XA^FDFG-001^FS^XZ',
+      '^XA^FDFG-002^FS^XZ',
+    ])
+    const download = wrapper.get('a[download="pb-1.zpl"]')
+    expect(decodeURIComponent((download.attributes('href') ?? '').split(',')[1]!)).toBe(
+      '^XA^FDFG-001^FS^XZ\n^XA^FDFG-002^FS^XZ',
+    )
+  })
+
   it('renders print batch list, selected details, and source filters from route context', async () => {
     barcode.route.query = {
       sourceDocumentType: 'production.report',

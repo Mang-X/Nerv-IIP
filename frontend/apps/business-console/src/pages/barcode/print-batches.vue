@@ -28,6 +28,7 @@ import {
   NvDataTable,
   NvDialog,
   NvDialogContent,
+  NvDialogBody,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
@@ -105,6 +106,7 @@ const {
   confirmPrintBatch,
   confirmPrintBatchPending,
   dispatchPrintBatch,
+  previewPrintBatch,
   dispatchPrintBatchPending,
   createPrintBatch,
   createPrintBatchPending,
@@ -288,6 +290,30 @@ watch(statusFilter, (value) => {
 })
 
 const listErrorMessage = computed(() => inlineErrorMessage(printBatchesError.value))
+const previewOpen = shallowRef(false)
+const previewPending = shallowRef(false)
+const previewLabels = shallowRef<Awaited<ReturnType<typeof previewPrintBatch>>>([])
+const previewFileName = shallowRef('')
+const previewDownloadUrl = computed(
+  () =>
+    `data:text/plain;charset=utf-8,${encodeURIComponent(previewLabels.value.map((label) => label.zpl).join('\n'))}`,
+)
+
+async function openPreview() {
+  const batch = printBatchDetail.value
+  if (!batch?.printBatchId) return
+  previewPending.value = true
+  try {
+    previewLabels.value = await previewPrintBatch(batch.printBatchId)
+    previewFileName.value = `${batch.printBatchId}.zpl`
+    previewOpen.value = true
+  } catch (error) {
+    notifyOperationFailure('读取标签预览失败', error, '无法预览打印批次。')
+  } finally {
+    previewPending.value = false
+  }
+}
+
 const detailErrorMessage = computed(() => inlineErrorMessage(printBatchDetailError.value))
 const selectedItems = computed(() => printBatchDetail.value?.items ?? [])
 function isValueRequired(name: string, required: boolean) {
@@ -764,6 +790,15 @@ function firstQuery(value: unknown) {
               {{ printBatchDetail?.sourceDocumentId ?? '选择左侧任务查看标签明细' }}
             </p>
           </div>
+          <NvButton
+            v-if="canPrint && printBatchDetail?.printBatchId"
+            size="sm"
+            variant="outline"
+            :disabled="previewPending"
+            @click="openPreview"
+          >
+            预览标签 / 下载 ZPL
+          </NvButton>
           <NvButton v-if="printBatchDetail?.sourceDocumentId" size="sm" variant="outline" as-child>
             <RouterLink :to="scanRecordRoute(printBatchDetail)"> 扫码记录 </RouterLink>
           </NvButton>
@@ -863,5 +898,26 @@ function firstQuery(value: unknown) {
         />
       </section>
     </div>
+    <NvDialog v-model:open="previewOpen">
+      <NvDialogContent scrollable class="sm:max-w-2xl">
+        <NvDialogHeader>
+          <NvDialogTitle>标签预览</NvDialogTitle>
+          <NvDialogDescription>按打印顺序显示标签内容和 ZPL 源码。</NvDialogDescription>
+        </NvDialogHeader>
+        <NvDialogBody class="grid gap-4">
+          <section v-for="label in previewLabels" :key="label.sequenceNo" class="grid gap-1">
+            <h3 class="break-all text-sm font-medium">
+              {{ label.sequenceNo }} · {{ label.labelValue }}
+            </h3>
+            <pre class="overflow-x-auto rounded-md bg-muted p-3 text-xs">{{ label.zpl }}</pre>
+          </section>
+        </NvDialogBody>
+        <NvDialogFooter>
+          <NvButton as-child>
+            <a :href="previewDownloadUrl" :download="previewFileName">下载 ZPL</a>
+          </NvButton>
+        </NvDialogFooter>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

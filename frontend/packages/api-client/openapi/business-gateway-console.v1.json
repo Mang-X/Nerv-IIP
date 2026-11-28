@@ -35840,6 +35840,64 @@
         ]
       }
     },
+    "/api/business-console/v1/barcode/print-batches/{printBatchId}/preview": {
+      "get": {
+        "tags": [
+          "Business Console Barcode",
+          "Api"
+        ],
+        "operationId": "previewBusinessConsoleBarcodePrintBatch",
+        "parameters": [
+          {
+            "name": "printBatchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintPreviewResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch": {
       "post": {
         "tags": [
@@ -74599,6 +74657,55 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintBatchRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintPreviewResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sequenceNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "labelValue": {
+            "type": "string"
+          },
+          "zpl": {
+            "type": "string"
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse": {
         "allOf": [

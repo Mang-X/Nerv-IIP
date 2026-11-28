@@ -33,6 +33,7 @@ defineProps<{
   canEdit: View['canEdit']
   editCode: View['editCode']
   editForm: View['editForm']
+  editCalendars: View['editCalendars']
   editLoading: View['editLoading']
   editPending: View['editPending']
   editShowErrors: View['editShowErrors']
@@ -197,6 +198,34 @@ const editOpen = defineModel<View['editOpen']>('editOpen', { required: true })
                   :parent="{ siteCode: editForm.plantCode }"
                   :create-context="{ siteCode: editForm.plantCode }"
                   placeholder="请选择产线"
+                />
+              </NvField>
+              <NvField :data-invalid="editShowErrors && !editForm.defaultCalendarCode">
+                <NvFieldLabel for="edit-wc-calendar">默认工作日历</NvFieldLabel>
+                <NvSelect v-model="editForm.defaultCalendarCode">
+                  <NvSelectTrigger id="edit-wc-calendar"
+                    ><NvSelectValue placeholder="请选择工作日历"
+                  /></NvSelectTrigger>
+                  <NvSelectContent>
+                    <NvSelectItem
+                      v-for="calendar in editCalendars"
+                      :key="calendar.code"
+                      :value="calendar.code ?? ''"
+                    >
+                      {{ calendar.displayName }}
+                    </NvSelectItem>
+                  </NvSelectContent>
+                </NvSelect>
+              </NvField>
+              <NvField>
+                <NvFieldLabel for="edit-wc-capacity">日产能（分钟）</NvFieldLabel>
+                <NvInput
+                  id="edit-wc-capacity"
+                  v-model="editForm.capacityMinutesPerDay"
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
                 />
               </NvField>
             </template>

@@ -13,6 +13,35 @@ import ScansPage from './scans.vue'
 describe('barcode pages', () => {
   beforeEach(resetFixture)
 
+  it('resolves the scanned value and shows candidate identity without recording a scan', async () => {
+    barcode.permissionCodes.push('business.barcodes.scans.write')
+    barcode.resolveBarcode.mockResolvedValue({
+      status: 'resolved',
+      candidates: [{ objectType: 'work-center', strongIds: { workCenterId: 'WC-01' } }],
+      total: 1,
+    })
+    const wrapper = mount(ScansPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '条码解析查询')!
+      .trigger('click')
+    const input = wrapper.get('input[aria-label="扫码原文"]')
+    await input.setValue(' WC-01 ')
+    await wrapper
+      .findAll('form')
+      .find((form) => form.find('input[aria-label="扫码原文"]').exists())!
+      .trigger('submit')
+    await flushPromises()
+
+    expect(barcode.resolveBarcode).toHaveBeenCalledWith('WC-01', 1)
+    expect(barcode.recordScan).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('已解析')
+    expect(wrapper.text()).toContain('工作中心')
+    expect(wrapper.text()).toContain('WC-01')
+  })
+
   it('renders scan audit records with workflow filters and business failure copy', async () => {
     barcode.route.query = {
       sourceWorkflow: 'inventory.count',

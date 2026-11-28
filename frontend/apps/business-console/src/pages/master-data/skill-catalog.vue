@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import { usePermission } from '@/composables/usePermission'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
@@ -73,12 +74,21 @@ const { skills: groupCatalog, refresh: refreshGroupCatalog } = useSkillCatalog(t
 const search = computed({
   get: () => filters.search ?? '',
   set: (value: string) => {
-    filters.skip = 0
+    page.value = 1
     filters.search = value.trim() || undefined
   },
 })
 
 const page = ref(1)
+const includeDisabled = ref(false)
+watch(
+  includeDisabled,
+  (include) => {
+    page.value = 1
+    filters.enabled = include ? undefined : true
+  },
+  { immediate: true },
+)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 watch(
@@ -376,7 +386,11 @@ async function confirmArchive() {
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="search" search-placeholder="按技能名或编码筛选" />
+    <NvToolbar v-model:search="search" search-placeholder="按技能名或编码筛选">
+      <template #filters>
+        <IncludeDisabledFilter v-model="includeDisabled" />
+      </template>
+    </NvToolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
       {{ listErrorMessage }}

@@ -220,7 +220,11 @@ describe('BusinessLayout (T-shaped)', () => {
 
   it('resolves barcode routes to the 条码标签 domain', () => {
     routeState.path = '/barcode/rules'
-    const wrapper = mountWithPermissions([P.barcodeTemplatesManage, P.barcodePrint])
+    const wrapper = mountWithPermissions([
+      P.barcodeTemplatesManage,
+      P.barcodePrint,
+      P.barcodeScansWrite,
+    ])
     const shell = wrapper.getComponent(AppShellTStub)
 
     expect(shell.props('currentDomainId')).toBe('barcode')

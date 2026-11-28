@@ -616,7 +616,7 @@ describe('engineering eco page', () => {
     expect(sheet.text()).toContain('暂无法显示版本名称')
     expect(sheet.text()).not.toContain('PV-GONE')
   })
-  it('第 101 条 EBOM 可选，目录外编号和修订可直接指定', async () => {
+  it('第 101 条已发布 EBOM 可选且用编号和修订提交', async () => {
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()
     await findButton(wrapper, '发布变更')!.trigger('click')
@@ -635,12 +635,12 @@ describe('engineering eco page', () => {
       }),
     )
 
-    await wrapper.get('input[aria-label="编号:修订"]').setValue('EBOM-6001:B')
+    expect(wrapper.find('input[aria-label="编号:修订"]').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(stub.releaseChange).toHaveBeenCalledWith(
       expect.objectContaining({
-        affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-6001:B' }],
+        affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-101:A' }],
       }),
     )
   })

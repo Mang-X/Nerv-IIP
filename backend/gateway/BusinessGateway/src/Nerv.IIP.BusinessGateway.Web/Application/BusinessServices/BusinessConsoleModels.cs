@@ -4657,6 +4657,10 @@ public sealed record BusinessConsoleBarcodePrintBatchItem(
     string Status,
     DateTimeOffset CreatedAtUtc);
 
+public sealed record BusinessConsoleBarcodePrintPreviewItem(int SequenceNo, string LabelValue, string Zpl);
+
+public sealed record BusinessConsoleBarcodePrintPreviewResponse(BusinessConsoleBarcodePrintPreviewItem[] Labels);
+
 public sealed record BusinessConsoleBarcodePrintBatchResponse(
     BusinessConsoleBarcodePrintBatchDetail PrintBatch);
 

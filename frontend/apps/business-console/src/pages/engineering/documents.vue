@@ -106,13 +106,14 @@ function documentTypeLabel(value?: string | null) {
 const documentTypeFilter = computed({
   get: () => filters.documentType ?? 'all',
   set: (value: string) => {
+    page.value = 1
     filters.documentType = value === 'all' ? undefined : value
   },
 })
 
 // 关联物料从工程物料目录里选（同一 itemCode 多修订只出现一次）。
 const {
-  engineeringEntries,
+  itemEntries,
   engineeringError,
   pending: itemCatalogPending,
   load: loadItemCatalog,
@@ -121,6 +122,7 @@ const {
 const itemSearch = computed({
   get: () => filters.itemCode ?? '',
   set: (value: string) => {
+    page.value = 1
     filters.itemCode = value.trim() ? value : undefined
   },
 })
@@ -222,7 +224,7 @@ function hashPayload(payload: string) {
 }
 
 const itemPickerOptions = computed(() => {
-  const options = engineeringEntries.value.map((item) => ({
+  const options = itemEntries.value.map((item) => ({
     value: item.code,
     label: item.name,
     hint: item.code,
@@ -626,19 +628,17 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
 
               <FormSectionTitle>文档关联</FormSectionTitle>
               <NvField>
-                <NvFieldLabel for="doc-item-code">关联工程物料（可选）</NvFieldLabel>
+                <NvFieldLabel for="doc-item-code">关联物料（可选）</NvFieldLabel>
                 <NvEntityPicker
                   id="doc-item-code"
                   v-model="form.itemCode"
                   :options="itemPickerOptions"
-                  title="选择关联工程物料"
+                  title="选择关联物料"
                   placeholder="可留空"
-                  :empty-text="
-                    engineeringError ? '工程物料目录加载失败' : '工程物料目录为空，请先维护工程物料'
-                  "
-                  no-match-text="没有匹配的工程物料"
+                  :empty-text="engineeringError ? '物料目录加载失败' : '物料目录为空，请先维护物料'"
+                  no-match-text="没有匹配的物料"
                   :loading="itemCatalogPending"
-                  aria-label="关联工程物料"
+                  aria-label="关联物料"
                   clearable
                 />
                 <NvButton
@@ -780,7 +780,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               class="h-[50vh] w-full rounded-md border"
             />
             <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">关联工程物料</span>
+              <span class="text-muted-foreground">关联物料</span>
               <span class="font-medium">{{ viewTarget.itemCode || '无' }}</span>
             </div>
             <div class="flex justify-between gap-3">
