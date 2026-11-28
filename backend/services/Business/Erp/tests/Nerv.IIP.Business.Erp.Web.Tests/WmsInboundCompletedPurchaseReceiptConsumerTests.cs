@@ -23,10 +23,49 @@ using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using InboundOrderCompletedIntegrationEventConverter = WmsWeb::Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters.InboundOrderCompletedIntegrationEventConverter;
 
+using WmsCreateInboundOrderCommand = WmsWeb::Nerv.IIP.Business.Wms.Web.Application.Commands.CreateInboundOrderCommand;
+using WmsCreateInboundOrderCommandHandler = WmsWeb::Nerv.IIP.Business.Wms.Web.Application.Commands.CreateInboundOrderCommandHandler;
+using WmsInboundLineInput = WmsWeb::Nerv.IIP.Business.Wms.Web.Application.Commands.WmsInboundLineInput;
+using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
+
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
 {
+    [Fact]
+    public async Task Manually_created_purchase_order_inbound_preserves_source_line_in_erp_receipt()
+    {
+        await using var erp = CreateDbContext();
+        await ReleasePurchaseOrderAsync(erp, "PO-WMS-LINE-001", "10", 2m, 12.5m);
+        await using var wms = new WmsDbContext(
+            new DbContextOptionsBuilder<WmsDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+            null!);
+        var id = await new WmsCreateInboundOrderCommandHandler(wms).Handle(
+            new WmsCreateInboundOrderCommand(
+                "org-001", "env-dev", "WMS-IN-LINE-001", WmsSourceDocumentTypes.PurchaseOrder,
+                "PO-WMS-LINE-001", "SITE-01",
+                [new WmsInboundLineInput("10", "SKU-RM-1000", "kg", 2m, "RAW-A-01", null, null, "qualified", "company", null)]),
+            CancellationToken.None);
+        await wms.SaveChangesAsync(CancellationToken.None);
+        wms.ChangeTracker.Clear();
+
+        var inbound = await wms.InboundOrders.Include(x => x.Lines).SingleAsync(x => x.Id == id);
+        inbound.Complete("complete-line-001", inbound.Version);
+        var integrationEvent = new InboundOrderCompletedIntegrationEventConverter()
+            .Convert(new InboundOrderCompletedDomainEvent(inbound));
+        Assert.Equal("10", integrationEvent.Payload.LineReference);
+        Assert.Equal("10", Assert.Single(integrationEvent.Payload.Lines!).LineReference);
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateInboundHandler(erp, deadLetters);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var receipt = Assert.Single(erp.PurchaseReceipts.Include(x => x.Lines));
+        Assert.Equal("10", Assert.Single(receipt.Lines).PurchaseOrderLineNo);
+        Assert.Equal(2m, Assert.Single(Assert.Single(erp.PurchaseOrders.Include(x => x.Lines)).Lines).ReceivedQuantity);
+    }
+
     [Fact]
     public async Task InboundOrderCompletedHandler_PublishesEtaChangeWithUpstreamEventContext()
     {

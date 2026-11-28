@@ -200,6 +200,7 @@ const inboundLineOptions = computed(() =>
 )
 // 换了入库单，上一张单的行号就不再成立；新单只有一行时直接带上。
 watch(inboundLineOptions, (options) => {
+  if (!options.length && createForm.inboundOrderId === inboundOrderId.value) return
   if (options.some((option) => option.value === createForm.lineNo)) return
   createForm.lineNo = options.length === 1 ? options[0]!.value : ''
 })
@@ -209,7 +210,7 @@ function openCreate() {
 
   createForm.inboundOrderId = inboundOrderId.value
   createIdempotencyKey.value = createWmsIdempotencyKey()
-  createForm.lineNo = ''
+  createForm.lineNo = firstQuery(route.query.lineNo)
   createForm.fromLocationCode = ''
   createForm.toLocationCode = ''
   createForm.quantity = ''

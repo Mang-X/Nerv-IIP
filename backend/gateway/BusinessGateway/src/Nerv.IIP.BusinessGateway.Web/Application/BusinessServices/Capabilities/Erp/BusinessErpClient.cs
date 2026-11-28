@@ -75,6 +75,11 @@ public interface IBusinessErpClient
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpQuotationItem> GetQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleGetErpQuotationRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpQuotationListResponse> ListQuotationsAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -205,6 +210,11 @@ public interface IBusinessErpClient
         BusinessConsoleErpContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpGLAccountListResponse> ListGLAccountsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpPayableSourceDocumentResponse> GetPayableBySourceDocumentAsync(
         string internalBearerToken,
         BusinessConsoleErpSourceDocumentRequest request,
@@ -263,6 +273,8 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
                 request.SupplierCode,
                 request.RfqSupplierCodes,
                 request.RfqNo,
+                request.SupplierQuotationId,
+                request.RfqId,
                 request.IdempotencyKey,
                 request.CurrencyCode,
                 startedBy
@@ -391,6 +403,18 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/erp/opportunities?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpQuotationItem> GetQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleGetErpQuotationRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpQuotationItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/erp/quotations/{Uri.EscapeDataString(request.QuotationNo)}?"
+                + Query(("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId)),
             null,
             cancellationToken);
 
@@ -678,6 +702,19 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/erp/finance/summary?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpGLAccountListResponse> ListGLAccountsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpGLAccountListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/gl-accounts?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId)),
             null,

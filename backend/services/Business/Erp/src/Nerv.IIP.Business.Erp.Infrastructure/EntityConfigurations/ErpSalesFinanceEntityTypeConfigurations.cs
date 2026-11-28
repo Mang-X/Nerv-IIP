@@ -39,6 +39,7 @@ public sealed class QuotationEntityTypeConfiguration : IEntityTypeConfiguration<
         PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.QuotationNo).HasColumnName("quotation_no").IsRequired().HasMaxLength(100).HasComment("Quotation number.");
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
+        builder.Property(x => x.OpportunityId).HasColumnName("opportunity_id").HasComment("Source sales opportunity.");
         builder.Property(x => x.ExpiresOn).HasColumnName("expires_on").IsRequired().HasComment("Quotation expiration date.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Quotation approval status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Quotation total amount.");

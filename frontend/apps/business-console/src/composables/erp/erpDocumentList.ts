@@ -35,6 +35,8 @@ interface ErpListQuery {
 
 export interface ConvertPurchaseRequisitionOptions {
   rfqSupplierCodes?: string[]
+  supplierQuotationId?: string
+  rfqId?: string
 }
 
 export function unwrapItems<T>(
@@ -69,6 +71,7 @@ export function useErpDocumentList<
 >(
   buildOptions: (query: ErpListQuery) => unknown,
   initialFilters: Partial<BusinessErpListFilters> = {},
+  enabled = () => true,
 ) {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters(initialFilters)
@@ -84,7 +87,7 @@ export function useErpDocumentList<
           skip: filters.skip,
           take: filters.take,
         }) as object),
-        enabled: hasBusinessContext(businessContext),
+        enabled: hasBusinessContext(businessContext) && enabled(),
       }) as never,
   )
 

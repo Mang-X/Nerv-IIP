@@ -110,6 +110,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineInput = {
+    /**
+     * For purchase-order inbound, use the original purchase order line number.
+     */
     lineNo?: string;
     skuCode?: string;
     uomCode?: string;
@@ -8650,6 +8653,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     supplierCodes?: Array<string>;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationLineItem>;
     createdAtUtc?: string;
+    rfqId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpRequestForQuotationLineItem = {
@@ -8677,6 +8681,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     totalAmount?: number;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationLineItem>;
     receivedAtUtc?: string;
+    supplierQuotationId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSupplierQuotationLineItem = {
@@ -8804,6 +8809,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     rfqNo?: string | null;
     idempotencyKey?: string | null;
     currencyCode: string;
+    supplierQuotationId?: string | null;
+    rfqId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReceiveErpSupplierQuotationResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8955,6 +8962,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     topic?: string;
     status?: string;
     openedAtUtc?: string;
+    opportunityId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenErpOpportunityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8992,6 +9000,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLineItem>;
     createdAtUtc?: string;
     convertedSalesOrderNo?: string | null;
+    opportunityId?: string | null;
+    opportunityNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLineItem = {
@@ -9001,6 +9011,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     quantity?: number;
     unitPrice?: number;
     requiredDate?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationItem | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGetErpQuotationRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpQuotationResponse = NetCorePalExtensionsDtoResponseData & {
@@ -9019,6 +9037,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     expiresOn?: string;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLine>;
     idempotencyKey?: string | null;
+    opportunityId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationLine = {
@@ -9346,10 +9365,32 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     openReceivableAmount?: number;
     costCandidateAmount?: number;
     postedVoucherCount?: number;
+    payablesByCurrency?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary> | null;
+    receivablesByCurrency?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary> | null;
+    costCandidatesByCurrency?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary = {
+    currencyCode?: string;
+    openAmount?: number;
+    localOpenAmount?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpContextRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpGlAccountListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGlAccountListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGlAccountListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGlAccountListItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGlAccountListItem = {
+    code?: string;
+    name?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPayableListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -9409,6 +9450,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     currencyCode?: string;
     status?: string;
     createdAtUtc?: string;
+    voucherNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPayableSourceDocumentResponse = NetCorePalExtensionsDtoResponseData & {
@@ -25164,6 +25206,38 @@ export type CreateBusinessConsoleErpQuotationResponses = {
 
 export type CreateBusinessConsoleErpQuotationResponse = CreateBusinessConsoleErpQuotationResponses[keyof CreateBusinessConsoleErpQuotationResponses];
 
+export type GetBusinessConsoleErpQuotationData = {
+    body?: never;
+    path: {
+        quotationNo: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/erp/sales/quotations/{quotationNo}';
+};
+
+export type GetBusinessConsoleErpQuotationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleErpQuotationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationItem;
+};
+
+export type GetBusinessConsoleErpQuotationResponse = GetBusinessConsoleErpQuotationResponses[keyof GetBusinessConsoleErpQuotationResponses];
+
 export type ApproveBusinessConsoleErpQuotationData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApproveErpQuotationRequest;
     path: {
@@ -25891,6 +25965,42 @@ export type GetBusinessConsoleErpFinanceSummaryResponses = {
 };
 
 export type GetBusinessConsoleErpFinanceSummaryResponse = GetBusinessConsoleErpFinanceSummaryResponses[keyof GetBusinessConsoleErpFinanceSummaryResponses];
+
+export type ListBusinessConsoleErpGlAccountsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/erp/finance/gl-accounts';
+};
+
+export type ListBusinessConsoleErpGlAccountsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpGlAccountsError = ListBusinessConsoleErpGlAccountsErrors[keyof ListBusinessConsoleErpGlAccountsErrors];
+
+export type ListBusinessConsoleErpGlAccountsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpGlAccountListResponse;
+};
+
+export type ListBusinessConsoleErpGlAccountsResponse = ListBusinessConsoleErpGlAccountsResponses[keyof ListBusinessConsoleErpGlAccountsResponses];
 
 export type GetBusinessConsoleErpPayableBySourceDocumentData = {
     body?: never;

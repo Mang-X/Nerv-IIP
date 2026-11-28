@@ -5,7 +5,11 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
-import { useErpPurchaseRequisitions } from '@/composables/erp/useBusinessErp'
+import {
+  useErpPurchaseRequisitions,
+  useErpSupplierQuotations,
+  useErpRequestsForQuotation,
+} from '@/composables/erp/useBusinessErp'
 import { useBusinessPartners } from '@/composables/master-data'
 import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/master-data/useSkuNames'
@@ -58,6 +62,31 @@ const auth = useAuthStore()
 const canReadMrp = computed(() => auth.principal?.permissionCodes?.includes(P.planningMrpRead))
 const requisitions = useErpPurchaseRequisitions()
 const suppliers = useBusinessPartners()
+const supplierQuotations = useErpSupplierQuotations()
+const conversionRow = shallowRef<BusinessConsoleErpPurchaseRequisitionItem | null>(null)
+const selectedQuotationId = shallowRef('')
+const matchingQuotations = computed(() =>
+  supplierQuotations.items.value.filter(
+    (quotation) =>
+      quotation.supplierQuotationId &&
+      quotation.lines?.some(
+        (line) =>
+          line.skuCode === conversionRow.value?.skuCode &&
+          line.uomCode === conversionRow.value?.uomCode,
+      ),
+  ),
+)
+const conversionRfqs = useErpRequestsForQuotation()
+const selectedQuotation = computed(() =>
+  matchingQuotations.value.find((item) => item.supplierQuotationId === selectedQuotationId.value),
+)
+watch(selectedQuotation, (quotation) => {
+  conversionRfqs.filters.keyword = quotation?.rfqNo
+})
+const selectedRfqId = computed(
+  () =>
+    conversionRfqs.items.value.find((rfq) => rfq.rfqNo === selectedQuotation.value?.rfqNo)?.rfqId,
+)
 // 物料列显中文名、单位列显「件 (pcs)」：读面只回编码，名称在主数据里。
 const { resolveSkuName } = useSkuNames()
 const { formatUom } = useMasterDataDisplayNames({ uoms: true })
@@ -221,23 +250,37 @@ const rfqContextItems = computed(() => {
   ]
 })
 
-async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisitionItem) {
-  if (!can(P.erpProcurementManage)) return
-  if (!canConvert(row)) return
+function openConversion(row: BusinessConsoleErpPurchaseRequisitionItem) {
+  supplierQuotations.filters.keyword = row.skuCode ?? undefined
+  selectedQuotationId.value = ''
+  conversionRow.value = row
+}
+
+async function convertToPurchaseOrder() {
+  const row = conversionRow.value
+  const quotation = selectedQuotation.value
+  const rfqId = selectedRfqId.value
+  if (
+    !can(P.erpProcurementManage) ||
+    !row ||
+    !canConvert(row) ||
+    !quotation?.supplierQuotationId ||
+    !rfqId
+  )
+    return
+
   try {
-    const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!])
+    const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!], {
+      supplierQuotationId: quotation.supplierQuotationId,
+      rfqId,
+    })
     const data = response?.success ? response.data : undefined
     if (data?.status === 'PurchaseOrderCreated' || data?.status === 'AlreadyConverted') {
       notifySuccess(
         data.purchaseOrderNo ? `已转采购订单 ${data.purchaseOrderNo}` : '采购申请已转采购订单',
       )
-      return
+      conversionRow.value = null
     }
-    if (data?.status === 'RfqCreated') {
-      notifySuccess(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
-      return
-    }
-    notifyWarning('缺少有效价源，请先发起 RFQ')
   } catch (error) {
     notifyOperationFailure(
       '转单失败',
@@ -283,14 +326,6 @@ async function submitRfq() {
     const data = response?.success ? response.data : undefined
     if (data?.status === 'RfqCreated') {
       notifySuccess(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
-      closeRfqDialog()
-      return
-    }
-
-    if (data?.status === 'PurchaseOrderCreated' || data?.status === 'AlreadyConverted') {
-      notifySuccess(
-        data.purchaseOrderNo ? `已转采购订单 ${data.purchaseOrderNo}` : '采购申请已转采购订单',
-      )
       closeRfqDialog()
       return
     }
@@ -444,7 +479,7 @@ async function submitRfq() {
             :disabled="!canConvert(row) || requisitions.convertToPurchaseOrderPending.value"
             class="disabled:pointer-events-auto"
             :title="canConvert(row) ? undefined : '仅待处理的采购申请可继续采购'"
-            @click="convertToPurchaseOrder(row)"
+            @click="openConversion(row)"
           >
             <ShoppingCartIcon aria-hidden="true" />
             转采购订单
@@ -452,6 +487,45 @@ async function submitRfq() {
         </div>
       </template>
     </NvDataTable>
+
+    <NvDialog
+      :open="conversionRow !== null"
+      @update:open="
+        (open) => {
+          if (!open) conversionRow = null
+        }
+      "
+    >
+      <NvDialogContent class="sm:max-w-lg">
+        <NvDialogHeader>
+          <NvDialogTitle>选择供应商回价</NvDialogTitle>
+          <NvDialogDescription>采购申请 {{ conversionRow?.requisitionNo }}</NvDialogDescription>
+        </NvDialogHeader>
+        <NvSelect v-model="selectedQuotationId">
+          <NvSelectTrigger aria-label="供应商回价">
+            <NvSelectValue placeholder="请选择供应商回价" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="quotation in matchingQuotations"
+              :key="quotation.supplierQuotationId!"
+              :value="quotation.supplierQuotationId!"
+            >
+              {{ quotation.quotationNo }} · {{ quotation.rfqNo }} · {{ quotation.supplierCode }}
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+        <NvDialogFooter>
+          <NvButton
+            type="button"
+            :disabled="!selectedRfqId || requisitions.convertToPurchaseOrderPending.value"
+            @click="convertToPurchaseOrder"
+          >
+            确认转单
+          </NvButton>
+        </NvDialogFooter>
+      </NvDialogContent>
+    </NvDialog>
 
     <NvDialog
       v-if="can(P.erpProcurementManage)"

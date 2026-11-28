@@ -8565,6 +8565,33 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_sales_quotation_detail_returns_opportunity_and_uses_sales_read_permission()
+    {
+        var erp = new RecordingErpClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/erp/sales/quotations/QUO-001?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(BusinessGatewayPermissions.ErpSalesRead, Assert.Single(auth.Requirements).PermissionCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("QUO-001", data.GetProperty("quotationNo").GetString());
+        Assert.Equal(Guid.Parse("01900000-0000-7000-8000-000000000001"), data.GetProperty("opportunityId").GetGuid());
+    }
+
+    [Fact]
     public async Task Erp_procurement_purchase_requisition_convert_uses_internal_service_token_for_downstream_business_service()
     {
         var erp = new RecordingErpClient();
@@ -8578,6 +8605,8 @@ public sealed class BusinessGatewayProxyTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
+        var quotationId = Guid.NewGuid();
+        var rfqId = Guid.NewGuid();
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order",
             new
@@ -8586,7 +8615,8 @@ public sealed class BusinessGatewayProxyTests
                 environmentId = "env-dev",
                 purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
                 purchaseOrderNo = "PO-REQ-001",
-                rfqSupplierCodes = new[] { "SUP-001" },
+                supplierQuotationId = quotationId,
+                rfqId,
                 idempotencyKey = "idem-convert-001",
                 startedBy = "user-victim",
             });
@@ -8599,7 +8629,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("env-dev", erp.LastConvertPurchaseRequisitionRequest.EnvironmentId);
         Assert.Equal(["PR-001", "PR-002"], erp.LastConvertPurchaseRequisitionRequest.PurchaseRequisitionNos);
         Assert.Equal("PO-REQ-001", erp.LastConvertPurchaseRequisitionRequest.PurchaseOrderNo);
-        Assert.Equal(["SUP-001"], erp.LastConvertPurchaseRequisitionRequest.RfqSupplierCodes);
+        Assert.Equal(quotationId, erp.LastConvertPurchaseRequisitionRequest.SupplierQuotationId);
+        Assert.Equal(rfqId, erp.LastConvertPurchaseRequisitionRequest.RfqId);
         Assert.Equal("idem-convert-001", erp.LastConvertPurchaseRequisitionRequest.IdempotencyKey);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
@@ -21592,6 +21623,17 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
             1));
     }
 
+    public Task<BusinessConsoleErpQuotationItem> GetQuotationAsync(
+        string internalBearerToken,
+        BusinessConsoleGetErpQuotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleErpQuotationItem(
+            request.QuotationNo, "CUST-001", DateOnly.Parse("2026-12-31"), "Draft", 0m, [], DateTime.UnixEpoch,
+            null, Guid.Parse("01900000-0000-7000-8000-000000000001")));
+    }
+
     public Task<BusinessConsoleErpQuotationListResponse> ListQuotationsAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -21886,6 +21928,15 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult("reopened");
+    }
+
+    public Task<BusinessConsoleErpGLAccountListResponse> ListGLAccountsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleErpGLAccountListResponse([]));
     }
 
     public Task<BusinessConsoleErpFinanceSummaryResponse> GetFinanceSummaryAsync(

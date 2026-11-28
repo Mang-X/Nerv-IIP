@@ -1991,6 +1991,7 @@ public sealed class BusinessConsoleCreateWmsInboundOrderRequestValidator
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).ChildRules(line => line.RuleFor(x => x.LineNo).NotEmpty().MaximumLength(100));
     }
 }
 

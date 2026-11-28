@@ -80,6 +80,12 @@ watch(
 )
 // 会计期间编码默认取本月（如 2026-09），与财务开立期间的惯例一致；可改为其它期间。
 const periodDraft = shallowRef(queryText(route.query, 'periodCode') || today().slice(0, 7))
+const previousMonth = (() => {
+  const date = new Date()
+  date.setDate(1)
+  date.setMonth(date.getMonth() - 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+})()
 const periodError = shallowRef('')
 function commitPeriod() {
   const period = periodDraft.value.trim()
@@ -281,6 +287,7 @@ async function submit() {
         <div>
           <NvInput
             v-model="periodDraft"
+            list="machine-rate-periods"
             class="w-40"
             aria-label="会计期间"
             :aria-invalid="Boolean(periodError)"
@@ -288,6 +295,10 @@ async function submit() {
             placeholder="会计期间，如 2026-09"
             @change="commitPeriod"
           />
+          <datalist id="machine-rate-periods">
+            <option :value="today().slice(0, 7)" label="本月" />
+            <option :value="previousMonth" label="上月" />
+          </datalist>
           <p
             v-if="periodError"
             id="machine-rate-period-error"

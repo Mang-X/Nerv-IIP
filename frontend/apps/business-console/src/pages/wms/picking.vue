@@ -245,21 +245,31 @@ const outboundLineOptions = computed(() =>
 )
 // 换了出库单，上一张单的行号就不再成立；新单只有一行时直接带上。
 watch(outboundLineOptions, (options) => {
+  if (!options.length && createForm.outboundOrderId === firstQuery(route.query.outboundOrderId))
+    return
   if (options.some((option) => option.value === createForm.lineNo)) return
   createForm.lineNo = options.length === 1 ? options[0]!.value : ''
 })
 
 function openCreate() {
   if (createIntentLocked.value) return
-  createForm.outboundOrderId = ''
+  createForm.outboundOrderId = firstQuery(route.query.outboundOrderId)
   createIntent.reset()
-  createForm.lineNo = ''
-  createForm.fromLocationCode = ''
+  createForm.lineNo = firstQuery(route.query.lineNo)
+  createForm.fromLocationCode = firstQuery(route.query.locationCode)
   createForm.toLocationCode = ''
-  createForm.quantity = ''
+  createForm.quantity = firstQuery(route.query.quantity)
   createError.value = ''
   createOpen.value = true
 }
+watch(
+  () => route.query,
+  (query) => {
+    if (query.create === '1' && firstQuery(query.outboundOrderId)) openCreate()
+  },
+  { immediate: true },
+)
+
 function onCreateOpenChange(open: boolean) {
   if (!open && createIntentLocked.value) return
   createOpen.value = open

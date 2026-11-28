@@ -90,6 +90,8 @@ export {
   listBusinessConsoleErpSalesOrdersQueryOptions,
   listBusinessConsoleErpSupplierQuotationsQueryOptions,
   getBusinessConsoleErpFinanceSummaryQueryOptions,
+  listBusinessConsoleErpGlAccountsQueryOptions,
+  getBusinessConsoleErpQuotationQueryOptions,
   getBusinessConsoleErpMonthEndChecklistQueryOptions,
   getBusinessConsoleErpTrialBalanceQueryOptions,
   openBusinessConsoleErpOpportunityMutationOptions,

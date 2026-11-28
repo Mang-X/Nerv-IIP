@@ -26,6 +26,7 @@ type View = ShallowUnwrapRef<ReturnType<typeof usePlanningWorkbenchController>>
 defineProps<{
   canReadDemands: View['canReadDemands']
   canReadMrp: View['canReadMrp']
+  carryDemandIntoMps: View['carryDemandIntoMps']
   demandColumns: View['demandColumns']
   demandCoverageForRow: View['demandCoverageForRow']
   demandFilterActive: View['demandFilterActive']
@@ -137,6 +138,15 @@ const demandCancelTarget = defineModel<View['demandCancelTarget']>('demandCancel
         />
       </template>
       <template #cell-actions="{ row }">
+        <NvButton
+          v-if="hasPermission(P.planningMpsManage) && row.sourceStatus === 'active'"
+          type="button"
+          size="sm"
+          variant="outline"
+          @click="carryDemandIntoMps(row)"
+        >
+          带入 MPS
+        </NvButton>
         <NvButton
           v-if="
             hasPermission(P.planningDemandsManage) &&

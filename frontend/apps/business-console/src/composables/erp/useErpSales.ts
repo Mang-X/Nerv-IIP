@@ -169,6 +169,7 @@ export function useErpQuotations(initialFilters: Partial<BusinessErpListFilters>
     approveQuotationPending: approveMutation.isLoading,
     approveQuotationError: approveMutation.error,
     createQuotation: (payload: {
+      opportunityId?: string
       customerCode: string
       expiresOn: string
       quotationNo?: string
@@ -186,6 +187,7 @@ export function useErpQuotations(initialFilters: Partial<BusinessErpListFilters>
           organizationId: list.organizationId.value,
           environmentId: list.environmentId.value,
           quotationNo: payload.quotationNo || null,
+          ...(payload.opportunityId && { opportunityId: payload.opportunityId }),
           customerCode: payload.customerCode,
           expiresOn: payload.expiresOn,
           lines: payload.lines,

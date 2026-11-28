@@ -32291,6 +32291,64 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/sales/quotations/{quotationNo}": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleErpQuotation",
+        "parameters": [
+          {
+            "name": "quotationNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/sales/quotations/{quotationNo}/approve": {
       "post": {
         "tags": [
@@ -33669,6 +33727,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpFinanceSummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/erp/finance/gl-accounts": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpGLAccounts",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpGLAccountListResponse"
                 }
               }
             }
@@ -37936,7 +38054,8 @@
         "additionalProperties": false,
         "properties": {
           "lineNo": {
-            "type": "string"
+            "type": "string",
+            "description": "For purchase-order inbound, use the original purchase order line number."
           },
           "skuCode": {
             "type": "string"
@@ -69813,6 +69932,11 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "rfqId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -69905,6 +70029,11 @@
           "receivedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "supplierQuotationId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -70394,6 +70523,16 @@
             "maxLength": 10,
             "minLength": 0,
             "nullable": false
+          },
+          "supplierQuotationId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "rfqId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -70934,6 +71073,11 @@
           "openedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "opportunityId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -71066,6 +71210,15 @@
           "convertedSalesOrderNo": {
             "type": "string",
             "nullable": true
+          },
+          "opportunityId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "opportunityNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -71095,6 +71248,31 @@
             "format": "date"
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationItem"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGetErpQuotationRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpQuotationResponse": {
         "allOf": [
@@ -71157,6 +71335,11 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
+            "nullable": true
+          },
+          "opportunityId": {
+            "type": "string",
+            "format": "guid",
             "nullable": true
           }
         }
@@ -72247,12 +72430,95 @@
           "postedVoucherCount": {
             "type": "integer",
             "format": "int32"
+          },
+          "payablesByCurrency": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary"
+            }
+          },
+          "receivablesByCurrency": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary"
+            }
+          },
+          "costCandidatesByCurrency": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "currencyCode": {
+            "type": "string"
+          },
+          "openAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "localOpenAmount": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpContextRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpGLAccountListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPayableListResponse": {
         "allOf": [
@@ -72457,6 +72723,10 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "voucherNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

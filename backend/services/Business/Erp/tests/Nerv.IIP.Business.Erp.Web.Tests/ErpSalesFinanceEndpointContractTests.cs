@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
@@ -22,6 +23,42 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class ErpSalesFinanceEndpointContractTests
 {
     [Fact]
+    public async Task Create_quotation_returns_its_opportunity_and_rejects_an_unrelated_opportunity()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var opportunityId = await new OpenOpportunityCommandHandler(dbContext).Handle(
+            new OpenOpportunityCommand("org-001", "env-dev", "OPP-SOURCE", "CUST-001", "Source"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var command = new CreateQuotationCommand(
+            "org-001", "env-dev", "QUO-SOURCE", "CUST-001", new DateOnly(2026, 12, 31),
+            [new QuotationCommandLine("10", "SKU-1", "kg", 2m, 10m, new DateOnly(2026, 12, 30))],
+            OpportunityId: opportunityId);
+        var handler = new CreateQuotationCommandHandler(dbContext);
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var list = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev"), CancellationToken.None);
+        var listed = Assert.Single(list.Items);
+        Assert.Equal(opportunityId, listed.OpportunityId);
+        Assert.Equal("OPP-SOURCE", listed.OpportunityNo);
+        var detail = new GetQuotationQueryHandler(dbContext);
+        var found = await detail.Handle(new GetQuotationQuery("org-001", "env-dev", "QUO-SOURCE"), CancellationToken.None);
+        Assert.Equal(opportunityId, found?.OpportunityId);
+        Assert.Equal("OPP-SOURCE", found?.OpportunityNo);
+        Assert.Null(await detail.Handle(new GetQuotationQuery("org-001", "env-other", "QUO-SOURCE"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with { CustomerCode = "CUST-002" }, CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with { OpportunityId = new(Guid.NewGuid()) }, CancellationToken.None));
+        Assert.Single(dbContext.Quotations);
+    }
+
+    [Fact]
     public void Create_sales_order_contract_exposes_required_site_fact()
     {
         Assert.NotNull(typeof(CreateSalesOrderRequest).GetProperty("SiteCode"));
@@ -33,7 +70,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpSalesEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(14, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "openErpOpportunity");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpOpportunities");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.OperationId == "createErpQuotation");
@@ -54,7 +91,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(33, contracts.Length);
+        Assert.Equal(34, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ManagePolicyName && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ReadPolicyName && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
@@ -74,6 +111,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/trial-balance" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpTrialBalance");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/month-end-checklist" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpMonthEndChecklist");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/summary" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpFinanceSummary");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/gl-accounts" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpGLAccounts");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountPayables");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountReceivables");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cost-candidates" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpCostCandidates");
@@ -746,7 +784,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
             new ListAccountReceivablesQuery(" org-001 ", " env-dev ", "open", " CUS-001 ", 0, 10),
             CancellationToken.None);
         var costs = await new ListCostCandidatesQueryHandler(dbContext).Handle(
-            new ListCostCandidatesQuery(" org-001 ", " env-dev ", "pending", " production ", 0, 10),
+            new ListCostCandidatesQuery(" org-001 ", " env-dev ", "posted", " production ", 0, 10),
             CancellationToken.None);
 
         Assert.Equal(1, payables.Total);
@@ -754,7 +792,18 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal(1, receivables.Total);
         Assert.Equal("AR-001", Assert.Single(receivables.Items).ReceivableNo);
         Assert.Equal(1, costs.Total);
-        Assert.Equal("COST-001", Assert.Single(costs.Items).CandidateNo);
+        var cost = Assert.Single(costs.Items);
+        Assert.Equal("COST-001", cost.CandidateNo);
+        Assert.Equal("posted", cost.Status);
+        Assert.Equal(
+            dbContext.JournalVouchers.Single(voucher => voucher.SourceNo == cost.CandidateNo).VoucherNo,
+            cost.VoucherNo);
+        var accounts = await new ListGLAccountsQueryHandler(dbContext).Handle(
+            new ListGLAccountsQuery("org-001", "env-dev"), CancellationToken.None);
+        Assert.Contains(accounts.Items, account => account.Code == "5001");
+        var otherAccounts = await new ListGLAccountsQueryHandler(dbContext).Handle(
+            new ListGLAccountsQuery("org-001", "env-other"), CancellationToken.None);
+        Assert.Empty(otherAccounts.Items);
     }
 
     [Fact]

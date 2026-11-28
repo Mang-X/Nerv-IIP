@@ -1,4 +1,13 @@
 <script setup lang="ts">
+import { useMutation } from '@pinia/colada'
+import {
+  approveBusinessConsoleErpPaymentExecutionMutationOptions,
+  executeBusinessConsoleErpPaymentExecutionMutationOptions,
+  matchBusinessConsoleErpCashReceiptMutationOptions,
+  registerBusinessConsoleErpCashReceiptMutationOptions,
+} from '@nerv-iip/api-client'
+import { makeIdempotencyKey, unwrapData } from '@/composables/erp/erpDocumentList'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { usePermission } from '@/composables/usePermission'
 import { useRoute, useRouter } from 'vue-router'
 import { queryText } from '@/components/erp/costRecovery'
@@ -19,7 +28,6 @@ import {
 } from '@/composables/erp/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/shared/usePagedList'
-import { buildKpiTrend } from '@/utils/kpiTrend'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -119,6 +127,7 @@ const receivableColumns: NvDataTableColumn<BusinessConsoleErpReceivableItem>[] =
     accessor: (r) => r.openAmount ?? 0,
   },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'settlement', header: '操作' },
 ]
 const payableColumns: NvDataTableColumn<BusinessConsoleErpPayableItem>[] = [
   {
@@ -142,6 +151,7 @@ const payableColumns: NvDataTableColumn<BusinessConsoleErpPayableItem>[] = [
     accessor: (r) => r.openAmount ?? 0,
   },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'settlement', header: '操作' },
 ]
 
 /** 应收 / 应付各自的读面六档状态：两张表分别有可能失败，不能共用一个结论。 */
@@ -201,60 +211,138 @@ const summaryUnavailableNote = computed(() => {
   if (summaryError.value != null) return '财务摘要读取失败，当前无法判断未结余额。'
   return '正在读取财务摘要…'
 })
-/**
- * 迷你图（#1395）与全库口径（#1418 B5）的交叉点。
- *
- * #1395 原本用当前页的 `createdAtUtc` 累加出一条真实曲线，那是配着「当前列表 N 笔合计」
- * 的页内读数才成立的。头条数字换成全库余额之后，再挂一条 10 行拼出来的曲线就是拿一页
- * 的形状冒充全书走势——正是 B5 要消灭的那类穿帮。**全局余额没有对应的时间序列读面**，
- * 所以这里不传 realSeries，由 buildKpiTrend 回落到确定性补形状：它自带 `synthetic` 标记
- * 且不发日期标签，悬停不会谎称某天是多少。真曲线要等后端补按日余额聚合。
- */
-const settlementTrends = computed(() => ({
-  receivable: summaryTrustworthy.value
-    ? buildKpiTrend('erp.arap.receivable', summary.value?.openReceivableAmount, {
-        kind: 'amount',
-        polarity: 'neutral',
+const settlementCells = computed<NvMetricStripCell[]>(() =>
+  [
+    { key: 'receivable', label: '应收未结', balances: summary.value?.receivablesByCurrency },
+    { key: 'payable', label: '应付未结', balances: summary.value?.payablesByCurrency },
+  ].flatMap(({ key, label, balances }) =>
+    summaryTrustworthy.value && balances?.length
+      ? balances.map((balance) => ({
+          key: `${key}-${balance.currencyCode}`,
+          label: `${label} (${balance.currencyCode})`,
+          value: formatAmount(balance.openAmount, balance.currencyCode),
+        }))
+      : [
+          {
+            key,
+            label,
+            value: UNAVAILABLE_TEXT,
+            meta: summaryTrustworthy.value ? '无未结余额记录' : summaryUnavailableNote.value,
+          },
+        ],
+  ),
+)
+
+const businessContext = useBusinessContextStore()
+const registerCashReceipt = useMutation(registerBusinessConsoleErpCashReceiptMutationOptions())
+const matchCashReceipt = useMutation(matchBusinessConsoleErpCashReceiptMutationOptions())
+const approvePayment = useMutation(approveBusinessConsoleErpPaymentExecutionMutationOptions())
+const executePayment = useMutation(executeBusinessConsoleErpPaymentExecutionMutationOptions())
+
+const settlementOpen = shallowRef(false)
+const settlement = reactive({
+  kind: 'receivable' as 'receivable' | 'payable',
+  sourceNo: '',
+  maxAmount: 0,
+  currencyCode: '',
+  amount: '',
+  date: '',
+  cashAccountCode: '',
+  executionNo: '',
+  idempotencyKey: '',
+})
+const settlementPending = computed(
+  () =>
+    registerCashReceipt.isLoading.value ||
+    matchCashReceipt.isLoading.value ||
+    approvePayment.isLoading.value ||
+    executePayment.isLoading.value,
+)
+const settlementLabel = computed(() =>
+  settlement.kind === 'receivable'
+    ? settlement.executionNo
+      ? '核销收款'
+      : '登记收款'
+    : settlement.executionNo
+      ? '执行付款'
+      : '批准付款',
+)
+
+function openSettlement(
+  kind: typeof settlement.kind,
+  sourceNo: string,
+  maxAmount: number,
+  currencyCode: string,
+) {
+  Object.assign(settlement, {
+    kind,
+    sourceNo,
+    maxAmount,
+    currencyCode,
+    amount: String(maxAmount),
+    date: '',
+    cashAccountCode: '',
+    executionNo: '',
+    idempotencyKey: makeIdempotencyKey(),
+  })
+  settlementOpen.value = true
+}
+
+async function submitSettlement() {
+  if (!canManage.value || settlementPending.value) return
+  const label = settlementLabel.value
+  const scope = {
+    organizationId: businessContext.organizationId,
+    environmentId: businessContext.environmentId,
+  }
+  try {
+    if (!settlement.executionNo) {
+      const amount = Number(settlement.amount)
+      if (
+        !(amount > 0 && amount <= settlement.maxAmount) ||
+        !settlement.date ||
+        !settlement.cashAccountCode.trim()
+      )
+        return
+      const body = {
+        ...scope,
+        amount,
+        cashAccountCode: settlement.cashAccountCode.trim(),
+        idempotencyKey: settlement.idempotencyKey,
+      }
+      const result =
+        settlement.kind === 'receivable'
+          ? await registerCashReceipt.mutateAsync({
+              body: { ...body, receivableNo: settlement.sourceNo, collectionDate: settlement.date },
+            })
+          : await approvePayment.mutateAsync({
+              body: { ...body, payableNo: settlement.sourceNo, paymentDate: settlement.date },
+            })
+      settlement.executionNo = unwrapData(result) ?? ''
+      if (!settlement.executionNo) throw new Error(`${label}未返回单号`)
+      notifySuccess(`${label}成功，单号 ${settlement.executionNo}`)
+      return
+    }
+    if (settlement.kind === 'receivable') {
+      await matchCashReceipt.mutateAsync({
+        path: { cashReceiptNo: settlement.executionNo },
+        body: scope,
       })
-    : undefined,
-  payable: summaryTrustworthy.value
-    ? buildKpiTrend('erp.arap.payable', summary.value?.openPayableAmount, {
-        kind: 'amount',
-        polarity: 'neutral',
+      void receivables.refresh()
+    } else {
+      await executePayment.mutateAsync({
+        path: { paymentExecutionNo: settlement.executionNo },
+        body: scope,
       })
-    : undefined,
-}))
-// 应收/应付是一对读数，通栏放一行才看得出资金缺口方向。
-const settlementCells = computed<NvMetricStripCell[]>(() => [
-  {
-    key: 'receivable',
-    label: '应收未结',
-    // 取不到数时绝不显 ¥0.00——那会被当成"确实没有欠款"。
-    value: summaryTrustworthy.value
-      ? formatAmount(summary.value?.openReceivableAmount)
-      : UNAVAILABLE_TEXT,
-    // 副行不挂筛选后的行数——筛选一变就和全局金额对不上，又是一次口径穿帮。
-    meta: summaryTrustworthy.value
-      ? '全库口径 · 不随下方筛选与分页变化'
-      : summaryUnavailableNote.value,
-    delta: settlementTrends.value.receivable?.delta,
-    series: settlementTrends.value.receivable?.series,
-    seriesLabels: settlementTrends.value.receivable?.seriesLabels,
-  },
-  {
-    key: 'payable',
-    label: '应付未结',
-    value: summaryTrustworthy.value
-      ? formatAmount(summary.value?.openPayableAmount)
-      : UNAVAILABLE_TEXT,
-    meta: summaryTrustworthy.value
-      ? '全库口径 · 不随下方筛选与分页变化'
-      : summaryUnavailableNote.value,
-    delta: settlementTrends.value.payable?.delta,
-    series: settlementTrends.value.payable?.series,
-    seriesLabels: settlementTrends.value.payable?.seriesLabels,
-  },
-])
+      void payables.refresh()
+    }
+    void refreshSummary()
+    settlementOpen.value = false
+    notifySuccess(`${label}成功`)
+  } catch (error) {
+    notifyOperationFailure(`${label}失败`, error, `${label}失败，请稍后重试。`)
+  }
+}
 
 const receivableOpen = shallowRef(false)
 const payableOpen = shallowRef(false)
@@ -441,6 +529,16 @@ async function submitPayable() {
         }}</span></template
       >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
+      <template #cell-settlement="{ row }">
+        <NvButton
+          v-if="canManage && row.receivableNo && row.currencyCode && (row.openAmount ?? 0) > 0"
+          size="sm"
+          variant="outline"
+          @click="openSettlement('receivable', row.receivableNo, row.openAmount!, row.currencyCode)"
+        >
+          登记收款
+        </NvButton>
+      </template>
     </NvDataTable>
 
     <NvToolbar :show-search="false">
@@ -497,6 +595,16 @@ async function submitPayable() {
         }}</span></template
       >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
+      <template #cell-settlement="{ row }">
+        <NvButton
+          v-if="canManage && row.payableNo && row.currencyCode && (row.openAmount ?? 0) > 0"
+          size="sm"
+          variant="outline"
+          @click="openSettlement('payable', row.payableNo, row.openAmount!, row.currencyCode)"
+        >
+          执行付款
+        </NvButton>
+      </template>
     </NvDataTable>
 
     <NvDialog v-if="canManage" v-model:open="receivableOpen">
@@ -651,6 +759,47 @@ async function submitPayable() {
               />登记应付</NvButton
             ></NvDialogFooter
           >
+        </form>
+      </NvDialogContent>
+    </NvDialog>
+    <NvDialog v-if="canManage" v-model:open="settlementOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>{{ settlementLabel }}</NvDialogTitle>
+          <NvDialogDescription
+            >{{ settlement.sourceNo }} · {{ settlement.currencyCode }}</NvDialogDescription
+          >
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitSettlement">
+          <template v-if="!settlement.executionNo">
+            <NvField>
+              <NvFieldLabel for="settlement-amount">金额</NvFieldLabel>
+              <NvInput
+                id="settlement-amount"
+                v-model="settlement.amount"
+                type="number"
+                min="0.01"
+                :max="settlement.maxAmount"
+                step="0.01"
+                required
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="settlement-date">业务日期</NvFieldLabel>
+              <NvInput id="settlement-date" v-model="settlement.date" type="date" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="settlement-account">资金科目</NvFieldLabel>
+              <NvInput id="settlement-account" v-model="settlement.cashAccountCode" required />
+            </NvField>
+          </template>
+          <p v-else>
+            单号 {{ settlement.executionNo }} ·
+            {{ formatAmount(Number(settlement.amount), settlement.currencyCode) }}
+          </p>
+          <NvDialogFooter>
+            <NvButton type="submit" :disabled="settlementPending">{{ settlementLabel }}</NvButton>
+          </NvDialogFooter>
         </form>
       </NvDialogContent>
     </NvDialog>

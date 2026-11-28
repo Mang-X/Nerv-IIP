@@ -1,7 +1,10 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -32,7 +35,8 @@ public sealed record OpportunityListItem(
     string CustomerCode,
     string Topic,
     string Status,
-    DateTime OpenedAtUtc);
+    DateTime OpenedAtUtc,
+    OpportunityId? OpportunityId = null);
 
 public sealed class ListOpportunitiesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListOpportunitiesQuery, ListOpportunitiesResponse>
@@ -68,7 +72,7 @@ public sealed class ListOpportunitiesQueryHandler(ApplicationDbContext dbContext
             .OrderByDescending(x => x.OpenedAtUtc)
             .Skip(page.Skip)
             .Take(page.Take)
-            .Select(x => new OpportunityListItem(x.OpportunityNo, x.CustomerCode, x.Topic, x.Status, x.OpenedAtUtc))
+            .Select(x => new OpportunityListItem(x.OpportunityNo, x.CustomerCode, x.Topic, x.Status, x.OpenedAtUtc, x.Id))
             .ToArrayAsync(cancellationToken);
 
         return new ListOpportunitiesResponse(items, total);
@@ -101,7 +105,9 @@ public sealed record QuotationListItem(
     decimal TotalAmount,
     IReadOnlyCollection<QuotationLineListItem> Lines,
     DateTime CreatedAtUtc,
-    string? ConvertedSalesOrderNo);
+    string? ConvertedSalesOrderNo,
+    OpportunityId? OpportunityId = null,
+    string? OpportunityNo = null);
 
 public sealed record QuotationLineListItem(
     string LineNo,
@@ -146,28 +152,68 @@ public sealed class ListQuotationsQueryHandler(ApplicationDbContext dbContext)
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(page.Skip)
             .Take(page.Take)
-            .Select(x => new QuotationListItem(
-                x.QuotationNo,
-                x.CustomerCode,
-                x.ExpiresOn,
-                x.Status.ToString(),
-                x.TotalAmount,
-                x.Lines
-                    .OrderBy(line => line.LineNo)
-                    .Select(line => new QuotationLineListItem(
-                        line.LineNo,
-                        line.SkuCode,
-                        line.UomCode,
-                        line.Quantity,
-                        line.UnitPrice,
-                        line.RequiredDate))
-                    .ToArray(),
-                x.CreatedAtUtc,
-                x.ConvertedSalesOrderNo))
+            .Select(QuotationProjection.Item(dbContext))
             .ToArrayAsync(cancellationToken);
 
         return new ListQuotationsResponse(items, total);
     }
+}
+
+public sealed record GetQuotationQuery(string OrganizationId, string EnvironmentId, string QuotationNo)
+    : IQuery<QuotationListItem?>;
+
+public sealed class GetQuotationQueryValidator : AbstractValidator<GetQuotationQuery>
+{
+    public GetQuotationQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+        RuleFor(query => query.QuotationNo).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class GetQuotationQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetQuotationQuery, QuotationListItem?>
+{
+    public Task<QuotationListItem?> Handle(GetQuotationQuery request, CancellationToken cancellationToken)
+    {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        return dbContext.Quotations.AsNoTracking()
+            .Where(x => x.OrganizationId == tenant.OrganizationId
+                && x.EnvironmentId == tenant.EnvironmentId
+                && x.QuotationNo == request.QuotationNo)
+            .Select(QuotationProjection.Item(dbContext))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+}
+
+internal static class QuotationProjection
+{
+    internal static Expression<Func<Quotation, QuotationListItem>> Item(ApplicationDbContext dbContext) =>
+        x => new QuotationListItem(
+            x.QuotationNo,
+            x.CustomerCode,
+            x.ExpiresOn,
+            x.Status.ToString(),
+            x.TotalAmount,
+            x.Lines
+                .OrderBy(line => line.LineNo)
+                .Select(line => new QuotationLineListItem(
+                    line.LineNo,
+                    line.SkuCode,
+                    line.UomCode,
+                    line.Quantity,
+                    line.UnitPrice,
+                    line.RequiredDate))
+                .ToArray(),
+            x.CreatedAtUtc,
+            x.ConvertedSalesOrderNo,
+            x.OpportunityId,
+            dbContext.Opportunities
+                .Where(opportunity => opportunity.Id == x.OpportunityId
+                    && opportunity.OrganizationId == x.OrganizationId
+                    && opportunity.EnvironmentId == x.EnvironmentId)
+                .Select(opportunity => opportunity.OpportunityNo)
+                .FirstOrDefault());
 }
 
 public sealed record ListSalesOrdersQuery(
@@ -574,7 +620,8 @@ public sealed record CostCandidateListItem(
     decimal Amount,
     string CurrencyCode,
     string Status,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? VoucherNo);
 
 public sealed class ListCostCandidatesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCostCandidatesQuery, ListCostCandidatesResponse>
@@ -588,34 +635,49 @@ public sealed class ListCostCandidatesQueryHandler(ApplicationDbContext dbContex
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
-        // Cost candidates do not yet carry a persisted lifecycle status; pending is the only list status.
-        if (!string.IsNullOrWhiteSpace(request.Status)
-            && !string.Equals(request.Status, "pending", StringComparison.OrdinalIgnoreCase))
+        var vouchers = dbContext.JournalVouchers.AsNoTracking()
+            .Where(x => x.OrganizationId == tenant.OrganizationId
+                && x.EnvironmentId == tenant.EnvironmentId
+                && x.SourceType == JournalVoucherSourceType.CostCandidate.Code);
+        var rows = query.Select(candidate => new
         {
-            query = query.Where(x => false);
+            Candidate = candidate,
+            VoucherNo = vouchers.Where(voucher => voucher.SourceNo == candidate.CandidateNo)
+                .Select(voucher => voucher.VoucherNo).FirstOrDefault(),
+        });
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            rows = request.Status.ToLowerInvariant() switch
+            {
+                "posted" => rows.Where(x => x.VoucherNo != null),
+                "pending" => rows.Where(x => x.VoucherNo == null),
+                _ => rows.Where(x => false),
+            };
         }
 
         if (keyword != null)
         {
-            query = query.Where(x =>
-                x.CandidateNo.Contains(keyword)
-                || x.SourceType.Contains(keyword)
-                || x.SourceDocumentNo.Contains(keyword));
+            rows = rows.Where(x =>
+                x.Candidate.CandidateNo.Contains(keyword)
+                || x.Candidate.SourceType.Contains(keyword)
+                || x.Candidate.SourceDocumentNo.Contains(keyword));
         }
 
-        var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(x => x.CreatedAtUtc)
+        var total = await rows.CountAsync(cancellationToken);
+        var items = await rows
+            .OrderByDescending(x => x.Candidate.CreatedAtUtc)
             .Skip(page.Skip)
             .Take(page.Take)
             .Select(x => new CostCandidateListItem(
-                x.CandidateNo,
-                x.SourceType,
-                x.SourceDocumentNo,
-                x.Amount,
-                x.CurrencyCode,
-                "pending",
-                x.CreatedAtUtc))
+                x.Candidate.CandidateNo,
+                x.Candidate.SourceType,
+                x.Candidate.SourceDocumentNo,
+                x.Candidate.Amount,
+                x.Candidate.CurrencyCode,
+                x.VoucherNo == null ? "pending" : "posted",
+                x.Candidate.CreatedAtUtc,
+                x.VoucherNo))
             .ToArrayAsync(cancellationToken);
 
         return new ListCostCandidatesResponse(items, total);
@@ -730,6 +792,26 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
             .ToArrayAsync(cancellationToken);
 
         return new ListJournalVouchersResponse(items, total);
+    }
+}
+
+public sealed record ListGLAccountsQuery(string OrganizationId, string EnvironmentId) : IQuery<GLAccountListResponse>;
+
+public sealed record GLAccountListResponse(IReadOnlyCollection<GLAccountListItem> Items);
+public sealed record GLAccountListItem(string Code, string Name);
+
+public sealed class ListGLAccountsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListGLAccountsQuery, GLAccountListResponse>
+{
+    public async Task<GLAccountListResponse> Handle(ListGLAccountsQuery request, CancellationToken cancellationToken)
+    {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var items = await dbContext.GLAccounts.AsNoTracking()
+            .Where(account => account.OrganizationId == tenant.OrganizationId && account.EnvironmentId == tenant.EnvironmentId)
+            .OrderBy(account => account.Code)
+            .Select(account => new GLAccountListItem(account.Code, account.Name))
+            .ToArrayAsync(cancellationToken);
+        return new GLAccountListResponse(items);
     }
 }
 

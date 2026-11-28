@@ -141,7 +141,29 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   retryBusinessConsoleWmsOutboundInventoryPosting: wms.retryOutboundPosting,
 }))
 
+vi.mock('@/composables/erp/useErpProcurement', () => ({
+  useErpPurchaseOrders: () => ({
+    filters: reactive({}),
+    total: shallowRef(1),
+    items: shallowRef([
+      {
+        purchaseOrderNo: 'PO-1',
+        siteCode: 'SITE-001',
+        lines: [{ lineNo: '30', skuCode: 'SKU-001', uomCode: 'box', openQuantity: 5 }],
+      },
+    ]),
+    pending: shallowRef(false),
+  }),
+}))
+
 vi.mock('@/composables/wms', () => ({
+  useWmsPickingTasks: () => ({
+    filters: reactive({}),
+    pickingTasks: shallowRef([]),
+    pickingTasksPending: shallowRef(false),
+    pickingTasksError: shallowRef(undefined),
+    pickingTasksTotal: shallowRef(0),
+  }),
   createWmsIdempotencyKey: wms.createIdempotencyKey,
   useWmsInboundOrders: vi.fn(() => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),

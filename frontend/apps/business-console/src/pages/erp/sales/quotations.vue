@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
 import { usePermission } from '@/composables/usePermission'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpQuotationItem } from '@nerv-iip/api-client'
@@ -62,6 +63,7 @@ definePage({
   meta: { requiresAuth: true, title: '销售报价', requiredPermissions: ['business.erp.sales.read'] },
 })
 
+const quotationRoute = useRoute()
 const quotations = useErpQuotations()
 const auth = useAuthStore()
 function canConvert(row: BusinessConsoleErpQuotationItem) {
@@ -89,6 +91,7 @@ const statusFilter = computed({
 })
 
 const columns: NvDataTableColumn<BusinessConsoleErpQuotationItem>[] = [
+  { key: 'opportunityNo', header: '来源商机', accessor: (row) => row.opportunityNo ?? '—' },
   {
     key: 'quotationNo',
     header: '报价单号',
@@ -151,8 +154,16 @@ const quotationCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
+const selectedQuotation = shallowRef<BusinessConsoleErpQuotationItem>()
+const quotationDetailOpen = shallowRef(false)
+function openQuotationDetail(row: BusinessConsoleErpQuotationItem) {
+  selectedQuotation.value = row
+  quotationDetailOpen.value = true
+}
+
 const open = shallowRef(false)
 const form = reactive({
+  opportunityId: '',
   customerCode: '',
   expiresOn: '',
   skuCode: '',
@@ -181,6 +192,7 @@ const invalid = computed(() => ({
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
+  form.opportunityId = ''
   form.customerCode = ''
   form.expiresOn = ''
   form.skuCode = ''
@@ -192,6 +204,22 @@ function openDialog() {
   open.value = true
 }
 
+watch(
+  () => quotationRoute.query,
+  (query) => {
+    if (
+      !can(P.erpSalesManage) ||
+      typeof query.opportunityId !== 'string' ||
+      typeof query.customerCode !== 'string'
+    )
+      return
+    openDialog()
+    form.opportunityId = query.opportunityId
+    form.customerCode = query.customerCode
+  },
+  { immediate: true },
+)
+
 async function submit() {
   if (!can(P.erpSalesManage)) return
   showErrors.value = true
@@ -201,6 +229,7 @@ async function submit() {
   try {
     await quotations.createQuotation({
       customerCode: form.customerCode.trim(),
+      ...(form.opportunityId && { opportunityId: form.opportunityId }),
       expiresOn: form.expiresOn,
       lines: [
         {
@@ -314,6 +343,17 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-quotationNo="{ row }">
+        <NvButton
+          type="button"
+          size="sm"
+          variant="link"
+          class="px-0"
+          @click="openQuotationDetail(row)"
+        >
+          {{ row.quotationNo }}
+        </NvButton>
+      </template>
       <template #cell-customerCode="{ row }">
         <PartnerNameCell :code="row.customerCode" />
       </template>
@@ -360,6 +400,29 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       </template>
     </NvDataTable>
 
+    <NvDialog v-model:open="quotationDetailOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>销售报价 {{ selectedQuotation?.quotationNo }}</NvDialogTitle>
+          <NvDialogDescription>
+            <PartnerNameCell :code="selectedQuotation?.customerCode" />
+            <span v-if="selectedQuotation?.opportunityNo">
+              · 来源商机 {{ selectedQuotation.opportunityNo }}</span
+            >
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <ul class="grid gap-2">
+          <li
+            v-for="line in selectedQuotation?.lines"
+            :key="line.lineNo"
+            class="rounded-md border p-3"
+          >
+            第 {{ line.lineNo }} 行 · {{ line.skuCode }} · {{ line.quantity }} {{ line.uomCode }} ·
+            单价 {{ formatAmount(line.unitPrice) }}
+          </li>
+        </ul>
+      </NvDialogContent>
+    </NvDialog>
     <NvDialog v-if="can(P.erpSalesManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
@@ -375,6 +438,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               <NvEntityPicker
                 id="erp-quo-customer"
                 v-model="form.customerCode"
+                :disabled="Boolean(form.opportunityId)"
                 :options="customerOptions"
                 title="选择客户"
                 placeholder="选择客户"

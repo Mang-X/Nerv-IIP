@@ -318,6 +318,38 @@ describe('WMS operate actions', () => {
     )
   })
 
+  it('采购入库沿用采购订单行号和采购单位', async () => {
+    wms.permissionCodes.push('business.erp.procurement.read')
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '新建入库单')!
+      .trigger('click')
+    setInput('#wms-in-srctype', 'purchase-order')
+    await flushPromises()
+    setInput('#wms-in-srcid', 'PO-1')
+    await flushPromises()
+    setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wms.createInbound).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        sourceDocumentType: 'purchase-order',
+        sourceDocumentId: 'PO-1',
+        lines: [
+          expect.objectContaining({
+            lineNo: '30',
+            skuCode: 'SKU-001',
+            uomCode: 'box',
+            receivedQuantity: 5,
+          }),
+        ],
+      }),
+    )
+  })
+
   it('creates an inbound order with a line item', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()

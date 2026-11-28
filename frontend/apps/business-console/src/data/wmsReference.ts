@@ -66,6 +66,7 @@ export const WMS_OUTBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
  * 所以字面量本身可以自由选取。
  */
 export const WMS_INBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
+  { value: 'purchase-order', label: '采购订单' },
   { value: 'inventory-transfer', label: '库存调拨' },
 ]
 

@@ -19,8 +19,9 @@ namespace Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 
 public sealed record OpenOpportunityRequest(string OrganizationId, string EnvironmentId, string? OpportunityNo, string CustomerCode, string Topic, string? IdempotencyKey = null);
 public sealed record OpenOpportunityResponse(OpportunityId OpportunityId);
-public sealed record CreateQuotationRequest(string OrganizationId, string EnvironmentId, string? QuotationNo, string CustomerCode, DateOnly ExpiresOn, IReadOnlyCollection<QuotationCommandLine> Lines, string? IdempotencyKey = null);
+public sealed record CreateQuotationRequest(string OrganizationId, string EnvironmentId, string? QuotationNo, string CustomerCode, DateOnly ExpiresOn, IReadOnlyCollection<QuotationCommandLine> Lines, string? IdempotencyKey = null, OpportunityId? OpportunityId = null);
 public sealed record CreateQuotationResponse(QuotationId QuotationId);
+public sealed record GetQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo);
 public sealed record ApproveQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo);
 public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string SiteCode, string? IdempotencyKey = null);
 /// <summary>报价转订单响应：<paramref name="ReusedExistingOrder"/> 为 true 表示报价已转出，本次幂等返回既有订单而未新建。</summary>
@@ -99,6 +100,7 @@ public sealed record OpenAccountingPeriodResponse(AccountingPeriodId AccountingP
 public sealed record CloseAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, string ClosedBy, string Reason);
 public sealed record ReopenAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, string ReopenedBy, string Reason);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListGLAccountsRequest(string OrganizationId, string EnvironmentId);
 public sealed record GetFinancePeriodRequest(string OrganizationId, string EnvironmentId, DateOnly PeriodStartDate, DateOnly PeriodEndDate);
 public sealed record ListFinanceDocumentsRequest(
     string OrganizationId,
@@ -140,7 +142,7 @@ public sealed class CreateQuotationEndpoint(ISender sender) : ErpEndpoint<Create
 
     public override async Task HandleAsync(CreateQuotationRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateQuotationCommand(req.OrganizationId, req.EnvironmentId, req.QuotationNo, req.CustomerCode, req.ExpiresOn, req.Lines, req.IdempotencyKey), ct);
+        var id = await sender.Send(new CreateQuotationCommand(req.OrganizationId, req.EnvironmentId, req.QuotationNo, req.CustomerCode, req.ExpiresOn, req.Lines, req.IdempotencyKey, req.OpportunityId), ct);
         await Send.OkAsync(new CreateQuotationResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -153,6 +155,23 @@ public sealed class ListQuotationsEndpoint(ISender sender) : ErpEndpoint<ListSal
     {
         var response = await sender.Send(new ListQuotationsQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetQuotationEndpoint(ISender sender) : ErpEndpoint<GetQuotationRequest, ResponseData<QuotationListItem>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<GetQuotationEndpoint>());
+
+    public override async Task HandleAsync(GetQuotationRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetQuotationQuery(req.OrganizationId, req.EnvironmentId, req.QuotationNo), ct);
+        if (result is null)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -466,6 +485,17 @@ public sealed class GetFinanceSummaryEndpoint(ISender sender) : ErpEndpoint<GetF
     }
 }
 
+public sealed class ListGLAccountsEndpoint(ISender sender) : ErpEndpoint<ListGLAccountsRequest, ResponseData<GLAccountListResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ListGLAccountsEndpoint>());
+
+    public override async Task HandleAsync(ListGLAccountsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListGLAccountsQuery(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class GetTrialBalanceEndpoint(ISender sender) : ErpEndpoint<GetFinancePeriodRequest, ResponseData<TrialBalanceResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetTrialBalanceEndpoint>());
@@ -562,6 +592,7 @@ public static class ErpSalesEndpointContracts
         new(typeof(ListOpportunitiesEndpoint), "GET", "/api/business/v1/erp/opportunities", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpOpportunities"),
         new(typeof(CreateQuotationEndpoint), "POST", "/api/business/v1/erp/quotations", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpQuotation"),
         new(typeof(ListQuotationsEndpoint), "GET", "/api/business/v1/erp/quotations", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpQuotations"),
+        new(typeof(GetQuotationEndpoint), "GET", "/api/business/v1/erp/quotations/{quotationNo}", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "getErpQuotation"),
         new(typeof(ApproveQuotationEndpoint), "POST", "/api/business/v1/erp/quotations/{quotationId}/approve", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "approveErpQuotation"),
         new(typeof(CreateSalesOrderEndpoint), "POST", "/api/business/v1/erp/sales-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpSalesOrder"),
         new(typeof(ChangeSalesOrderLineEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "changeErpSalesOrderLine"),
@@ -607,6 +638,7 @@ public static class ErpFinanceEndpointContracts
         new(typeof(GetTrialBalanceEndpoint), "GET", "/api/business/v1/erp/finance/trial-balance", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpTrialBalance"),
         new(typeof(GetMonthEndChecklistEndpoint), "GET", "/api/business/v1/erp/finance/month-end-checklist", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpMonthEndChecklist"),
         new(typeof(GetFinanceSummaryEndpoint), "GET", "/api/business/v1/erp/finance/summary", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpFinanceSummary"),
+        new(typeof(ListGLAccountsEndpoint), "GET", "/api/business/v1/erp/finance/gl-accounts", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpGLAccounts"),
         new(typeof(ListAccountPayablesEndpoint), "GET", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountPayables"),
         new(typeof(ListAccountReceivablesEndpoint), "GET", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountReceivables"),
         new(typeof(ListCostCandidatesEndpoint), "GET", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpCostCandidates"),

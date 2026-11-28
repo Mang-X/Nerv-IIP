@@ -119,6 +119,21 @@ describe('PlanningWorkbench', () => {
     wrapper.unmount()
   })
 
+  it('从需求行带入原物料、单位、站点、日期与数量', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    await wrapper
+      .findAll('.cell-actions button')
+      .filter((button) => button.text() === '带入 MPS')[1]!
+      .trigger('click')
+    expect(planningSpies.mpsFormRef).toMatchObject({
+      skuCode: 'SKU-FG-2000',
+      uomCode: 'pcs',
+      siteCode: 'SITE-01',
+      bucketDate: '2026-08-20',
+      quantity: 8,
+    })
+  })
+
   it('新建 MPS 选料预填基本单位，允许覆盖并在换至未知物料时清除', async () => {
     const wrapper = mount(PlanningWorkbench)
     await wrapper

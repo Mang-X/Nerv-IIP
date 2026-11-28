@@ -63,6 +63,12 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   }
 })
 
+vi.mock('@pinia/colada', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pinia/colada')>()),
+  useQuery: () => ({ data: shallowRef(undefined) }),
+  useMutation: () => ({ isLoading: shallowRef(false), mutateAsync: vi.fn() }),
+}))
+
 const state = vi.hoisted(() => ({
   summaryError: undefined as Error | undefined,
   payableError: undefined as Error | undefined,
@@ -99,6 +105,12 @@ vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpFinanceSummary: () => ({
     ready: computed(() => true),
     summary: computed(() => ({
+      receivablesByCurrency: [
+        { currencyCode: 'CNY', openAmount: 14_853_060 },
+        { currencyCode: 'USD', openAmount: 120 },
+      ],
+      payablesByCurrency: [{ currencyCode: 'CNY', openAmount: 3_458_646.25 }],
+      costCandidatesByCurrency: [{ currencyCode: 'CNY', openAmount: 1_387_052.5 }],
       openReceivableAmount: 14_853_060,
       openPayableAmount: 3_458_646.25,
       costCandidateAmount: 1_387_052.5,
@@ -211,7 +223,8 @@ describe('ERP finance AR/AP page', () => {
         new Set(['all', 'open', 'settled']),
       )
     }
-    expect(wrapper.text()).toContain('未结')
+    expect(wrapper.text()).toContain('应收未结 (CNY)')
+    expect(wrapper.text()).toContain('应收未结 (USD)')
     expect(wrapper.text()).toContain('已结清')
   })
 })

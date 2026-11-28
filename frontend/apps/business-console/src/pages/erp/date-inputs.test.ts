@@ -8,6 +8,14 @@ import PurchaseOrders from './procurement/purchase-orders.vue'
 import Quotations from './sales/quotations.vue'
 import Vouchers from './finance/vouchers.vue'
 
+vi.mock('@pinia/colada', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pinia/colada')>()),
+  useQuery: () => ({ data: shallowRef(undefined) }),
+}))
+vi.mock('@/stores/businessContext', () => ({
+  useBusinessContextStore: () => ({ organizationId: 'org-001', environmentId: 'env-dev' }),
+}))
+
 const state = vi.hoisted(() => ({ current: undefined as unknown, save: vi.fn() }))
 vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpRequestsForQuotation: () => state.current,
@@ -157,10 +165,12 @@ const cases = [
     page: Vouchers,
     open: '过账凭证',
     fields: {
-      'erp-jv-amount': '100',
-      'erp-jv-debit': '1401',
-      'erp-jv-credit': '2202',
-      'erp-jv-memo': '采购材料入账',
+      'erp-jv-amount-3': '100',
+      'erp-jv-amount-4': '100',
+      'erp-jv-account-3': '1401',
+      'erp-jv-account-4': '2202',
+      'erp-jv-memo-3': '采购材料入账',
+      'erp-jv-memo-4': '采购材料入账',
     },
     dates: ['erp-jv-date'],
     payload: {

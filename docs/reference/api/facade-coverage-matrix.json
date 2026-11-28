@@ -1161,6 +1161,19 @@
     {
       "service": "Erp",
       "method": "GET",
+      "route": "/api/business/v1/erp/finance/gl-accounts",
+      "operationId": "listErpGLAccounts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpGLAccounts"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
       "route": "/api/business/v1/erp/finance/trial-balance",
       "operationId": "getErpTrialBalance",
       "classification": "exposed",
@@ -1394,6 +1407,19 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleErpQuotations"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/quotations/{quotationNo}",
+      "operationId": "getErpQuotation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpQuotation"
       ]
     },
     {

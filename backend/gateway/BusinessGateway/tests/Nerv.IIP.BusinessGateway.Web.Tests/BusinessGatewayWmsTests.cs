@@ -923,8 +923,8 @@ public sealed partial class BusinessGatewayWmsTests
             organizationId = "org-001",
             environmentId = "env-dev",
             idempotencyKey = "IN-NEW",
-            sourceDocumentType = "purchase-receipt",
-            sourceDocumentId = "PR-001",
+            sourceDocumentType = "purchase-order",
+            sourceDocumentId = "PO-001",
             siteCode = "S1",
             lines = new[]
             {
@@ -1033,6 +1033,7 @@ public sealed partial class BusinessGatewayWmsTests
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("IN-NEW", wms.LastCreateInboundRequest!.IdempotencyKey);
         var createInboundLine = Assert.Single(wms.LastCreateInboundRequest.Lines);
+        Assert.Equal("10", createInboundLine.LineNo);
         Assert.Equal(new DateOnly(2026, 1, 15), createInboundLine.ProductionDate);
         Assert.Equal(new DateOnly(2027, 1, 15), createInboundLine.ExpiryDate);
         Assert.Equal("inbound-order-001", wms.LastCreatePutawayRequest!.InboundOrderId);

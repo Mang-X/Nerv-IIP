@@ -101,6 +101,28 @@ public sealed class ListBusinessConsoleErpQuotationsEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/sales/quotations/{quotationNo}")]
+[BusinessGatewayOperationId("getBusinessConsoleErpQuotation")]
+public sealed class GetBusinessConsoleErpQuotationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetErpQuotationRequest, BusinessConsoleErpQuotationItem>(
+        auth,
+        BusinessGatewayPermissions.ErpSalesRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetErpQuotationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetErpQuotationRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpQuotationItem> ForwardAsync(
+        BusinessConsoleGetErpQuotationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.GetQuotationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/sales/quotations")]
 [BusinessGatewayOperationId("createBusinessConsoleErpQuotation")]
 public sealed class CreateBusinessConsoleErpQuotationEndpoint(
@@ -588,6 +610,28 @@ public sealed class GetBusinessConsoleErpFinanceSummaryEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.GetFinanceSummaryAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/gl-accounts")]
+[BusinessGatewayOperationId("listBusinessConsoleErpGLAccounts")]
+public sealed class ListBusinessConsoleErpGLAccountsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpContextRequest, BusinessConsoleErpGLAccountListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpContextRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpContextRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpGLAccountListResponse> ForwardAsync(
+        BusinessConsoleErpContextRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListGLAccountsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console ERP")]

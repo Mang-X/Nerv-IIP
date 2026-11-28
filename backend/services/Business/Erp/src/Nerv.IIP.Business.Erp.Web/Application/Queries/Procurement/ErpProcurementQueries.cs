@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Queries;
 using Nerv.IIP.Contracts.Erp;
@@ -31,7 +32,8 @@ public sealed record RequestForQuotationResponse(
     string Status,
     IReadOnlyCollection<string> SupplierCodes,
     IReadOnlyCollection<RequestForQuotationLineResponse> Lines,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    RequestForQuotationId? RfqId = null);
 
 public sealed record RequestForQuotationLineResponse(
     string LineNo,
@@ -95,7 +97,8 @@ public sealed class ListRequestsForQuotationQueryHandler(ApplicationDbContext db
                         line.SiteCode,
                         line.RequiredDate))
                     .ToArray(),
-                x.CreatedAtUtc))
+                x.CreatedAtUtc,
+                x.Id))
             .ToArrayAsync(cancellationToken);
 
         return new ListRequestsForQuotationResponse(items, total);
@@ -134,7 +137,8 @@ public sealed record SupplierQuotationResponse(
     string SupplierCode,
     decimal TotalAmount,
     IReadOnlyCollection<SupplierQuotationLineResponse> Lines,
-    DateTime ReceivedAtUtc);
+    DateTime ReceivedAtUtc,
+    SupplierQuotationId? SupplierQuotationId = null);
 
 public sealed record SupplierQuotationLineResponse(
     string LineNo,
@@ -200,7 +204,8 @@ public sealed class ListSupplierQuotationsQueryHandler(ApplicationDbContext dbCo
                         line.Quantity * line.UnitPrice,
                         line.PromisedDate))
                     .ToArray(),
-                x.ReceivedAtUtc))
+                x.ReceivedAtUtc,
+                x.Id))
             .ToArrayAsync(cancellationToken);
 
         return new ListSupplierQuotationsResponse(items, total);

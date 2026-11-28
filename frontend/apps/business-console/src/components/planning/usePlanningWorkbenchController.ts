@@ -588,6 +588,15 @@ export function usePlanningWorkbenchController() {
     mpsForm.bucketDate = new Date().toISOString().slice(0, 10)
     mpsForm.quantity = 0
   }
+  function carryDemandIntoMps(row: BusinessConsoleDemandSourceItem) {
+    newMpsBucket()
+    mpsForm.skuCode = row.skuCode ?? ''
+    mpsForm.uomCode = row.uomCode ?? ''
+    mpsForm.siteCode = row.siteCode ?? ''
+    mpsForm.bucketDate = row.dueDate ?? ''
+    mpsForm.quantity = row.quantity ?? 0
+    mpsOpen.value = true
+  }
   const { submitMrpRun, mrpRunInProgress } = usePlanningMrpRunDialog(
     { runMrp, activeMrpRun },
     mrpOpen,
@@ -630,6 +639,26 @@ export function usePlanningWorkbenchController() {
         reference
           ? `计划建议已承接到 ${downstreamLabel(response.data?.downstreamService, response.data?.downstreamDocumentType)}「${reference}」。`
           : '计划建议已接受。',
+        reference &&
+          (isMesWorkOrderDownstream(
+            response.data?.downstreamService,
+            response.data?.downstreamDocumentType,
+          )
+            ? hasPermission(P.mesWorkOrdersRead)
+            : row.suggestionType === 'planned-purchase' && hasPermission(P.erpProcurementRead))
+          ? {
+              label: '查看承接单据',
+              onClick: () => {
+                void router.push(
+                  downstreamRoute(
+                    response.data?.downstreamService,
+                    response.data?.downstreamDocumentType,
+                    reference,
+                  ),
+                )
+              },
+            }
+          : undefined,
       )
       cancelTarget.value = null
     } catch (error) {
@@ -810,6 +839,7 @@ export function usePlanningWorkbenchController() {
     mrpRunsPending,
     mrpSuggestionSeries,
     navigateToSuggestion,
+    carryDemandIntoMps,
     newMpsBucket,
     openBomContext,
     openPeggingSource,
