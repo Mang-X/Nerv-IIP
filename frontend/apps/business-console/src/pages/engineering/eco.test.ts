@@ -40,13 +40,6 @@ vi.mock('vue-router', async (original) => ({
   useRoute: () => routeState,
 }))
 
-vi.mock('@nerv-iip/api-client', async (original) => ({
-  ...(await original<typeof import('@nerv-iip/api-client')>()),
-  listBusinessConsoleMesEngineeringChangeWorkOrderImpacts: stub.impacts,
-  rescheduleBusinessConsoleEngineeringChange: stub.reschedule,
-  cancelScheduledBusinessConsoleEngineeringChange: stub.cancelSchedule,
-}))
-
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: stub.permissionCodes } }),
 }))
@@ -70,6 +63,9 @@ vi.mock('@nerv-iip/api-client', async (original) => {
     })
   return {
     ...(await original<typeof import('@nerv-iip/api-client')>()),
+    listBusinessConsoleMesEngineeringChangeWorkOrderImpacts: stub.impacts,
+    rescheduleBusinessConsoleEngineeringChange: stub.reschedule,
+    cancelScheduledBusinessConsoleEngineeringChange: stub.cancelSchedule,
     listBusinessConsoleEngineeringBomsQueryOptions: list(eboms),
     listBusinessConsoleEngineeringManufacturingBomsQueryOptions: list([]),
     listBusinessConsoleEngineeringRoutingsQueryOptions: list([
