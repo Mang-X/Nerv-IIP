@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Host.Tests;
@@ -166,6 +167,13 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
         start.Environment["InternalService__BearerToken"] = "process-test-internal-token";
         start.Environment["Logging__LogLevel__Default"] = "Warning";
         start.Environment["Logging__LogLevel__Microsoft.Hosting.Lifetime"] = "Warning";
+        var simulation = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "SimulatedHostProfile.json"))
+            .Build();
+        foreach (var (key, value) in simulation.AsEnumerable().Where(pair => pair.Value is not null))
+        {
+            start.Environment[key.Replace(":", "__", StringComparison.Ordinal)] = value;
+        }
         start.Environment["Simulated__Enabled"] = "true";
         start.Environment["Simulated__Phases__Normal"] = "00:00:01";
         start.Environment["Simulated__Phases__Degrading"] = "00:00:01";
@@ -487,10 +495,10 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
         {
             try
             {
-                using var document = await JsonDocument.ParseAsync(
-                    context.Request.InputStream,
-                    cancellationToken: _shutdown.Token);
-                var root = document.RootElement;
+                using var document = context.Request.HasEntityBody
+                    ? await JsonDocument.ParseAsync(context.Request.InputStream, cancellationToken: _shutdown.Token)
+                    : null;
+                var root = document?.RootElement ?? default;
                 object response = new { success = true, message = "ok", code = 0, data = new { } };
                 switch (context.Request.Url?.AbsolutePath)
                 {
@@ -538,6 +546,10 @@ public sealed class SimulatedConnectorHostProcessTests : IDisposable
 
                         break;
                     }
+                    case "/api/business/v1/iiot/connector-configs/desired":
+                        response = new { success = true, data = Array.Empty<object>() };
+                        break;
+
                     case "/api/business/v1/iiot/samples":
                     {
                         var source = root.GetProperty("sourceSystem").GetString()!;

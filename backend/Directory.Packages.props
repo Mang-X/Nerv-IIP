@@ -19,6 +19,7 @@
     <PackageVersion Include="DotNetCore.CAP.RabbitMQ" Version="10.0.2" />
     <PackageVersion Include="DotNetCore.CAP.RedisStreams" Version="10.0.2" />
     <PackageVersion Include="FastEndpoints" Version="9.0.0" />
+    <PackageVersion Include="MQTTnet" Version="5.2.0.1603" />
     <PackageVersion Include="FastEndpoints.Swagger" Version="9.0.0" />
     <PackageVersion Include="FluentValidation" Version="12.2.0" />
     <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.1" />

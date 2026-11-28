@@ -68,7 +68,7 @@ public sealed class SimulatedScenarioEvaluatorTests
         var configuration = new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(
                 AppContext.BaseDirectory,
-                "SimulatedHostDevelopmentProfile.json"))
+                "SimulatedHostProfile.json"))
             .Build();
         var options = SimulatedConnectorOptions.Bind(configuration.GetSection("Simulated"));
         var evaluator = new SimulatedScenarioEvaluator(options);

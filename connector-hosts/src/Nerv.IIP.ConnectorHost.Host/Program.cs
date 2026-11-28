@@ -35,6 +35,17 @@ builder.Services.AddHttpClient<IConnectorTagManifestClient, HttpConnectorTagMani
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
     client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<ConnectorHostWorkerOptions>().BackendDeadlineSeconds);
 });
+if (builder.Configuration["Platform:IndustrialTelemetryBaseUrl"] is { } telemetryBaseUrl)
+{
+    builder.Services.AddHttpClient<HttpConnectorDesiredConfigClient>((services, client) =>
+    {
+        client.BaseAddress = new Uri(telemetryBaseUrl);
+        var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<ConnectorHostWorkerOptions>().BackendDeadlineSeconds);
+    });
+    builder.Services.AddHostedService<DynamicConnectorManager>();
+}
 if (builder.Configuration.GetValue("OpcUa:Enabled", false))
 {
     builder.Services.AddSingleton(_ => CreateOpcUaOptions(builder.Configuration));

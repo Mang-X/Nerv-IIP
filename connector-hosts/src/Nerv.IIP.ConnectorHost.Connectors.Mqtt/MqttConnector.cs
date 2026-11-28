@@ -393,6 +393,8 @@ public sealed class MqttConnector(
             $"mqtt:{options.ConnectorId}:{normalizedTagKey}:{bucketStartUnixMilliseconds}",
             "mqtt",
             $"{options.ConnectorHostId}/{options.ConnectorId}",
+            DeviceState: "running",
+            StateOccurredAtUtc: bucket.BucketEndUtc,
             FirstValue: bucket.FirstValue,
             LastValue: bucket.LastValue,
             CollectionConnectorId: options.EffectiveCollectionConnectorId);

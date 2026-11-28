@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using BusinessOeeAggregateBucket = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucket;
 using BusinessOeeAggregateDimension = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateDimension;
 using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest;
@@ -162,6 +163,21 @@ public interface IBusinessIndustrialTelemetryClient
 public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessIndustrialTelemetryClient
 {
+    public Task<TelemetryConnectorConfigItem[]> ListConnectorConfigsAsync(string token, string organizationId, string environmentId, CancellationToken ct) =>
+        SendAsync<TelemetryConnectorConfigItem[]>(token, HttpMethod.Get,
+            "/api/business/v1/iiot/connector-configs?" + ContextQuery(organizationId, environmentId), null, ct);
+
+    public Task<TelemetryConnectorConfigItem> SaveConnectorConfigAsync(string token, string organizationId, string environmentId, TelemetryConnectorConfigInput config, CancellationToken ct) =>
+        SendAsync<TelemetryConnectorConfigItem>(token, HttpMethod.Post, "/api/business/v1/iiot/connector-configs",
+            new { organizationId, environmentId, config }, ct);
+
+    public Task<bool> DeleteConnectorConfigAsync(string token, string organizationId, string environmentId, string connectorId, CancellationToken ct) =>
+        SendAsync<bool>(token, HttpMethod.Delete,
+            $"/api/business/v1/iiot/connector-configs/{Uri.EscapeDataString(connectorId)}?" + ContextQuery(organizationId, environmentId), null, ct);
+
+    public Task<TelemetryConnectionTestResult> TestConnectorConnectionAsync(string token, TelemetryConnectionTestInput input, CancellationToken ct) =>
+        SendAsync<TelemetryConnectionTestResult>(token, HttpMethod.Post, "/api/business/v1/iiot/connector-configs/test-connection", input, ct);
+
     private static readonly HashSet<string> EquipmentHealthRuleCodes = new(StringComparer.Ordinal)
     {
         "threshold-proximity",
@@ -223,7 +239,9 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 tag.ControlMaxValue,
                 tag.ControlAllowedValues ?? [],
                 tag.DisplayName,
-                tag.IsEnabled)).ToArray(), page.Total);
+                tag.IsEnabled,
+                tag.LatestValue,
+                tag.LatestSampledAtUtc)).ToArray(), page.Total);
     }
 
     public async Task<BusinessConsoleCreateOrUpdateTelemetryTagResponse> CreateOrUpdateTagAsync(
@@ -1115,7 +1133,9 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         decimal? ControlMaxValue = null,
         IReadOnlyCollection<string>? ControlAllowedValues = null,
         string? DisplayName = null,
-        bool IsEnabled = true);
+        bool IsEnabled = true,
+        decimal? LatestValue = null,
+        DateTimeOffset? LatestSampledAtUtc = null);
 
     private sealed record DownstreamTelemetryTagIdResponse(JsonElement TelemetryTagId);
 

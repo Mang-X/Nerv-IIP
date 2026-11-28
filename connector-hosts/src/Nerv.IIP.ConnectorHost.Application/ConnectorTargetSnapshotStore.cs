@@ -8,16 +8,42 @@ public sealed class ConnectorTargetSnapshotStore(
     TimeProvider timeProvider)
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(30);
-    private readonly ConcurrentDictionary<IConnector, Entry> _entries = new();
+    private readonly ConcurrentDictionary<IConnector, Entry> _entries =
+        new(connectors.Select(connector => KeyValuePair.Create(connector, new Entry())));
+
+    public void Add(IConnector connector) => _entries.TryAdd(connector, new Entry());
+
+    public async Task RemoveAsync(IConnector connector)
+    {
+        if (_entries.TryRemove(connector, out var entry))
+        {
+            Task? refresh;
+            lock (entry.Gate)
+            {
+                entry.Removed = true;
+                entry.RefreshRequested = false;
+                refresh = entry.RefreshTask;
+            }
+
+            if (refresh is not null)
+            {
+                await refresh;
+            }
+        }
+    }
 
     public void TriggerRefresh(CancellationToken cancellationToken, string? forceConnectorId = null)
     {
         var now = timeProvider.GetUtcNow();
-        foreach (var connector in connectors)
+        foreach (var (connector, entry) in _entries)
         {
-            var entry = _entries.GetOrAdd(connector, static _ => new Entry());
             lock (entry.Gate)
             {
+                if (entry.Removed)
+                {
+                    continue;
+                }
+
                 var forceRefresh = forceConnectorId is not null
                     && entry.Targets.Any(target =>
                         string.Equals(target.InstanceKey, forceConnectorId, StringComparison.Ordinal)
@@ -80,6 +106,7 @@ public sealed class ConnectorTargetSnapshotStore(
         public IReadOnlyList<ConnectorTarget> Targets { get; set; } = [];
         public DateTimeOffset? LastSuccessfulRefreshAtUtc { get; set; }
         public Task? RefreshTask { get; set; }
+        public bool Removed { get; set; }
         public bool RefreshRequested { get; set; }
     }
 }

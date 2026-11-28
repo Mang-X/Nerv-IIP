@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 using System.Reflection;
 using Nerv.IIP.Business.IndustrialTelemetry.Web;
 using System.Text.Json;
@@ -153,6 +154,12 @@ try
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
 
+    var seedEnabled = builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("IndustrialTelemetry:Seed:Enabled");
+    if (seedEnabled)
+    {
+        builder.Services.AddScoped<DevelopmentTelemetrySeedService>();
+    }
+
     var app = builder.Build();
     app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
@@ -166,6 +173,12 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    if (seedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<DevelopmentTelemetrySeedService>().SeedAsync(app.Lifetime.ApplicationStopping);
     }
 
     app.UseNervIipRequestLocalization();

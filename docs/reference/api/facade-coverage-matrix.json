@@ -1653,6 +1653,66 @@
     },
     {
       "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/connector-configs",
+      "operationId": "listBusinessIiotTelemetryConnectorConfigs",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleTelemetryConnectorConfigs"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/connector-configs",
+      "operationId": "saveBusinessIiotTelemetryConnectorConfig",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "saveBusinessConsoleTelemetryConnectorConfig"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "DELETE",
+      "route": "/api/business/v1/iiot/connector-configs/{connectorId}",
+      "operationId": "deleteBusinessIiotTelemetryConnectorConfig",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "deleteBusinessConsoleTelemetryConnectorConfig"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/connector-configs/test-connection",
+      "operationId": "testBusinessIiotTelemetryConnectorConnection",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "testBusinessConsoleTelemetryConnectorConnection"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/connector-configs/desired",
+      "operationId": "getBusinessIiotDesiredTelemetryConnectorConfigs",
+      "classification": "internal",
+      "rationale": "Authenticated Connector Host desired-state polling."
+    },
+    {
+      "service": "IndustrialTelemetry",
       "method": "POST",
       "route": "/api/business/v1/iiot/connector-tag-manifests",
       "operationId": "reportBusinessIiotConnectorTagManifest",

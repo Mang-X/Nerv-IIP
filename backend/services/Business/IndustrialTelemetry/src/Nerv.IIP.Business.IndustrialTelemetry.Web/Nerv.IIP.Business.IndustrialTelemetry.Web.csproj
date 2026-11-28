@@ -18,6 +18,7 @@
     <PackageReference Include="DotNetCore.CAP.PostgreSql" />
     <PackageReference Include="DotNetCore.CAP.RabbitMQ" />
     <PackageReference Include="FastEndpoints" />
+    <PackageReference Include="MQTTnet" />
     <PackageReference Include="FastEndpoints.Swagger" />
     <PackageReference Include="FluentValidation.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
@@ -42,6 +43,7 @@
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.EquipmentRuntime\Nerv.IIP.Contracts.EquipmentRuntime.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.MasterData\Nerv.IIP.Contracts.MasterData.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Notification\Nerv.IIP.Contracts.Notification.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP\Nerv.IIP.Messaging.CAP.csproj" />

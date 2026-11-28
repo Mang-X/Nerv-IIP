@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.ConnectorHost.Host.Tests" />
+  </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,6 +22,7 @@
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Mqtt\Nerv.IIP.ConnectorHost.Connectors.Mqtt.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.OpcUa\Nerv.IIP.ConnectorHost.Connectors.OpcUa.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Simulated\Nerv.IIP.ConnectorHost.Connectors.Simulated.csproj" />
+    <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj" />
     <ProjectReference Include="..\..\..\backend\common\Sdk\Nerv.IIP.Sdk.Ops\Nerv.IIP.Sdk.Ops.csproj" />
     <ProjectReference Include="..\..\..\backend\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
   </ItemGroup>

@@ -225,6 +225,14 @@ internal sealed partial class AppHostComposition
             .WithReference(redis)
             .WaitFor(businessMasterDataDatabase)
             .WaitFor(redis);
+        if (localDevelopmentAppHost)
+        {
+            businessMasterData
+                .WithEnvironment("Walkthrough__Seed__OrganizationId", connectorHostOrganizationId)
+                .WithEnvironment("Walkthrough__Seed__EnvironmentId", connectorHostEnvironmentId)
+                .WithHttpHealthCheck("/health");
+        }
+
         if (rabbitmq is not null)
         {
             businessMasterData = businessMasterData
@@ -533,6 +541,23 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessIndustrialTelemetryDatabase)
             .WaitFor(ops)
             .WaitFor(businessMasterData);
+        if (localDevelopmentAppHost)
+        {
+            var simulator = WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_DevSimulator>("dev-simulator"))
+                .WithEndpoint(port: fullStackEphemeral ? null : 15020, targetPort: fullStackEphemeral ? null : 15020,
+                    scheme: "tcp", name: "modbus", env: "DevSimulator__ModbusPort", isProxied: fullStackEphemeral)
+                .WithEndpoint(port: fullStackEphemeral ? null : 11883, targetPort: fullStackEphemeral ? null : 11883,
+                    scheme: "tcp", name: "mqtt", env: "DevSimulator__MqttPort", isProxied: fullStackEphemeral);
+            businessIndustrialTelemetry
+                .WithEnvironment("DevSimulator__ModbusEndpoint", simulator.GetEndpoint("modbus"))
+                .WithEnvironment("DevSimulator__MqttEndpoint", simulator.GetEndpoint("mqtt"))
+                .WithEnvironment("IndustrialTelemetry__Seed__Enabled", walkthroughSeedEnabledValue)
+                .WithEnvironment("IndustrialTelemetry__Seed__OrganizationId", connectorHostOrganizationId)
+                .WithEnvironment("IndustrialTelemetry__Seed__EnvironmentId", connectorHostEnvironmentId)
+                .WithHttpHealthCheck("/health")
+                .WaitFor(simulator);
+        }
+
         businessIndustrialTelemetry = WithRedisMessagingTransport(businessIndustrialTelemetry);
         if (rabbitmq is not null)
         {

@@ -4920,6 +4920,204 @@
         ]
       }
     },
+    "/api/business-console/v1/telemetry/connector-configs": {
+      "get": {
+        "tags": [
+          "Business Console Telemetry",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleTelemetryConnectorConfigs",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItemOf"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Business Console Telemetry",
+          "Api"
+        ],
+        "operationId": "saveBusinessConsoleTelemetryConnectorConfig",
+        "requestBody": {
+          "x-name": "BusinessConsoleSaveTelemetryConnectorConfigRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleSaveTelemetryConnectorConfigRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/telemetry/connector-configs/{connectorId}": {
+      "delete": {
+        "tags": [
+          "Business Console Telemetry",
+          "Api"
+        ],
+        "operationId": "deleteBusinessConsoleTelemetryConnectorConfig",
+        "parameters": [
+          {
+            "name": "connectorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleDeleteTelemetryConnectorConfigRequest",
+          "description": "",
+          "content": {
+            "*/*": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleDeleteTelemetryConnectorConfigRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleDeleteTelemetryConnectorConfigRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBoolean"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/telemetry/connector-configs/test-connection": {
+      "post": {
+        "tags": [
+          "Business Console Telemetry",
+          "Api"
+        ],
+        "operationId": "testBusinessConsoleTelemetryConnectorConnection",
+        "requestBody": {
+          "x-name": "BusinessConsoleTestTelemetryConnectorConnectionRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleTestTelemetryConnectorConnectionRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfTelemetryConnectionTestResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/telemetry/tags": {
       "get": {
         "tags": [
@@ -40722,6 +40920,282 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItemOf": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectorConfigItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsIndustrialTelemetryTelemetryConnectorConfigItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connectorId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "pollIntervalSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "mappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectorMapping"
+            }
+          },
+          "revision": {
+            "type": "string",
+            "format": "guid"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPContractsIndustrialTelemetryTelemetryConnectorMapping": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "tagKey": {
+            "type": "string"
+          },
+          "unitCode": {
+            "type": "string"
+          },
+          "bucketSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unitId": {
+            "type": "integer",
+            "format": "byte"
+          },
+          "address": {
+            "type": "integer"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "topicFilter": {
+            "type": "string",
+            "nullable": true
+          },
+          "valueJsonPath": {
+            "type": "string",
+            "nullable": true
+          },
+          "nodeId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleListTelemetryConnectorConfigsRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectorConfigItem"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleSaveTelemetryConnectorConfigRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectorConfigInput"
+          }
+        }
+      },
+      "NervIIPContractsIndustrialTelemetryTelemetryConnectorConfigInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connectorId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "pollIntervalSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "mappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectorMapping"
+            }
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBoolean": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "boolean"
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleDeleteTelemetryConnectorConfigRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfTelemetryConnectionTestResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectionTestResult"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsIndustrialTelemetryTelemetryConnectionTestResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reachable": {
+            "type": "boolean"
+          },
+          "latencyMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "message": {
+            "type": "string"
+          },
+          "samplePreview": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebEndpointsTelemetryBusinessConsoleTestTelemetryConnectorConnectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectionTestInput"
+          }
+        }
+      },
+      "NervIIPContractsIndustrialTelemetryTelemetryConnectionTestInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocol": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "mapping": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsIndustrialTelemetryTelemetryConnectorMapping"
+              }
+            ]
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagListResponse": {
         "allOf": [
           {
@@ -40813,6 +41287,16 @@
           },
           "isEnabled": {
             "type": "boolean"
+          },
+          "latestValue": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "latestSampledAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
