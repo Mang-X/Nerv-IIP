@@ -47,22 +47,41 @@ const { data, error, isLoading, refetch } = useQuery(() => {
     ],
     enabled: Boolean(organizationId && environmentId),
     async query({ signal }) {
-      const instances: InstanceListItem[] = []
       const pageSize = 100
-      let totalCount = 0
-      for (let pageIndex = 1; pageIndex === 1 || instances.length < totalCount; pageIndex++) {
-        const { data: envelope } = await listConsoleInstances({
-          query: { organizationId, environmentId, pageIndex, pageSize },
-          signal,
-          throwOnError: true,
-        })
-        if (!envelope?.success || !envelope.data) throw new Error('无法读取当前组织环境的实例。')
-        const page = envelope.data.items ?? []
-        if (page.length === 0) break
-        instances.push(...page)
-        totalCount = envelope.data.totalCount ?? instances.length
+      const maxPages = 5
+      const { data: firstEnvelope } = await listConsoleInstances({
+        query: { organizationId, environmentId, pageIndex: 1, pageSize },
+        signal,
+        throwOnError: true,
+      })
+      if (!firstEnvelope?.success || !firstEnvelope.data) {
+        throw new Error('无法读取当前组织环境的实例。')
       }
-      return instances
+      const firstPage = firstEnvelope.data.items ?? []
+      const byKey = new Map<string, InstanceListItem>()
+      for (const item of firstPage) {
+        if (item.instanceKey) byKey.set(item.instanceKey, item)
+      }
+      const totalCount = firstEnvelope.data.totalCount ?? firstPage.length
+      const effectivePageSize = firstPage.length > 0 ? firstPage.length : pageSize
+      const totalPages = Math.min(Math.ceil(totalCount / effectivePageSize), maxPages)
+      if (totalPages > 1) {
+        const extraEnvelopes = await Promise.all(
+          Array.from({ length: totalPages - 1 }, (_, i) =>
+            listConsoleInstances({
+              query: { organizationId, environmentId, pageIndex: i + 2, pageSize },
+              signal,
+              throwOnError: true,
+            }),
+          ),
+        )
+        for (const { data: envelope } of extraEnvelopes) {
+          for (const item of envelope?.data?.items ?? []) {
+            if (item.instanceKey) byKey.set(item.instanceKey, item)
+          }
+        }
+      }
+      return Array.from(byKey.values())
     },
   }
 })

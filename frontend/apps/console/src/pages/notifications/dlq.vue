@@ -171,6 +171,15 @@ function shortText(value: string | null | undefined, fallback = '-') {
   if (!value) return fallback
   return value.length > 42 ? `${value.slice(0, 39)}...` : value
 }
+
+function formatEventJson(value: string | null | undefined) {
+  if (!value) return '-'
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
+  }
+}
 </script>
 
 <template>
@@ -370,9 +379,9 @@ function shortText(value: string | null | undefined, fallback = '-') {
               <dd>{{ formatDate(selectedDeadLetter.replayedAtUtc) }}</dd>
             </dl>
 
-            <pre class="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed">{{
-              selectedDeadLetter.eventJson
-            }}</pre>
+            <pre
+              class="max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs leading-relaxed"
+              >{{ formatEventJson(selectedDeadLetter.eventJson) }}</pre>
 
             <div v-if="canManage" class="grid gap-2">
               <textarea

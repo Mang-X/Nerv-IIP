@@ -127,7 +127,7 @@ describe('Notification DLQ page', () => {
     expect(wrapper.text()).not.toContain('Pending')
     expect(wrapper.text()).toContain('ops.OperationTaskFailed')
     expect(wrapper.text()).toContain('notification.operation-task-failed')
-    expect(wrapper.text()).toContain('{"eventId":"event-001"}')
+    expect(wrapper.text()).toContain('"eventId": "event-001"')
   })
 
   it('renders a placeholder for an invalid dead-letter timestamp', () => {
