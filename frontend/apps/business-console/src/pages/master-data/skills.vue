@@ -8,6 +8,7 @@ import {
   usePersonnelSkillMatrix,
   useBusinessWorkers,
 } from '@/composables/master-data'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { useSkillCatalog } from '@/composables/master-data/usePromotedCatalogs'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
@@ -22,7 +23,6 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvDialogTrigger,
   NvField,
   NvFieldDescription,
   NvFieldGroup,
@@ -45,8 +45,13 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
-import { formatDate } from '@/utils/format'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { today } from '@/utils/format'
+import {
+  errorStatusCode,
+  notifyOperationFailure,
+  notifySuccess,
+  serverErrorMessage,
+} from '@/utils/notify'
 import { i18n } from '@/i18n'
 
 const locale = i18n.global.locale
@@ -63,9 +68,9 @@ definePage({
 const matrix = usePersonnelSkillMatrix()
 const skillAssignment = usePersonnelSkillAssignment()
 // 技能目录已升为主数据（#402，「基础数据 › 技能目录」）：登记选技能 + 矩阵列头解析中文名。
-const { skills: skillCatalog, refresh: refreshSkillCatalog } = useSkillCatalog()
+const { skills: skillCatalog, refresh: refreshSkillCatalog } = useSkillCatalog(true)
 // 工人目录（IAM 用户）：把行 userId 解析成工人姓名（工号 · 部门）。
-const workerDir = useBusinessWorkers()
+const workerDir = useBusinessWorkers({}, true)
 
 // 技能等级取自字典 `skill-level`（系统枚举），Phase 1 用前端常量兜底中文。
 const SKILL_LEVELS = [
@@ -123,9 +128,9 @@ const cellOf = (
 type ExpiryTone = 'past' | 'soon' | 'ok' | 'none'
 function expiryTone(effectiveTo: string | undefined): ExpiryTone {
   if (!effectiveTo) return 'none'
-  const end = new Date(effectiveTo)
-  if (Number.isNaN(end.getTime())) return 'none'
-  const days = Math.floor((end.getTime() - Date.now()) / 86_400_000)
+  const end = Date.parse(effectiveTo.slice(0, 10))
+  if (Number.isNaN(end)) return 'none'
+  const days = (end - Date.parse(today())) / 86_400_000
   if (days < 0) return 'past'
   if (days <= 30) return 'soon'
   return 'ok'
@@ -183,6 +188,11 @@ const hasDimensions = computed(
   () => matrix.skillCodes.value.length > 0 && matrix.rows.value.length > 0,
 )
 
+const hasRegistrations = computed(() => !matrixListError.value && hasDimensions.value)
+const isEmpty = computed(
+  () => !matrixListError.value && !hasDimensions.value && !matrix.matrixPending.value,
+)
+
 function refreshAll() {
   void matrix.refresh()
   void refreshSkillCatalog()
@@ -191,7 +201,32 @@ function refreshAll() {
 // ── 登记 Dialog ─────────────────────────────────────────────
 const skillOpen = ref(false)
 const skillShowErrors = ref(false)
-const skillForm = reactive({ userId: '', skillCode: '', level: '', effectiveFrom: '' })
+const noExpiryDate = '9999-12-31'
+const skillForm = reactive({
+  userId: '',
+  skillCode: '',
+  level: '',
+  effectiveFrom: '',
+  effectiveTo: '',
+})
+const requiresCertification = computed(
+  () =>
+    skillCatalog.value.find((item) => item.skillCode === skillForm.skillCode)
+      ?.requiresCertification === true,
+)
+const expiryError = computed(() => {
+  if (!requiresCertification.value) return ''
+  if (!skillForm.effectiveTo) return '请选择证书到期日。'
+  if (skillForm.effectiveTo < (skillForm.effectiveFrom || today()))
+    return '证书到期日不能早于生效日期。'
+  return ''
+})
+watch(
+  () => skillForm.skillCode,
+  () => {
+    skillForm.effectiveTo = ''
+  },
+)
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -208,12 +243,15 @@ watch(skillOpen, (open) => {
 // 从矩阵格子进入时，工人与技能由该格带出：只读展示，不再给挑选控件。
 const assignLockedUser = ref(false)
 const assignLockedSkill = ref(false)
+let restoreAssignFocus: ReturnType<typeof useReturnFocusOnClose> | undefined
 function openAssign(prefill?: { userId?: string; skillCode?: string }) {
+  restoreAssignFocus = useReturnFocusOnClose()
   Object.assign(skillForm, {
     userId: prefill?.userId ?? '',
     skillCode: prefill?.skillCode ?? '',
     level: '',
     effectiveFrom: '',
+    effectiveTo: '',
   })
   assignLockedUser.value = Boolean(prefill?.userId)
   assignLockedSkill.value = Boolean(prefill?.skillCode)
@@ -221,7 +259,7 @@ function openAssign(prefill?: { userId?: string; skillCode?: string }) {
   skillOpen.value = true
 }
 async function submitSkill() {
-  if (!canAssignSkill.value) {
+  if (!canAssignSkill.value || expiryError.value) {
     skillShowErrors.value = true
     return
   }
@@ -230,14 +268,30 @@ async function submitSkill() {
       userId: skillForm.userId,
       skillCode: skillForm.skillCode.trim(),
       level: skillForm.level,
-      effectiveFrom: skillForm.effectiveFrom.trim() || undefined,
+      effectiveFrom: skillForm.effectiveFrom || today(),
+      effectiveTo: requiresCertification.value ? skillForm.effectiveTo : noExpiryDate,
     })
     notifySuccess('已登记人员技能。')
     skillShowErrors.value = false
     skillOpen.value = false
     void matrix.refresh()
   } catch (error) {
-    notifyOperationFailure('登记人员技能失败', error, '登记人员技能失败，请稍后重试。')
+    const message = serverErrorMessage(error)
+    const validationReasons =
+      error && typeof error === 'object' && 'errorData' in error && Array.isArray(error.errorData)
+        ? error.errorData.flatMap((item) =>
+            typeof item?.reason === 'string' && /^(请选择|有效期截止日期不能早于)/.test(item.reason)
+              ? [item.reason]
+              : [],
+          )
+        : []
+    const displayError =
+      message === 'request-payload-invalid' && validationReasons.length
+        ? validationReasons.join(' ')
+        : errorStatusCode(error) === 400 && message === 'downstream-request-failed'
+          ? '登记内容未通过校验，请检查技能、等级和有效期。'
+          : error
+    notifyOperationFailure('登记人员技能失败', displayError, '登记人员技能失败，请稍后重试。')
   }
 }
 </script>
@@ -247,7 +301,7 @@ async function submitSkill() {
     <NvPageHeader
       title="人员技能"
       :breadcrumbs="[{ label: '基础数据' }]"
-      :count="`${matrix.rows.value.length} 名工人`"
+      :count="hasRegistrations ? `已登记技能的工人 ${matrix.rows.value.length} 人` : undefined"
     >
       <template #actions>
         <NvButton
@@ -260,7 +314,7 @@ async function submitSkill() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openAssign()">
+        <NvButton v-if="!isEmpty" size="sm" type="button" @click="openAssign()">
           <PlusIcon aria-hidden="true" />
           登记技能
         </NvButton>
@@ -272,16 +326,15 @@ async function submitSkill() {
       / 过期会高亮提醒。
     </p>
 
-    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+    <div v-if="hasRegistrations" class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
       <!-- 工人与技能项是两种不同量纲的计数，不构成同一总量，用并列 Strip。 -->
       <NvMetricStrip
         :cells="[
           {
             key: 'workers',
-            label: '在岗工人',
+            label: '已登记技能的工人',
             value: matrix.rows.value.length,
             unit: '人',
-            meta: '已登记任一技能',
           },
           {
             key: 'skills',
@@ -303,17 +356,21 @@ async function submitSkill() {
             ? { label: `${expiryStats.past} 项已过期`, tone: 'danger' }
             : expiryStats.soon > 0
               ? { label: `${expiryStats.soon} 项临期`, tone: 'warning' }
-              : { label: '资格齐备', tone: 'success' }
+              : undefined
         "
         :foot-start="
           expiryStats.past + expiryStats.soon > 0
             ? '过期资格会挡住派工，临期（30 天内到期）需提前安排复评。'
-            : '所有技能资格都在有效期内。'
+            : '已登记资格中无临期或过期项。'
         "
       />
     </div>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="搜索工人姓名 / 工号 / 部门">
+    <NvToolbar
+      v-if="hasRegistrations"
+      v-model:search="keyword"
+      search-placeholder="搜索工人姓名 / 工号 / 部门"
+    >
       <template #filters>
         <NvSelect v-model="skillFilter">
           <NvSelectTrigger class="w-44"><NvSelectValue placeholder="按技能筛选" /></NvSelectTrigger>
@@ -333,12 +390,10 @@ async function submitSkill() {
 
     <!-- 空态：无维度（无工人 / 无技能登记）→ 引导去登记，绝不造假数据网格。 -->
     <div
-      v-if="!hasDimensions && !matrix.matrixPending.value"
+      v-else-if="isEmpty"
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
-      <p class="text-sm text-muted-foreground">
-        还没有任何技能登记，先为工人登记一项技能即可生成矩阵。
-      </p>
+      <p class="text-sm text-muted-foreground">尚未登记技能</p>
       <NvButton size="sm" type="button" @click="openAssign()">
         <PlusIcon aria-hidden="true" />
         去登记技能
@@ -347,7 +402,7 @@ async function submitSkill() {
 
     <!-- 筛选无结果。 -->
     <div
-      v-else-if="hasDimensions && filteredRows.length === 0"
+      v-else-if="hasRegistrations && filteredRows.length === 0"
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
       <p class="text-sm text-muted-foreground">
@@ -369,8 +424,12 @@ async function submitSkill() {
       >
     </div>
 
+    <p v-else-if="matrix.matrixPending.value" class="text-sm text-muted-foreground" role="status">
+      加载技能矩阵中…
+    </p>
+
     <!-- 矩阵网格：横向可滚、首列（工人）冻结。 -->
-    <div v-else class="overflow-x-auto rounded-md border border-border">
+    <div v-else-if="hasRegistrations" class="overflow-x-auto rounded-md border border-border">
       <table class="w-full border-collapse text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/40">
@@ -427,7 +486,11 @@ async function submitSkill() {
                   </span>
                 </NvBadge>
                 <span v-if="cellOf(row, code)!.effectiveTo" class="text-xs text-muted-foreground">
-                  至 {{ formatDate(cellOf(row, code)!.effectiveTo) }}
+                  {{
+                    cellOf(row, code)!.effectiveTo === noExpiryDate
+                      ? '长期有效'
+                      : `至 ${cellOf(row, code)!.effectiveTo?.slice(0, 10)}`
+                  }}
                 </span>
               </button>
               <button
@@ -447,10 +510,7 @@ async function submitSkill() {
 
     <!-- 登记 Dialog：录入 / 更新某工人某技能等级；可由「登记技能」按钮或格子点击触发。 -->
     <NvDialog v-model:open="skillOpen">
-      <NvDialogTrigger class="sr-only" as-child>
-        <button type="button">登记技能</button>
-      </NvDialogTrigger>
-      <NvDialogContent class="sm:max-w-lg">
+      <NvDialogContent class="sm:max-w-lg" @close-auto-focus="restoreAssignFocus?.($event)">
         <NvDialogHeader>
           <NvDialogTitle>登记人员技能</NvDialogTitle>
           <NvDialogDescription class="sr-only">
@@ -536,7 +596,27 @@ async function submitSkill() {
                 :locale="locale"
                 clearable
               />
-              <NvFieldDescription>留空表示即时生效。</NvFieldDescription>
+              <NvFieldDescription>留空表示当天生效。</NvFieldDescription>
+            </NvField>
+            <NvField v-if="requiresCertification" :data-invalid="skillShowErrors && !!expiryError">
+              <NvFieldLabel for="skill-to"
+                >证书到期日 <span class="text-destructive">*</span></NvFieldLabel
+              >
+              <NvDatePicker
+                id="skill-to"
+                v-model="skillForm.effectiveTo"
+                :locale="locale"
+                :aria-invalid="skillShowErrors && !!expiryError"
+                :aria-describedby="skillShowErrors && expiryError ? 'skill-to-error' : undefined"
+                clearable
+              />
+              <NvFieldDescription
+                v-if="skillShowErrors && expiryError"
+                id="skill-to-error"
+                class="text-destructive"
+              >
+                {{ expiryError }}
+              </NvFieldDescription>
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>

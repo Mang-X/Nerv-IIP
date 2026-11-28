@@ -287,7 +287,7 @@ const availableWorkloadKeys = computed(
 const todoFocusItems = computed<WorkbenchFocusItem[]>(() =>
   todoItems.value.map((item) => ({
     key: `${normalize(item.source)}-${normalize(item.itemId)}`,
-    primary: readableCode(item.referenceId) || todoLabel(item),
+    primary: todoLabel(item),
     secondary: todoMeta(item),
   })),
 )
@@ -433,18 +433,22 @@ function resourceLabel(resourceType: string | null | undefined) {
 }
 
 function todoLabel(item: BusinessConsoleWorkbenchTodoItem) {
-  const source = sourceLabel(item.source)
+  const code = readableCode(item.referenceId)
+  if (normalize(item.source) === 'Notification') {
+    const shortId = normalize(item.itemId).slice(-8)
+    return normalize(item.notificationTitle) || ['通知复核', shortId].filter(Boolean).join(' · ')
+  }
   const typeLabels: Record<string, string> = {
     'inventory-count': '盘点任务',
     'purchase-order': '采购单据',
     quality: '质量处置',
   }
   const type = typeLabels[normalize(item.itemType)] ?? '待办事项'
-  return `${source} · ${type}`
+  return code || type
 }
 
 function todoMeta(item: BusinessConsoleWorkbenchTodoItem) {
-  const parts = [itemStatusLabel(item.status)]
+  const parts = [sourceLabel(item.source), itemStatusLabel(item.status)]
   if (item.dueAtUtc) {
     parts.push(`到期 ${formatDateTime(item.dueAtUtc)}`)
   }

@@ -23223,6 +23223,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -37019,6 +37027,10 @@
           "dueAtUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "notificationTitle": {
+            "type": "string",
             "nullable": true
           }
         }
@@ -60252,9 +60264,7 @@
           "validityMonths": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
-            "nullable": true,
-            "exclusiveMinimum": true
+            "nullable": true
           },
           "description": {
             "type": "string",
@@ -60296,9 +60306,7 @@
           "validityMonths": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
-            "nullable": true,
-            "exclusiveMinimum": true
+            "nullable": true
           },
           "description": {
             "type": "string",
@@ -62447,7 +62455,9 @@
           "environmentId",
           "userId",
           "skillCode",
-          "level"
+          "level",
+          "effectiveFrom",
+          "effectiveTo"
         ],
         "properties": {
           "organizationId": {
@@ -62482,11 +62492,15 @@
           },
           "effectiveFrom": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "minLength": 1,
+            "nullable": false
           },
           "effectiveTo": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "minLength": 1,
+            "nullable": false
           }
         }
       },
@@ -62686,16 +62700,14 @@
       "NervIIPContractsCodingScopeDimension": {
         "type": "string",
         "description": "",
-        "x-enumFlags": true,
-        "x-enumNames": [
-          "Organization",
-          "Environment",
-          "Site"
-        ],
         "enum": [
           "organization",
           "environment",
-          "site"
+          "site",
+          "organization, environment",
+          "organization, site",
+          "environment, site",
+          "organization, environment, site"
         ]
       },
       "NervIIPContractsCodingCodeRuleSegment": {

@@ -335,7 +335,8 @@ public sealed record BusinessConsoleListSkusRequest(
     string EnvironmentId,
     bool IncludeDisabled = false,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? Keyword = null);
 
 public sealed record BusinessConsoleListProductCategoriesRequest(
     string OrganizationId,
@@ -1068,7 +1069,8 @@ public sealed record BusinessConsoleWorkbenchTodoItem(
     string ItemType,
     string Status,
     string? ReferenceId,
-    DateTimeOffset? DueAtUtc);
+    DateTimeOffset? DueAtUtc,
+    string? NotificationTitle = null);
 
 public sealed record BusinessConsoleWorkbenchMessageSummary(
     string Status,

@@ -220,7 +220,7 @@ export function useProductionVersionResolve() {
 /**
  * 已发布工艺路线选择器数据源（status=Published）。绑定值用 `routingCode`。
  */
-export function usePublishedRoutings() {
+export function usePublishedRoutings(skuScope?: () => string) {
   const context = useBusinessContextStore()
   const filters = bindBusinessContext(
     reactive({
@@ -230,13 +230,13 @@ export function usePublishedRoutings() {
     }),
   )
 
-  const query = useQuery(() =>
-    withBusinessContextEnabled(
+  const query = useQuery(() => ({
+    ...withBusinessContextEnabled(
       listBusinessConsoleEngineeringRoutingsQueryOptions({
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          ...optionalQuery('skuCode', filters.skuCode),
+          ...optionalQuery('skuCode', skuScope ? skuScope() : filters.skuCode),
           status: PUBLISHED,
           skip: 0,
           take: DEFAULT_TAKE,
@@ -244,12 +244,16 @@ export function usePublishedRoutings() {
       }),
       filters,
     ),
-  )
+    ...(skuScope && !skuScope() ? { enabled: false } : {}),
+  }))
 
   return {
     filters,
     routings: computed<BusinessConsoleRoutingItem[]>(() =>
       unwrapItems(query.data.value as BusinessConsoleRoutingListEnvelope | undefined),
+    ),
+    routingsTotal: computed(() =>
+      unwrapTotal(query.data.value as BusinessConsoleRoutingListEnvelope | undefined),
     ),
     routingsError: query.error,
     routingsPending: query.isLoading,
@@ -351,35 +355,54 @@ export interface StandardOperationListFilters {
   take: number
 }
 
-export function useStandardOperations() {
+export function useStandardOperations({ enabledOnly = false } = {}) {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
   const filters = bindBusinessContext(
     reactive<StandardOperationListFilters>({
       organizationId: context.organizationId,
       environmentId: context.environmentId,
-      enabled: undefined,
+      enabled: enabledOnly || undefined,
       search: undefined,
       skip: 0,
       take: DEFAULT_TAKE,
     }),
   )
 
-  const listQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleEngineeringStandardOperationsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('enabled', filters.enabled),
-          ...optionalQuery('search', filters.search),
-          skip: filters.skip,
-          take: filters.take,
+  const listQuery = useQuery(() => {
+    const params = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      ...optionalQuery('enabled', filters.enabled),
+      ...optionalQuery('search', filters.search),
+      skip: filters.skip,
+      take: filters.take,
+    }
+    const options = listBusinessConsoleEngineeringStandardOperationsQueryOptions({ query: params })
+    if (!enabledOnly) return withBusinessContextEnabled(options, filters)
+
+    return withBusinessContextEnabled(
+      {
+        ...options,
+        key: [...options.key, 'directory'],
+        async query(context: Parameters<typeof options.query>[0]) {
+          const firstPage = await options.query(context)
+          const items = [...unwrapItems<BusinessConsoleStandardOperationItem>(firstPage)]
+          const total = unwrapTotal(firstPage)
+          while (items.length < total) {
+            const nextPage = await listBusinessConsoleEngineeringStandardOperationsQueryOptions({
+              query: { ...params, skip: items.length },
+            }).query(context)
+            const batch = unwrapItems<BusinessConsoleStandardOperationItem>(nextPage)
+            if (!batch.length) break
+            items.push(...batch)
+          }
+          return firstPage.data ? { ...firstPage, data: { ...firstPage.data, items } } : firstPage
         },
-      }),
+      },
       filters,
-    ),
-  )
+    )
+  })
 
   function invalidateList() {
     void queryCache

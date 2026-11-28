@@ -162,19 +162,21 @@ internal sealed partial class AppHostComposition
             businessGateway.WithEnvironment("FileStorage__DownloadBearerToken", businessGatewayDownloadToken);
         }
 
-        if (fullStackEphemeral)
+        if (localDevelopmentAppHost || fullStackEphemeral)
         {
-            var templateAssetRetirementProofIssuer = builder.AddParameter("template-asset-retirement-proof-issuer");
-            var templateAssetRetirementProofAudience = builder.AddParameter("template-asset-retirement-proof-audience");
-            var templateAssetRetirementProofSecretBase64 = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);
-            businessBarcodeLabel = businessBarcodeLabel
-                .WithEnvironment("TemplateAssetRetirementProof__Issuer", templateAssetRetirementProofIssuer)
-                .WithEnvironment("TemplateAssetRetirementProof__Audience", templateAssetRetirementProofAudience)
-                .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", templateAssetRetirementProofSecretBase64);
-            businessGateway = businessGateway
-                .WithEnvironment("TemplateAssetRetirementProof__Issuer", templateAssetRetirementProofIssuer)
-                .WithEnvironment("TemplateAssetRetirementProof__Audience", templateAssetRetirementProofAudience)
-                .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", templateAssetRetirementProofSecretBase64);
+            var issuer = fullStackEphemeral
+                ? ReferenceExpression.Create($"{builder.AddParameter("template-asset-retirement-proof-issuer").Resource}")
+                : ReferenceExpression.Create($"nerv-local-business-gateway");
+            var audience = fullStackEphemeral
+                ? ReferenceExpression.Create($"{builder.AddParameter("template-asset-retirement-proof-audience").Resource}")
+                : ReferenceExpression.Create($"nerv-barcodelabel-template-asset-retirement");
+            var secret = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);
+            foreach (var project in new[] { businessBarcodeLabel, businessGateway })
+            {
+                project.WithEnvironment("TemplateAssetRetirementProof__Issuer", issuer)
+                    .WithEnvironment("TemplateAssetRetirementProof__Audience", audience)
+                    .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", secret);
+            }
         }
 
         var connectorHost = infrastructure.WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))

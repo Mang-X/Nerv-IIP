@@ -4,12 +4,15 @@ import { Skeleton, NvStatusBadge } from '@nerv-iip/ui'
 import {
   formatNotificationDate,
   notificationStatusLabel,
+  notificationTaskTitle,
+  notificationTaskTypeLabel,
   notificationTone,
 } from './notificationFormatters'
 
 const props = defineProps<{
   pending?: boolean
   tasks: NotificationTaskResponse[]
+  messageTitles: ReadonlyMap<string, string>
 }>()
 
 function rowKey(task: NotificationTaskResponse, index: number) {
@@ -40,10 +43,13 @@ function rowKey(task: NotificationTaskResponse, index: number) {
         <div class="flex min-w-0 items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="break-anywhere text-sm font-semibold">
-              {{ task.taskType ?? '通知任务' }}
+              {{ notificationTaskTitle(task, props.messageTitles) }}
             </p>
             <p class="break-anywhere text-xs text-muted-foreground">
-              {{ task.actionRef ?? task.messageId ?? task.taskId ?? '无动作引用' }}
+              {{ notificationTaskTypeLabel(task.taskType) }}
+              <span v-if="task.actionRef || task.messageId || task.taskId">
+                · {{ task.actionRef || task.messageId || task.taskId }}
+              </span>
             </p>
           </div>
           <NvStatusBadge

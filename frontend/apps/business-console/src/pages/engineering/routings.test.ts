@@ -4,7 +4,14 @@ import { computed, reactive, ref, shallowRef } from 'vue'
 
 import RoutingsPage from './routings.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: { permissionCodes: ['business.engineering.standard-operations.read'] },
+  }),
+}))
+
 const stub = vi.hoisted(() => ({
+  refreshOperations: vi.fn(),
   releaseRouting: vi.fn().mockResolvedValue({ data: {} }),
   fetchRoutingDetail: vi.fn(),
   toastSuccess: vi.fn(),
@@ -65,6 +72,7 @@ vi.mock('@/composables/engineering', () => ({
   useStandardOperations: () => ({
     standardOperations: computed(() => standardOperations.value),
     standardOperationsPending: shallowRef(false),
+    refresh: stub.refreshOperations,
   }),
 }))
 
@@ -115,6 +123,15 @@ const datePickerStub = {
   },
 }
 const formSelectStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'disabled'],
+    emits: ['update:modelValue'],
+    template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)">
+      <option value=""></option>
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>`,
+  },
+
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -381,7 +398,16 @@ describe('engineering routings page', () => {
     await findButton(wrapper, '发布新版本')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('去标准工序维护')
+    expect(wrapper.text()).toContain('前往标准工序')
     expect(findButton(wrapper, '增加工序')!.attributes('disabled')).toBeDefined()
+  })
+  it('刷新标准工序候选时保留版本头及已填工序', async () => {
+    const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
+    await openAndFillHeader(wrapper)
+    await wrapper.get('#rt-name-0').setValue('OP-WELD')
+    await findButton(wrapper, '刷新工序候选')!.trigger('click')
+    expect(stub.refreshOperations).toHaveBeenCalled()
+    expect((wrapper.get('#rt-rev').element as HTMLInputElement).value).toBe('B')
+    expect((wrapper.get('#rt-name-0').element as HTMLSelectElement).value).toBe('OP-WELD')
   })
 })

@@ -1,8 +1,8 @@
 ﻿# Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Builds and publishes two temporary Aspire Docker Compose artifacts
-#     - Validates environment-gated BarcodeLabel printer configuration and its FileStorage endpoint
+#     - Builds and publishes two temporary Aspire Docker Compose artifacts and probes rejected Production ephemeral publish
+#     - Validates environment-gated BarcodeLabel printer and retirement proof configuration and its FileStorage endpoint
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
 #     - .ryugi/artifacts/script-logs/**
@@ -78,6 +78,24 @@ function Assert-EnvironmentArtifact {
     )
 
     $production = [string]::Equals($EnvironmentName, 'Production', [StringComparison]::Ordinal)
+    $retirementProofServices = @(if (-not $production) { 'business-barcode-label', 'business-gateway' })
+    $retirementProofSettings = @{
+        'TemplateAssetRetirementProof__Issuer' = 'nerv-local-business-gateway'
+        'TemplateAssetRetirementProof__Audience' = 'nerv-barcodelabel-template-asset-retirement'
+        'TemplateAssetRetirementProof__SecretBase64' = '${TEMPLATE_ASSET_RETIREMENT_PROOF_SECRET_BASE64}'
+    }
+    foreach ($setting in $retirementProofSettings.GetEnumerator()) {
+        $recipients = @($Services.GetEnumerator() | Where-Object { $_.Value.ContainsKey($setting.Key) })
+        if (-not (Test-OrdinalSetEquals -Actual @($recipients | ForEach-Object Key) -Expected $retirementProofServices)) {
+            throw "Published $EnvironmentName artifact has an invalid service set for $($setting.Key)."
+        }
+        foreach ($recipient in $recipients) {
+            if (-not [string]::Equals($recipient.Value[$setting.Key], $setting.Value, [StringComparison]::Ordinal)) {
+                throw "Published $EnvironmentName $($recipient.Key) has an unexpected value or parameter reference for $($setting.Key)."
+            }
+        }
+    }
+
     $fileStorageBindings = @(
         @('file-storage', 'FileStorage__Tus__VolumeIdentity', '${FILE_STORAGE_VOLUME_IDENTITY}'),
         @('file-storage', 'FileStorage__DownloadCallers__platform-gateway__BearerToken', '${FILE_STORAGE_PLATFORM_GATEWAY_DOWNLOAD_TOKEN}'),
@@ -221,9 +239,9 @@ try {
     $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
     foreach ($environmentName in @('Development', 'Production')) {
         $outputPath = Join-Path $temporaryRoot $environmentName.ToLowerInvariant()
-        $publishEnvironment = @{}
+        $publishEnvironment = @{ NERV_IIP_EPHEMERAL = 'false' }
         if ([string]::Equals($environmentName, 'Production', [StringComparison]::Ordinal)) {
-            $publishEnvironment = @{
+            $publishEnvironment += @{
                 Messaging__Provider = 'Redis'
                 Security__ForwardedHeaders__TrustedProxies = '192.0.2.10,192.0.2.16/28'
                 Security__Cors__AllowedOrigins = 'https://console.example.test,https://business.example.test'
@@ -247,7 +265,33 @@ try {
             throw 'Published Compose artifact must declare the nerv-iip-file-storage volume.'
         }
     }
-    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, and FileStorage endpoint profiles.'
+    $rejectedOutputPath = Join-Path $temporaryRoot 'rejected-production-ephemeral'
+    $rejected = $false
+    try {
+        Invoke-AspireOutput -Arguments @('publish', '--output-path', $rejectedOutputPath, '--environment', 'Production', '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name 'verify-apphost-production-ephemeral-rejection' -Environment @{
+            NERV_IIP_EPHEMERAL = 'true'
+            NERV_IIP_SESSION_ID = 'nerv-abcd-123456'
+        } | Out-Null
+    }
+    catch {
+        $hasExitCode = $false
+        foreach ($key in $_.Exception.Data.Keys) {
+            if ([string]::Equals([string]$key, 'ExitCode', [StringComparison]::Ordinal)) {
+                $hasExitCode = $true
+                break
+            }
+        }
+        if (-not $hasExitCode -or
+            -not $_.Exception.Message.Contains('System.InvalidOperationException: NERV_IIP_EPHEMERAL=true is only supported in Development.', [StringComparison]::Ordinal)) {
+            throw
+        }
+        $rejected = $true
+    }
+    if (-not $rejected -or (Test-Path -LiteralPath (Join-Path $rejectedOutputPath 'docker-compose.yaml'))) {
+        throw 'Production ephemeral publish must fail before generating a Compose artifact.'
+    }
+    Write-Diagnostic 'Production rejects ephemeral publish before generating Compose.'
+    Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, retirement proof, and FileStorage endpoint profiles.'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }

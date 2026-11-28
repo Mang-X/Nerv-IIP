@@ -23,6 +23,8 @@ const props = withDefaults(
     placeholder?: string
     emptyText?: string
     disabled?: boolean
+    ariaInvalid?: boolean
+    ariaDescribedby?: string
     id?: string
     class?: HTMLAttributes['class']
   }>(),
@@ -116,6 +118,8 @@ function onPointerDownOutside(e: Event) {
         :value="query"
         :placeholder="placeholder"
         :disabled="disabled"
+        :aria-invalid="ariaInvalid || undefined"
+        :aria-describedby="ariaDescribedby"
         autocomplete="off"
         role="combobox"
         aria-autocomplete="list"

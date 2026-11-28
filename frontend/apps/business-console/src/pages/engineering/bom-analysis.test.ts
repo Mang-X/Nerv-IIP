@@ -4,6 +4,8 @@ import { defineComponent, h, reactive, shallowRef } from 'vue'
 
 import BomAnalysisPage from './bom-analysis.vue'
 
+const businessContext = reactive({ organizationId: 'org-001', environmentId: 'env-dev' })
+
 const routeState = reactive<{ query: Record<string, unknown> }>({ query: {} })
 const routerReplace = vi.fn(async (location: { query?: Record<string, unknown> }) => {
   routeState.query = location.query ?? {}
@@ -30,7 +32,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/stores/businessContext', () => ({
-  useBusinessContextStore: () => ({ organizationId: 'org-001', environmentId: 'env-dev' }),
+  useBusinessContextStore: () => businessContext,
 }))
 
 vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
@@ -102,6 +104,7 @@ vi.mock('@nerv-iip/ui', () => {
     }),
     NvDatePicker: modelInput,
     NvEntityPicker: {
+      name: 'NvEntityPicker',
       props: [
         'modelValue',
         'id',
@@ -157,6 +160,8 @@ vi.mock('@nerv-iip/ui', () => {
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 
 beforeEach(() => {
+  businessContext.organizationId = 'org-001'
+  businessContext.environmentId = 'env-dev'
   routeState.query = {}
   routerReplace.mockClear()
   api.getBusinessConsoleEngineeringBomExplosion.mockReset()
@@ -213,6 +218,99 @@ beforeEach(() => {
 })
 
 describe('engineering bom analysis page', () => {
+  it('EBOM 展开和反查都能选择没有工程修订的基础数据 SKU', async () => {
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    const optionsFor = (id: string) =>
+      wrapper
+        .findAllComponents({ name: 'NvEntityPicker' })
+        .find((picker) => picker.props('id') === id)
+        ?.props('options')
+
+    expect(optionsFor('bom-root')).toContainEqual(
+      expect.objectContaining({ value: 'SKU-FG', label: '整机成品（销售件）' }),
+    )
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '反查')!
+      .trigger('click')
+    expect(optionsFor('bom-component')).toContainEqual(
+      expect.objectContaining({ value: 'SKU-FG', label: '整机成品（销售件）' }),
+    )
+  })
+
+  it('切换上下文后，旧 SKU 请求被取消且迟到响应不会覆盖新目录', async () => {
+    const oldSkuPage = Promise.withResolvers<{
+      success: boolean
+      data: { resources: { code: string }[]; total: number }
+    }>()
+    let oldSignal: AbortSignal | undefined
+    api.listBusinessConsoleSkusQueryOptions.mockImplementation(({ query }) => ({
+      query: ({ signal }: { signal: AbortSignal }) => {
+        if (query.environmentId === 'env-dev') {
+          oldSignal = signal
+          return oldSkuPage.promise
+        }
+        return Promise.resolve({
+          success: true,
+          data: { resources: [{ code: 'SKU-B' }], total: 1 },
+        })
+      },
+    }))
+
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    const picker = wrapper
+      .findAllComponents({ name: 'NvEntityPicker' })
+      .find((candidate) => candidate.props('id') === 'bom-root')!
+    expect(picker.props('loading')).toBe(true)
+
+    businessContext.environmentId = 'env-prod'
+    expect(oldSignal?.aborted).toBe(true)
+    await flushPromises()
+    expect(picker.props('loading')).toBe(false)
+    expect(picker.props('options')).toContainEqual(expect.objectContaining({ value: 'SKU-B' }))
+
+    oldSkuPage.resolve({ success: true, data: { resources: [{ code: 'SKU-A' }], total: 1 } })
+    await flushPromises()
+    expect(picker.props('options')).toContainEqual(expect.objectContaining({ value: 'SKU-B' }))
+    expect(picker.props('options')).not.toContainEqual(expect.objectContaining({ value: 'SKU-A' }))
+    wrapper.unmount()
+  })
+
+  it('工程物料与 SKU 返回重复页后结束加载并保留已读候选', async () => {
+    api.listBusinessConsoleEngineeringItemsQueryOptions.mockReturnValue({
+      query: async () => ({
+        success: true,
+        data: {
+          items: [{ itemCode: 'FG-100', revision: 'A', name: '整机成品' }],
+          total: 120,
+        },
+      }),
+    })
+    api.listBusinessConsoleSkusQueryOptions.mockReturnValue({
+      query: async () => ({
+        success: true,
+        data: { resources: [{ code: 'SKU-FG' }], total: 120 },
+      }),
+    })
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const picker = wrapper
+      .findAllComponents({ name: 'NvEntityPicker' })
+      .find((candidate) => candidate.props('id') === 'bom-root')!
+    expect(picker.props('loading')).toBe(false)
+    expect(picker.props('options')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'FG-100' }),
+        expect.objectContaining({ value: 'SKU-FG' }),
+      ]),
+    )
+    expect(api.listBusinessConsoleEngineeringItemsQueryOptions).toHaveBeenCalledTimes(2)
+    expect(api.listBusinessConsoleSkusQueryOptions).toHaveBeenCalledTimes(2)
+  })
+
   it('用后端 explosion 响应渲染多级树和诊断', async () => {
     api.getBusinessConsoleEngineeringBomExplosion.mockResolvedValue({
       data: {
@@ -270,6 +368,18 @@ describe('engineering bom analysis page', () => {
     expect(wrapper.text()).toContain('整机成品')
     expect(wrapper.text()).toContain('控制主板')
     expect(wrapper.text()).toContain('虚拟件')
+    expect(wrapper.text()).toContain('缺少下级有效版本')
+    for (const label of ['反查', '对比']) {
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().trim() === label)!
+        .trigger('click')
+      expect(wrapper.text()).not.toContain('缺少下级有效版本')
+    }
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '树视图')!
+      .trigger('click')
     expect(wrapper.text()).toContain('缺少下级有效版本')
   })
 
@@ -455,5 +565,49 @@ describe('engineering bom analysis page', () => {
     expect(wrapper.text()).toContain('单位: PCS -> KG')
     expect(wrapper.text()).toContain('损耗')
     expect(wrapper.text()).toContain('得率')
+  })
+  it('迟到的对比失败只出现在对比页，反查保留自己的空态和结果', async () => {
+    let rejectDiff!: (reason: unknown) => void
+    const reason = '工程 BOM 两个版本必须属于同一父物料才能比较。'
+    api.getBusinessConsoleEngineeringBomDiff.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDiff = reject
+        }),
+    )
+    api.getBusinessConsoleEngineeringBomWhereUsed.mockResolvedValue({
+      data: { success: true, data: { componentCode: 'PCB-200', items: [] } },
+    })
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    const button = (label: string) =>
+      wrapper.findAll('button').find((item) => item.text().trim() === label)!
+    await flushPromises()
+    await button('对比').trigger('click')
+    await wrapper.get('#bom-from-code').setValue('EBOM-FG')
+    await wrapper.get('#bom-from-revision').setValue('A')
+    await wrapper.get('#bom-to-code').setValue('EBOM-OTHER')
+    await wrapper.get('#bom-to-revision').setValue('B')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await button('反查').trigger('click')
+    expect(wrapper.text()).toContain('请选择组件物料后反查')
+    rejectDiff({ success: false, code: 400, message: reason })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('分析失败')
+    await wrapper.get('#bom-component').setValue('PCB-200')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.getBusinessConsoleEngineeringBomWhereUsed).toHaveBeenCalledTimes(1)
+    await button('对比').trigger('click')
+    expect(wrapper.text()).toContain(reason)
+    api.getBusinessConsoleEngineeringBomDiff.mockResolvedValueOnce({
+      data: { success: true, data: { lines: [] } },
+    })
+    await button('重试').trigger('click')
+    await flushPromises()
+    expect(api.getBusinessConsoleEngineeringBomDiff).toHaveBeenCalledTimes(2)
+    expect(api.getBusinessConsoleEngineeringBomWhereUsed).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('分析失败')
+    wrapper.unmount()
   })
 })

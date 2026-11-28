@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFirstInvalidField } from '@/components/masterData/useFirstInvalidField'
 import type {
   BusinessConsoleCreateStandardOperationRequest,
   BusinessConsoleStandardOperationItem,
@@ -23,12 +24,14 @@ import {
   NvDataTable,
   NvDialog,
   NvDialogContent,
+  NvDialogBody,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldError,
   NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
@@ -158,8 +161,8 @@ interface StandardOperationForm {
   operationName: string
   defaultWorkCenterCode: string
   controlKey: string
-  standardSetupMinutes: string
-  standardRunMinutes: string
+  standardSetupMinutes: string | number
+  standardRunMinutes: string | number
   requiresReporting: boolean
   requiresQualityInspection: boolean
   isOutsourced: boolean
@@ -183,6 +186,7 @@ function blankForm(): StandardOperationForm {
 
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
+const { formElement, focusFirstInvalidField } = useFirstInvalidField()
 // null = 新建，否则为正在编辑工序的 operationCode（编码即身份，编辑态只读）。
 const editingCode = shallowRef<string | null>(null)
 const editingRow = shallowRef<BusinessConsoleStandardOperationItem | null>(null)
@@ -204,8 +208,8 @@ watch([workCenterOptions, formOpen], ([options, open]) => {
   }
 })
 
-function parseNumber(value: string): number | undefined {
-  const trimmed = value.trim()
+function parseNumber(value: string | number): number | undefined {
+  const trimmed = String(value ?? '').trim()
   if (!trimmed) return undefined
   const parsed = Number(trimmed)
   return Number.isFinite(parsed) ? parsed : undefined
@@ -219,12 +223,11 @@ const workCenterValid = computed(() => form.defaultWorkCenterCode.trim().length 
 const controlKeyValid = computed(() => form.controlKey.trim().length > 0)
 const setupValid = computed(
   () =>
-    form.standardSetupMinutes.trim() === '' ||
-    (setupMinutes.value != null && setupMinutes.value >= 0),
+    String(form.standardSetupMinutes ?? '').trim() === '' ||
+    (setupMinutes.value != null && Number.isInteger(setupMinutes.value) && setupMinutes.value >= 0),
 )
 const runValid = computed(
-  () =>
-    form.standardRunMinutes.trim() === '' || (runMinutes.value != null && runMinutes.value >= 0),
+  () => runMinutes.value != null && Number.isInteger(runMinutes.value) && runMinutes.value > 0,
 )
 const canSubmit = computed(
   () =>
@@ -266,13 +269,14 @@ function openEdit(row: BusinessConsoleStandardOperationItem) {
 async function submitForm() {
   if (!canSubmit.value) {
     showErrors.value = true
+    await focusFirstInvalidField()
     return
   }
   const shared = {
     operationName: form.operationName.trim(),
     defaultWorkCenterCode: form.defaultWorkCenterCode.trim(),
     controlKey: form.controlKey.trim(),
-    standardSetupMinutes: setupMinutes.value,
+    standardSetupMinutes: setupMinutes.value ?? 0,
     standardRunMinutes: runMinutes.value,
     requiresReporting: form.requiresReporting,
     requiresQualityInspection: form.requiresQualityInspection,
@@ -353,7 +357,7 @@ async function confirmArchive() {
               新建工序
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-2xl">
+          <NvDialogContent scrollable class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingCode ? '编辑标准工序' : '新建标准工序' }}</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -365,122 +369,180 @@ async function confirmArchive() {
                 }}
               </NvDialogDescription>
             </NvDialogHeader>
-            <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写带 * 的必填项，并确保标准工时为非负数（已标红）。
-              </p>
+            <form ref="formElement" novalidate @submit.prevent="submitForm">
+              <NvDialogBody>
+                <div class="grid gap-5">
+                  <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+                    请填写带 * 的必填项，并检查标出的工时字段。
+                  </p>
 
-              <!-- 编辑态：编码由所选行带出，只读展示，不做成看起来可改的输入框。 -->
-              <CarriedContextSummary v-if="editingCode" label="编辑对象" :items="carriedItems" />
+                  <!-- 编辑态：编码由所选行带出，只读展示，不做成看起来可改的输入框。 -->
+                  <CarriedContextSummary
+                    v-if="editingCode"
+                    label="编辑对象"
+                    :items="carriedItems"
+                  />
 
-              <FormSectionTitle>基本信息</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField v-if="!editingCode" :data-invalid="showErrors && !codeValid">
-                  <NvFieldLabel for="op-code"
-                    >工序编码 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="op-code"
-                    v-model="form.operationCode"
-                    placeholder="例如：OP-CNC-ROUGH"
-                  />
-                  <NvFieldDescription>由工厂自定义、需唯一。</NvFieldDescription>
-                </NvField>
-                <NvField :data-invalid="showErrors && !nameValid">
-                  <NvFieldLabel for="op-name"
-                    >工序名 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="op-name"
-                    v-model="form.operationName"
-                    placeholder="例如：CNC 粗加工"
-                  />
-                </NvField>
-                <NvField :data-invalid="showErrors && !workCenterValid">
-                  <NvFieldLabel for="op-wc"
-                    >默认工作中心 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <DirectoryPicker
-                    id="op-wc"
-                    v-model="form.defaultWorkCenterCode"
-                    directory-type="work-center"
-                    creatable
-                    placeholder="选择默认工作中心"
-                    :disabled="workCentersPending"
-                  />
-                  <NvFieldDescription>工艺路线选此工序时自动带出。</NvFieldDescription>
-                </NvField>
-                <NvField :data-invalid="showErrors && !controlKeyValid">
-                  <NvFieldLabel for="op-control"
-                    >控制键 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput id="op-control" v-model="form.controlKey" />
-                  <NvFieldDescription>例如：INHOUSE / INHOUSE-QC。</NvFieldDescription>
-                </NvField>
-              </NvFieldGroup>
+                  <FormSectionTitle>基本信息</FormSectionTitle>
+                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                    <NvField v-if="!editingCode" :data-invalid="showErrors && !codeValid">
+                      <NvFieldLabel for="op-code"
+                        >工序编码 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvInput
+                        id="op-code"
+                        :aria-invalid="showErrors && !codeValid"
+                        :aria-describedby="showErrors && !codeValid ? 'op-code-error' : undefined"
+                        v-model="form.operationCode"
+                        placeholder="例如：OP-CNC-ROUGH"
+                      />
+                      <NvFieldDescription>由工厂自定义、需唯一。</NvFieldDescription>
+                      <NvFieldError
+                        v-if="showErrors && !codeValid"
+                        id="op-code-error"
+                        :errors="['请填写工序编码。']"
+                      />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !nameValid">
+                      <NvFieldLabel for="op-name"
+                        >工序名 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvInput
+                        id="op-name"
+                        :aria-invalid="showErrors && !nameValid"
+                        :aria-describedby="showErrors && !nameValid ? 'op-name-error' : undefined"
+                        v-model="form.operationName"
+                        placeholder="例如：CNC 粗加工"
+                      />
+                      <NvFieldError
+                        v-if="showErrors && !nameValid"
+                        id="op-name-error"
+                        :errors="['请填写工序名。']"
+                      />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !workCenterValid">
+                      <NvFieldLabel for="op-wc"
+                        >默认工作中心 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <DirectoryPicker
+                        id="op-wc"
+                        :invalid="showErrors && !workCenterValid"
+                        :aria-describedby="
+                          showErrors && !workCenterValid ? 'op-wc-error' : undefined
+                        "
+                        v-model="form.defaultWorkCenterCode"
+                        directory-type="work-center"
+                        creatable
+                        placeholder="选择默认工作中心"
+                        :disabled="workCentersPending"
+                      />
+                      <NvFieldDescription>工艺路线选此工序时自动带出。</NvFieldDescription>
+                      <NvFieldError
+                        v-if="showErrors && !workCenterValid"
+                        id="op-wc-error"
+                        :errors="['请选择默认工作中心。']"
+                      />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !controlKeyValid">
+                      <NvFieldLabel for="op-control"
+                        >控制键 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvInput
+                        id="op-control"
+                        :aria-invalid="showErrors && !controlKeyValid"
+                        :aria-describedby="
+                          showErrors && !controlKeyValid ? 'op-control-error' : undefined
+                        "
+                        v-model="form.controlKey"
+                      />
+                      <NvFieldDescription>例如：INHOUSE / INHOUSE-QC。</NvFieldDescription>
+                      <NvFieldError
+                        v-if="showErrors && !controlKeyValid"
+                        id="op-control-error"
+                        :errors="['请填写控制键。']"
+                      />
+                    </NvField>
+                  </NvFieldGroup>
 
-              <FormSectionTitle>标准工时</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !setupValid">
-                  <NvFieldLabel for="op-setup">准备工时（分）</NvFieldLabel>
-                  <NvInput
-                    id="op-setup"
-                    v-model="form.standardSetupMinutes"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                  />
-                </NvField>
-                <NvField :data-invalid="showErrors && !runValid">
-                  <NvFieldLabel for="op-run">加工工时（分）</NvFieldLabel>
-                  <NvInput
-                    id="op-run"
-                    v-model="form.standardRunMinutes"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                  />
-                  <NvFieldDescription>单件加工标准时间。</NvFieldDescription>
-                </NvField>
-              </NvFieldGroup>
+                  <FormSectionTitle>标准工时</FormSectionTitle>
+                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                    <NvField :data-invalid="showErrors && !setupValid">
+                      <NvFieldLabel for="op-setup">准备工时（分）</NvFieldLabel>
+                      <NvInput
+                        id="op-setup"
+                        :aria-invalid="showErrors && !setupValid"
+                        :aria-describedby="showErrors && !setupValid ? 'op-setup-error' : undefined"
+                        v-model="form.standardSetupMinutes"
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                      />
+                      <NvFieldDescription>留空按 0 分钟处理。</NvFieldDescription>
+                      <NvFieldError
+                        v-if="showErrors && !setupValid"
+                        id="op-setup-error"
+                        :errors="['请输入非负整数。']"
+                      />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !runValid">
+                      <NvFieldLabel for="op-run"
+                        >加工工时（分） <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvInput
+                        id="op-run"
+                        :aria-invalid="showErrors && !runValid"
+                        :aria-describedby="showErrors && !runValid ? 'op-run-error' : undefined"
+                        v-model="form.standardRunMinutes"
+                        type="number"
+                        min="1"
+                      />
+                      <NvFieldDescription>单件加工标准时间，填写大于 0 的整数。</NvFieldDescription>
+                      <NvFieldError
+                        v-if="showErrors && !runValid"
+                        id="op-run-error"
+                        :errors="['请输入大于 0 的整数。']"
+                      />
+                    </NvField>
+                  </NvFieldGroup>
 
-              <FormSectionTitle>控制标志</FormSectionTitle>
-              <NvFieldGroup class="grid gap-2">
-                <label
-                  for="op-report"
-                  class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <span>需要报工</span>
-                  <NvCheckbox id="op-report" v-model="form.requiresReporting" />
-                </label>
-                <label
-                  for="op-inspect"
-                  class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <span>需要质检</span>
-                  <NvCheckbox id="op-inspect" v-model="form.requiresQualityInspection" />
-                </label>
-                <label
-                  for="op-outsource"
-                  class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <span>外协工序</span>
-                  <NvCheckbox id="op-outsource" v-model="form.isOutsourced" />
-                </label>
-              </NvFieldGroup>
+                  <FormSectionTitle>控制标志</FormSectionTitle>
+                  <NvFieldGroup class="grid gap-2">
+                    <label
+                      for="op-report"
+                      class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <span>需要报工</span>
+                      <NvCheckbox id="op-report" v-model="form.requiresReporting" />
+                    </label>
+                    <label
+                      for="op-inspect"
+                      class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <span>需要质检</span>
+                      <NvCheckbox id="op-inspect" v-model="form.requiresQualityInspection" />
+                    </label>
+                    <label
+                      for="op-outsource"
+                      class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <span>外协工序</span>
+                      <NvCheckbox id="op-outsource" v-model="form.isOutsourced" />
+                    </label>
+                  </NvFieldGroup>
 
-              <FormSectionTitle>其它</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3">
-                <NvField>
-                  <NvFieldLabel for="op-desc">说明</NvFieldLabel>
-                  <NvInput
-                    id="op-desc"
-                    v-model="form.description"
-                    placeholder="可选，工序用途或注意事项"
-                  />
-                </NvField>
-              </NvFieldGroup>
-
+                  <FormSectionTitle>其它</FormSectionTitle>
+                  <NvFieldGroup class="grid gap-3">
+                    <NvField>
+                      <NvFieldLabel for="op-desc">说明</NvFieldLabel>
+                      <NvInput
+                        id="op-desc"
+                        v-model="form.description"
+                        placeholder="可选，工序用途或注意事项"
+                      />
+                    </NvField>
+                  </NvFieldGroup>
+                </div>
+              </NvDialogBody>
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">

@@ -25,6 +25,7 @@ const barcode = vi.hoisted(() => ({
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
   printBatchStatus: 'ready-to-print',
+  printBatchFileId: 'file-label-1' as string | null,
   confirmPrintBatchPending: false,
   templateId: 'tpl-1',
   // 打印批次用例额外追加的规则 / 模板；其它页面的用例保持为空。
@@ -205,7 +206,11 @@ vi.mock('@/composables/barcode/useBusinessBarcode', () => ({
         requestedQuantity: 2,
         status: barcode.printBatchStatus,
         items: [
-          { sequenceNo: 1, labelValue: '(01)06912345678901(10)L2407', fileId: 'file-label-1' },
+          {
+            sequenceNo: 1,
+            labelValue: '(01)06912345678901(10)L2407',
+            fileId: barcode.printBatchFileId,
+          },
           { sequenceNo: 2, labelValue: '(01)06912345678901(10)L2408', fileId: null },
         ],
       })),
@@ -420,6 +425,7 @@ const resetFixture = () => {
   barcode.route.query = {}
   barcode.printBatchSourceDocumentType = 'production.report'
   barcode.printBatchStatus = 'ready-to-print'
+  barcode.printBatchFileId = 'file-label-1'
   barcode.confirmPrintBatchPending = false
   barcode.dispatchPrintBatchPending = false
   barcode.dispatchPrintBatch.mockResolvedValue({ acknowledged: true })

@@ -18,6 +18,7 @@ import { computed, ref } from 'vue'
 export interface DetailField {
   label: string
   value: string
+  valueClass?: string
 }
 
 const props = defineProps<{
@@ -74,13 +75,14 @@ const actionLabel = computed(() => (isActive.value ? '停用' : '启用'))
       <dl class="grid gap-3 sm:grid-cols-2">
         <div v-for="field in detailFields" :key="field.label" class="grid gap-1">
           <dt class="text-xs text-muted-foreground">{{ field.label }}</dt>
-          <dd class="text-sm">{{ field.value || '无' }}</dd>
+          <dd class="text-sm" :class="field.valueClass">{{ field.value || '无' }}</dd>
         </div>
         <div class="grid gap-1">
           <dt class="text-xs text-muted-foreground">状态</dt>
           <dd><NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" /></dd>
         </div>
       </dl>
+      <slot v-if="detailOpen" name="detail" />
       <NvDialogFooter>
         <NvButton type="button" variant="outline" @click="detailOpen = false">关闭</NvButton>
       </NvDialogFooter>

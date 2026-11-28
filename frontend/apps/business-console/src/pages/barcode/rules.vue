@@ -33,7 +33,11 @@ import {
 import { PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { BARCODE_TYPE_OPTIONS, barcodeTypeLabel } from './workflow-options'
+import {
+  BARCODE_TYPE_OPTIONS,
+  barcodeTypeLabel,
+  barcodeScanWorkflowLabel,
+} from './workflow-options'
 
 definePage({
   meta: {
@@ -55,11 +59,11 @@ const SOURCE_DOCUMENT_OPTIONS = [
   { value: 'work-order', label: '生产工单' },
   { value: 'work-center', label: '工位挂牌' },
   { value: 'delivery-order', label: '发货装箱' },
-  { value: 'inventory.receipt', label: '收货入库' },
+  { value: 'inventory.receipt', label: barcodeScanWorkflowLabel('inventory.receipt') },
   { value: 'production.report', label: '生产报工' },
   { value: 'quality.inspection', label: '质量检验' },
   { value: 'inventory.count', label: '库存盘点' },
-  { value: 'wms.receiving', label: '仓储收货' },
+  { value: 'wms.receiving', label: barcodeScanWorkflowLabel('wms.receiving') },
 ]
 
 /**

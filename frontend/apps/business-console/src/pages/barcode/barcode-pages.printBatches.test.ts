@@ -37,11 +37,21 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('WO-001')
     expect(wrapper.text()).toContain('(01)06912345678901(10)L2407')
     expect(wrapper.text()).toContain('已生成')
+    expect(wrapper.text()).toContain('无文件可下载')
     expect(wrapper.text()).not.toContain('file-label-1')
     expect(barcode.printBatchFilters?.sourceDocumentType).toBe('production.report')
     expect(barcode.printBatchFilters?.sourceDocumentId).toBe('WO-001')
     expect(barcode.printBatchFilters?.selectedPrintBatchId).toBe('pb-1')
     expect(barcode.printBatchFilters?.take).toBe(10)
+  })
+
+  it('explains the absence of saved files after the batch has printed', async () => {
+    barcode.printBatchStatus = 'printed'
+    barcode.printBatchFileId = null
+    const wrapper = await mountPrintBatches()
+
+    expect(wrapper.text()).toContain('无文件可下载')
+    expect(wrapper.text()).toContain('批次已完成，本次未保存可下载的标签文件')
   })
 
   it('uses business labels instead of internal print identifiers and raw enum values', async () => {

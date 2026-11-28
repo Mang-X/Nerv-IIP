@@ -24,6 +24,7 @@ const props = defineProps<{
   expanded: Set<string>
   /** 当前选中节点 key。 */
   selectedKey: string | null
+  highlightedKey?: string
   /** 该节点可就地新建的子级中文名（无则不显示「+ 子级」）。 */
   childLabelOf: (type: string) => string | undefined
 }>()
@@ -44,12 +45,16 @@ const childLabel = computed(() => props.childLabelOf(props.node.type))
 <template>
   <li
     role="treeitem"
+    :data-node-key="nodeKey"
     :aria-expanded="hasChildren ? isExpanded : undefined"
     :aria-selected="isSelected"
   >
     <div
       class="group flex items-center gap-1 rounded-md pr-1 text-sm"
-      :class="isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'"
+      :class="[
+        isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
+        highlightedKey === nodeKey && 'ring-2 ring-inset ring-ring',
+      ]"
       :style="{ paddingLeft: `${depth * 1}rem` }"
     >
       <button
@@ -93,6 +98,7 @@ const childLabel = computed(() => props.childLabelOf(props.node.type))
         :depth="depth + 1"
         :expanded="expanded"
         :selected-key="selectedKey"
+        :highlighted-key="highlightedKey"
         :child-label-of="childLabelOf"
         @select="emit('select', $event)"
         @toggle="emit('toggle', $event)"

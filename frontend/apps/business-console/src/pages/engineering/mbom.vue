@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFirstInvalidField } from '@/components/masterData/useFirstInvalidField'
 import type {
   BusinessConsoleManufacturingBomItem,
   BusinessConsoleReleaseManufacturingBomRequest,
@@ -28,6 +29,8 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldError,
+  NvEntityPicker,
   NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
@@ -79,7 +82,13 @@ const {
   fetchMbomDetail,
 } = useEngineeringMboms()
 
-const { eboms: publishedEboms, ebomsPending: publishedEbomsPending } = usePublishedEboms()
+const {
+  eboms: publishedEboms,
+  ebomsPending: publishedEbomsPending,
+  ebomsError: publishedEbomsError,
+  refreshEboms,
+  fetchEbomDetail,
+} = usePublishedEboms()
 const { skus } = useBusinessSkus()
 const { uoms } = useBusinessUoms()
 
@@ -229,19 +238,23 @@ function blankForm(): MbomForm {
 // 选物料后把该行单位自动设为其基本单位（按单位选项大小写不敏感匹配真实 code——
 // SKU 的基本单位可能与单位表大小写不一致，如 'PCS' vs 'pcs'；匹配不到则不填，避免落到无效值/占位符）。
 function applyMaterialUom(line: MaterialLine, code: string) {
-  const uom = matchedUom(code)
-  if (uom) {
-    line.unitOfMeasureCode = uom
-    return
-  }
-  if (!code) return
-  // 就地新建的物料要等物料列表刷新回来才查得到基本单位：等到查得到再带出，期间该行换了物料就作废。
+  line.unitOfMeasureCode = matchedUom(code) ?? ''
+  if (!code || line.unitOfMeasureCode) return
   const stop = watch(
-    () => matchedUom(code),
-    (next) => {
-      if (!next) return
-      stop()
-      if (line.skuCode === code) line.unitOfMeasureCode = next
+    () =>
+      [
+        line.skuCode,
+        line.unitOfMeasureCode,
+        matchedUom(code),
+        formOpen.value,
+        form.materialLines.includes(line),
+      ] as const,
+    ([sku, unit, next, open, active]) => {
+      if (sku !== code || unit || !open || !active) stop()
+      else if (next) {
+        stop()
+        line.unitOfMeasureCode = next
+      }
     },
   )
 }
@@ -253,11 +266,89 @@ function matchedUom(code: string) {
 
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
+const { formElement, focusFirstInvalidField } = useFirstInvalidField()
 const form = reactive<MbomForm>(blankForm())
 
-// 只有一份可引用的已发布设计 BOM 时直接选中——没有选择余地的「选择」不该让用户做。
+const sourcePending = ref(false)
+const sourceFailed = ref(false)
+const importedCount = ref(0)
+const unmappedCount = ref(0)
+const importedSnapshot = ref('')
+const pendingSource = ref<string>()
+let sourceRequest = 0
+
+function selectSource(key: string) {
+  if (key === form.ebomKey) {
+    pendingSource.value = undefined
+    return
+  }
+  if (JSON.stringify(form.materialLines) !== importedSnapshot.value) {
+    pendingSource.value = key
+    return
+  }
+  void loadSource(key)
+}
+
+async function loadSource(key: string) {
+  pendingSource.value = undefined
+  const request = ++sourceRequest
+  form.ebomKey = key
+  form.skuCode = ''
+  form.materialLines = [blankMaterialLine()]
+  importedSnapshot.value = JSON.stringify(form.materialLines)
+  importedCount.value = 0
+  unmappedCount.value = 0
+  sourceFailed.value = false
+  sourcePending.value = !!key
+  if (!key) return
+
+  const source = publishedEboms.value.find((row) => `${row.bomCode}::${row.revision}` === key)
+  try {
+    if (!source?.bomCode || !source.revision) throw new Error('找不到所选设计 BOM')
+    const detail = await fetchEbomDetail(source.bomCode, source.revision)
+    if (request !== sourceRequest || !formOpen.value) return
+    if (!detail?.parentItemCode) throw new Error('来源缺少父项物料')
+    form.skuCode = detail.parentItemCode
+    const lines = (detail.lines ?? []).flatMap((line): MaterialLine[] =>
+      line.childItemCode && line.quantity != null && line.unitOfMeasureCode
+        ? [
+            {
+              skuCode: line.childItemCode,
+              quantity: line.quantity,
+              unitOfMeasureCode:
+                uomOptions.value.find(
+                  (option) => option.value.toLowerCase() === line.unitOfMeasureCode?.toLowerCase(),
+                )?.value ?? line.unitOfMeasureCode,
+              scrapRate: '0',
+            },
+          ]
+        : [],
+    )
+    importedCount.value = lines.length
+    unmappedCount.value = (detail.lines?.length ?? 0) - lines.length
+    form.materialLines = lines.length ? lines : [blankMaterialLine()]
+    importedSnapshot.value = JSON.stringify(form.materialLines)
+  } catch (error) {
+    if (request !== sourceRequest || !formOpen.value) return
+    sourceFailed.value = true
+    notifyError(error, '读取来源设计 BOM 失败，请重试。')
+  } finally {
+    if (request === sourceRequest) sourcePending.value = false
+  }
+}
+
+function confirmSourceChange() {
+  if (pendingSource.value !== undefined) void loadSource(pendingSource.value)
+}
+
 watch([ebomOptions, formOpen], ([options, open]) => {
-  if (open && !form.ebomKey && options.length === 1) form.ebomKey = options[0]!.value
+  if (!open) {
+    sourceRequest += 1
+    pendingSource.value = undefined
+    sourcePending.value = false
+  } else if (!form.ebomKey && options.length === 1) {
+    selectSource(options[0]!.value)
+  }
 })
 
 function parseNumber(value: string | number | null | undefined): number | undefined {
@@ -283,7 +374,7 @@ watch(
   },
 )
 
-const ebomValid = computed(() => form.ebomKey.trim().length > 0)
+const ebomValid = computed(() => !!form.ebomKey && !sourceFailed.value && !sourcePending.value)
 const skuValid = computed(() => form.skuCode.trim().length > 0)
 const revisionValid = computed(() => form.revision.trim().length > 0 && !revisionTaken.value)
 const effectiveValid = computed(() => !!form.effectiveDate)
@@ -339,6 +430,10 @@ function openCreate() {
   Object.assign(form, blankForm())
   form.materialLines = [blankMaterialLine()]
   form.recipeLines = []
+  importedSnapshot.value = JSON.stringify(form.materialLines)
+  importedCount.value = 0
+  unmappedCount.value = 0
+  sourceFailed.value = false
   showErrors.value = false
   formOpen.value = true
 }
@@ -359,16 +454,25 @@ function removeRecipeLine(index: number) {
 async function submitForm() {
   if (!canSubmit.value) {
     showErrors.value = true
+    await focusFirstInvalidField()
     return
   }
-  const [engineeringBomCode, engineeringBomRevision] = form.ebomKey.split('::')
+  const source = publishedEboms.value.find(
+    (row) => `${row.bomCode}::${row.revision}` === form.ebomKey,
+  )
+  if (!source?.bomCode || !source.revision) {
+    sourceFailed.value = true
+    showErrors.value = true
+    await focusFirstInvalidField()
+    return
+  }
   const body: BusinessConsoleReleaseManufacturingBomRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     revision: form.revision.trim(),
     skuCode: form.skuCode.trim(),
-    engineeringBomCode: engineeringBomCode ?? '',
-    engineeringBomRevision: engineeringBomRevision ?? '',
+    engineeringBomCode: source.bomCode,
+    engineeringBomRevision: source.revision,
     effectiveDate: form.effectiveDate ?? undefined,
     materialLines: form.materialLines.map((line) => ({
       skuCode: line.skuCode.trim(),
@@ -457,10 +561,10 @@ function uomLabel(code?: string | null) {
               <NvDialogTitle>发布制造 BOM 新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
               <NvDialogDescription class="sr-only">
-                引用一份已发布的设计 BOM，填写产出物料、修订号与物料行。
+                引用一份已发布的设计 BOM，确认带入的产出物料和物料行，再填写修订号。
               </NvDialogDescription>
             </NvDialogHeader>
-            <form @submit.prevent="submitForm">
+            <form ref="formElement" novalidate @submit.prevent="submitForm">
               <NvDialogBody>
                 <div class="grid gap-5">
                   <p
@@ -490,7 +594,7 @@ function uomLabel(code?: string | null) {
                     0）与单位；填写了的配方行须含参数与目标值。
                   </p>
                   <p
-                    v-if="!publishedEbomsPending && !hasSelectorData"
+                    v-if="!publishedEbomsPending && !publishedEbomsError && !hasSelectorData"
                     class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
                     role="alert"
                   >
@@ -503,35 +607,91 @@ function uomLabel(code?: string | null) {
                       <NvFieldLabel for="mbom-ebom"
                         >引用设计 BOM <span class="text-destructive">*</span></NvFieldLabel
                       >
-                      <NvSelect v-model="form.ebomKey">
-                        <NvSelectTrigger id="mbom-ebom"
-                          ><NvSelectValue placeholder="选择已发布 EBOM"
-                        /></NvSelectTrigger>
-                        <NvSelectContent>
-                          <NvSelectItem v-for="o in ebomOptions" :key="o.value" :value="o.value">{{
-                            o.label
-                          }}</NvSelectItem>
-                        </NvSelectContent>
-                      </NvSelect>
-                    </NvField>
-                    <NvField :data-invalid="showErrors && !skuValid">
-                      <NvFieldLabel for="mbom-sku"
-                        >产出物料 <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <DirectoryPicker
-                        id="mbom-sku"
-                        v-model="form.skuCode"
-                        directory-type="material"
-                        creatable
-                        placeholder="选择产出物料"
+                      <NvEntityPicker
+                        id="mbom-ebom"
+                        :model-value="form.ebomKey"
+                        :options="ebomOptions"
+                        :loading="publishedEbomsPending"
+                        :invalid="showErrors && !ebomValid"
+                        :aria-describedby="showErrors && !ebomValid ? 'mbom-ebom-error' : undefined"
+                        title="选择已发布设计 BOM"
+                        placeholder="选择已发布 EBOM"
+                        :empty-text="hasSelectorData ? '没有匹配的设计 BOM' : '暂无已发布设计 BOM'"
+                        :show-code="false"
+                        @update:model-value="selectSource"
                       />
+                      <NvFieldError
+                        v-if="showErrors && !ebomValid"
+                        id="mbom-ebom-error"
+                        :errors="[
+                          sourceFailed ? '请重试读取来源。' : '请选择并加载已发布设计 BOM。',
+                        ]"
+                      />
+                      <NvFieldDescription v-if="sourcePending" role="status"
+                        >正在读取来源明细…</NvFieldDescription
+                      >
+                      <NvButton
+                        v-else-if="sourceFailed"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        @click="loadSource(form.ebomKey)"
+                        >重试读取来源</NvButton
+                      >
+                      <NvButton
+                        v-if="publishedEbomsError"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        @click="refreshEboms"
+                        >重试加载设计 BOM</NvButton
+                      >
+                      <NvFieldDescription v-if="form.skuCode" role="status">
+                        来源 {{ form.ebomKey.replace('::', ' · 修订 ') }}，已带入
+                        {{ importedCount }} 行。
+                        <template v-if="unmappedCount"
+                          >{{ unmappedCount }} 行缺少物料、数量或单位，请手动补录。</template
+                        >
+                      </NvFieldDescription>
                     </NvField>
+                    <NvField>
+                      <NvFieldLabel for="mbom-sku">产出物料</NvFieldLabel>
+                      <NvInput
+                        id="mbom-sku"
+                        :model-value="form.skuCode ? skuLabel(form.skuCode) : ''"
+                        placeholder="由来源父项带入"
+                        readonly
+                      />
+                      <NvFieldDescription>更换产出物料时请选择其他来源。</NvFieldDescription>
+                    </NvField>
+                    <div
+                      v-if="pendingSource !== undefined"
+                      class="space-y-2 rounded-md border p-3 sm:col-span-2"
+                    >
+                      <p role="alert">更换来源会替换已修改的物料行，配方行会保留。</p>
+                      <div class="flex gap-2">
+                        <NvButton
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          @click="pendingSource = undefined"
+                          >保留当前来源</NvButton
+                        >
+                        <NvButton type="button" size="sm" @click="confirmSourceChange"
+                          >更换来源</NvButton
+                        >
+                      </div>
+                    </div>
                     <NvField :data-invalid="showErrors && !revisionValid">
                       <NvFieldLabel for="mbom-rev"
                         >修订号 <span class="text-destructive">*</span></NvFieldLabel
                       >
                       <NvCombobox
                         id="mbom-rev"
+                        :aria-invalid="showErrors && !revisionValid"
+                        :aria-describedby="
+                          showErrors && !revisionValid ? 'mbom-rev-error' : undefined
+                        "
                         v-model="form.revision"
                         :suggestions="takenRevisions"
                         :disabled="!form.skuCode || takenRevisionsPending"
@@ -545,27 +705,47 @@ function uomLabel(code?: string | null) {
                       <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
                         已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
                       </p>
+                      <NvFieldError
+                        v-if="showErrors && !revisionValid"
+                        id="mbom-rev-error"
+                        :errors="['请填写未占用的修订号。']"
+                      />
                     </NvField>
                     <NvField :data-invalid="showErrors && !effectiveValid">
                       <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
                       <NvDatePicker
                         v-model="form.effectiveDate"
+                        :aria-invalid="showErrors && !effectiveValid"
+                        :aria-describedby="
+                          showErrors && !effectiveValid ? 'mbom-date-error' : undefined
+                        "
                         placeholder="选择生效日"
                         class="w-full"
+                      />
+                      <NvFieldError
+                        v-if="showErrors && !effectiveValid"
+                        id="mbom-date-error"
+                        :errors="['请选择生效日。']"
                       />
                     </NvField>
                   </NvFieldGroup>
 
                   <div class="flex items-center justify-between">
                     <FormSectionTitle>物料行</FormSectionTitle>
-                    <NvButton type="button" variant="outline" size="sm" @click="addMaterialLine">
+                    <NvButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      :disabled="sourcePending"
+                      @click="addMaterialLine"
+                    >
                       <PlusIcon aria-hidden="true" />
                       增加物料
                     </NvButton>
                   </div>
                   <div class="grid gap-2">
                     <div
-                      v-for="(line, index) in form.materialLines"
+                      v-for="(line, index) in sourcePending ? [] : form.materialLines"
                       :key="index"
                       class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_5rem_7rem_6rem_auto]"
                     >
@@ -575,11 +755,35 @@ function uomLabel(code?: string | null) {
                         >
                         <DirectoryPicker
                           :id="`mbom-mat-${index}`"
+                          :invalid="
+                            showErrors &&
+                            (!line.skuCode.trim() ||
+                              line.skuCode === duplicateMaterial ||
+                              line.skuCode === selfReferenceMaterial)
+                          "
+                          :aria-describedby="
+                            showErrors &&
+                            (!line.skuCode.trim() ||
+                              line.skuCode === duplicateMaterial ||
+                              line.skuCode === selfReferenceMaterial)
+                              ? `mbom-mat-${index}-error`
+                              : undefined
+                          "
                           v-model="line.skuCode"
                           directory-type="material"
                           creatable
                           placeholder="选择物料"
                           @update:model-value="(v: string) => applyMaterialUom(line, v)"
+                        />
+                        <NvFieldError
+                          v-if="
+                            showErrors &&
+                            (!line.skuCode.trim() ||
+                              line.skuCode === duplicateMaterial ||
+                              line.skuCode === selfReferenceMaterial)
+                          "
+                          :id="`mbom-mat-${index}-error`"
+                          :errors="['请选择有效且不重复的物料。']"
                         />
                       </NvField>
                       <NvField :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
@@ -588,10 +792,21 @@ function uomLabel(code?: string | null) {
                         >
                         <NvInput
                           :id="`mbom-qty-${index}`"
+                          :aria-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0"
+                          :aria-describedby="
+                            showErrors && (parseNumber(line.quantity) ?? 0) <= 0
+                              ? `mbom-qty-${index}-error`
+                              : undefined
+                          "
                           v-model="line.quantity"
                           type="number"
                           min="0"
                           step="any"
+                        />
+                        <NvFieldError
+                          v-if="showErrors && (parseNumber(line.quantity) ?? 0) <= 0"
+                          :id="`mbom-qty-${index}-error`"
+                          :errors="['数量必须大于 0。']"
                         />
                       </NvField>
                       <NvField :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
@@ -599,15 +814,38 @@ function uomLabel(code?: string | null) {
                           >单位 <span class="text-destructive">*</span></NvFieldLabel
                         >
                         <NvSelect v-model="line.unitOfMeasureCode">
-                          <NvSelectTrigger :id="`mbom-uom-${index}`"
+                          <NvSelectTrigger
+                            :id="`mbom-uom-${index}`"
+                            :aria-invalid="showErrors && !line.unitOfMeasureCode.trim()"
+                            :aria-describedby="
+                              showErrors && !line.unitOfMeasureCode.trim()
+                                ? `mbom-uom-${index}-error`
+                                : undefined
+                            "
                             ><NvSelectValue placeholder="单位"
                           /></NvSelectTrigger>
                           <NvSelectContent>
+                            <NvSelectItem
+                              v-if="
+                                line.unitOfMeasureCode &&
+                                !uomOptions.some(
+                                  (option) => option.value === line.unitOfMeasureCode,
+                                )
+                              "
+                              :value="line.unitOfMeasureCode"
+                            >
+                              {{ line.unitOfMeasureCode }}
+                            </NvSelectItem>
                             <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
                               o.label
                             }}</NvSelectItem>
                           </NvSelectContent>
                         </NvSelect>
+                        <NvFieldError
+                          v-if="showErrors && !line.unitOfMeasureCode.trim()"
+                          :id="`mbom-uom-${index}-error`"
+                          :errors="['请选择单位。']"
+                        />
                       </NvField>
                       <NvField>
                         <NvFieldLabel :for="`mbom-scrap-${index}`">损耗率</NvFieldLabel>
@@ -653,8 +891,19 @@ function uomLabel(code?: string | null) {
                         >
                         <NvInput
                           :id="`mbom-param-${index}`"
+                          :aria-invalid="showErrors && !line.parameterCode.trim()"
+                          :aria-describedby="
+                            showErrors && !line.parameterCode.trim()
+                              ? `mbom-param-${index}-error`
+                              : undefined
+                          "
                           v-model="line.parameterCode"
                           placeholder="如 温度"
+                        />
+                        <NvFieldError
+                          v-if="showErrors && !line.parameterCode.trim()"
+                          :id="`mbom-param-${index}-error`"
+                          :errors="['请填写配方参数。']"
                         />
                       </NvField>
                       <NvField :data-invalid="showErrors && !line.targetValue.trim()">
@@ -663,8 +912,19 @@ function uomLabel(code?: string | null) {
                         >
                         <NvInput
                           :id="`mbom-target-${index}`"
+                          :aria-invalid="showErrors && !line.targetValue.trim()"
+                          :aria-describedby="
+                            showErrors && !line.targetValue.trim()
+                              ? `mbom-target-${index}-error`
+                              : undefined
+                          "
                           v-model="line.targetValue"
                           placeholder="如 180"
+                        />
+                        <NvFieldError
+                          v-if="showErrors && !line.targetValue.trim()"
+                          :id="`mbom-target-${index}-error`"
+                          :errors="['请填写目标值。']"
                         />
                       </NvField>
                       <NvField>
@@ -693,7 +953,11 @@ function uomLabel(code?: string | null) {
               </NvDialogBody>
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
-                <NvButton variant="brand" type="submit" :disabled="releasePending">
+                <NvButton
+                  variant="brand"
+                  type="submit"
+                  :disabled="releasePending || sourcePending || pendingSource !== undefined"
+                >
                   <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </NvButton>

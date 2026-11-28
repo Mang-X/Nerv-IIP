@@ -66,7 +66,7 @@ const {
   workersTotal,
 } = useWorkerRegistry()
 
-const { items: departments } = useMasterDataResource('department')
+const { items: departments } = useMasterDataResource('department', { all: true })
 
 /** 在岗状态受控值——与后端 Worker.EmploymentStatus 常量一一对应。 */
 const EMPLOYMENT_STATUS = [
@@ -84,18 +84,24 @@ function statusTone(value?: string | null) {
 const search = computed({
   get: () => filters.keyword ?? '',
   set: (value: string) => {
-    filters.keyword = value.trim() ? value.trim() : undefined
+    filters.pageIndex = 1
+    filters.keyword = value.trim() || undefined
+    page.value = 1
   },
 })
 
 const departmentFilter = shallowRef('all')
 watch(departmentFilter, (value) => {
-  filters.departmentCode = value === 'all' ? undefined : value
   filters.pageIndex = 1
+  filters.departmentCode = value === 'all' ? undefined : value
+  page.value = 1
 })
 
 const page = ref(1)
 const pageSize = ref('20')
+watch(pageSize, () => {
+  page.value = 1
+})
 watch([page, pageSize], () => {
   filters.pageIndex = page.value
   filters.pageSize = Number(pageSize.value) || 20
@@ -448,12 +454,14 @@ async function confirmRestore() {
       </template>
       <template #cell-teams="{ row }">
         <div v-if="row.teams?.length" class="flex flex-wrap gap-1">
-          <NvStatusBadge
+          <div
             v-for="team in row.teams"
             :key="team.teamCode"
-            :label="team.isLeader ? `${team.teamName} · 组长` : (team.teamName ?? '')"
-            :tone="team.isLeader ? 'info' : 'neutral'"
-          />
+            class="flex min-w-0 items-center gap-1"
+          >
+            <span class="whitespace-normal break-words">{{ team.teamName || team.teamCode }}</span>
+            <NvStatusBadge v-if="team.isLeader" label="组长" tone="info" class="shrink-0" />
+          </div>
         </div>
         <span v-else class="text-muted-foreground">未编组</span>
       </template>

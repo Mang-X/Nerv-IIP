@@ -100,19 +100,7 @@ function rolesLabel(row: BusinessConsoleResourceItem) {
   return labels.length ? labels.join(' / ') : '未分配'
 }
 
-const listRows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  return partners.value.filter((row) => {
-    const roles = partnerRoles(row)
-    const roleMatched = roleFilter.value === 'all' || roles.includes(roleFilter.value)
-    const kwMatched =
-      !kw ||
-      [row.code, row.displayName, rolesLabel(row), row.taxId].some((value) =>
-        (value ?? '').toLowerCase().includes(kw),
-      )
-    return roleMatched && kwMatched
-  })
-})
+const listRows = partners
 const sortedRows = computed(() => {
   if (!sort.value) return listRows.value
   const { key, direction } = sort.value
@@ -191,7 +179,14 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'roles', header: '角色', width: 'w-40' },
   { key: 'taxId', header: '税号', width: 'w-44', accessor: (r) => r.taxId ?? '无' },
-  { key: 'creditLimit', header: '信用额度', width: 'w-36', accessor: (r) => formatCreditLimit(r) },
+  {
+    key: 'creditLimit',
+    header: '信用额度',
+    width: 'w-36',
+    align: 'end',
+    cellClass: 'tabular-nums',
+    accessor: (r) => formatCreditLimit(r),
+  },
   { key: 'active', header: '状态', width: 'w-24' },
   {
     key: 'snapshotVersion',
@@ -208,11 +203,14 @@ function partnerDetailFields(row: BusinessConsoleResourceItem) {
     { label: '名称', value: row.displayName ?? '' },
     { label: '角色', value: rolesLabel(row) },
     { label: '统一社会信用代码', value: row.taxId ?? '' },
-    { label: '信用额度', value: formatCreditLimit(row) },
+    { label: '信用额度', value: formatCreditLimit(row), valueClass: 'text-right tabular-nums' },
   ]
 }
 
 watch([keyword, roleFilter, pageSize], () => {
+  filters.skip = 0
+  filters.keyword = keyword.value.trim() || undefined
+  filters.partnerType = roleFilter.value === 'all' ? undefined : roleFilter.value
   page.value = 1
 })
 
@@ -346,11 +344,13 @@ function customerCreditPatch() {
     creditCurrencyCode: createForm.creditCurrencyCode,
   }
 }
+const creditLimitFormatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 21 })
+
 function formatCreditLimit(
   row: Pick<BusinessConsoleResourceItem, 'creditLimit' | 'creditCurrencyCode'>,
 ) {
   if (row.creditLimit === undefined || row.creditLimit === null) return '无'
-  return `${row.creditCurrencyCode ?? ''} ${row.creditLimit}`.trim()
+  return `${row.creditCurrencyCode ?? ''} ${creditLimitFormatter.format(row.creditLimit)}`.trim()
 }
 </script>
 
@@ -514,7 +514,7 @@ function formatCreditLimit(
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索编码、名称、税号">
       <template #filters>
         <IncludeDisabledFilter v-model="includeDisabled" />
         <NvSelect v-model="roleFilter">

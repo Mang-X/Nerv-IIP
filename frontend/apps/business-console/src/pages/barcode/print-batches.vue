@@ -56,6 +56,7 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
   barcodeTypeLabel,
+  barcodeScanWorkflowLabel,
   barcodeSourceDocumentKind,
   barcodeSourceDocumentRoute,
   isBarcodeScanWorkflow,
@@ -72,8 +73,8 @@ definePage({
 const SOURCE_OPTIONS = [
   { value: 'production.report', label: '生产报工' },
   { value: 'purchase-receipt', label: '采购收货' },
-  { value: 'wms.receiving', label: '仓储收货' },
-  { value: 'inventory.receipt', label: '库存入库' },
+  { value: 'wms.receiving', label: barcodeScanWorkflowLabel('wms.receiving') },
+  { value: 'inventory.receipt', label: barcodeScanWorkflowLabel('inventory.receipt') },
   { value: 'inventory.issue', label: '库存出库' },
   { value: 'inventory.count', label: '库存盘点' },
   { value: 'quality.inspection', label: '质量检验' },
@@ -258,7 +259,7 @@ const itemColumns: NvDataTableColumn<BusinessConsoleBarcodePrintItemDetail>[] = 
     key: 'fileId',
     header: '标签文件',
     width: 'w-20',
-    accessor: (r) => (r.fileId ? '已生成' : '未生成'),
+    accessor: (r) => (r.fileId ? '已生成' : '无文件可下载'),
   },
 ]
 
@@ -839,6 +840,14 @@ function firstQuery(value: unknown) {
         </form>
         <p v-if="printBatchDetail?.failureReason" class="text-sm text-muted-foreground">
           {{ printBatchDetail.failureReason }}
+        </p>
+        <p
+          v-if="
+            printBatchDetail?.status === 'printed' && selectedItems.every((item) => !item.fileId)
+          "
+          class="text-sm text-muted-foreground"
+        >
+          批次已完成，本次未保存可下载的标签文件。
         </p>
         <NvDataTable
           :columns="itemColumns"

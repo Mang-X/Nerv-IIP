@@ -345,11 +345,11 @@ public sealed class BusinessGatewayProxyTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev&skip=1&take=25");
+        var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev&skip=1&take=25&keyword=SKU-001");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", masterData.LastInternalToken);
-        Assert.Equal(new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 1, 25), masterData.LastListResourcesRequest);
+        Assert.Equal(new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, 1, 25, Keyword: "SKU-001"), masterData.LastListResourcesRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("SKU-002", document.RootElement.GetProperty("data").GetProperty("resources")[0].GetProperty("code").GetString());
     }
@@ -684,6 +684,35 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("SK-WELD", masterData.LastArchiveSkillRequest!.SkillCode);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Create_certified_skill_rejects_missing_or_nonpositive_validity(int? validityMonths)
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/master-data/skills", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillName = "高压电工",
+            groupName = "设备维护",
+            requiresCertification = true,
+            validityMonths,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(masterData.LastCreateSkillRequest);
+    }
+
     [Fact]
     public async Task Master_data_resource_lifecycle_facade_uses_internal_service_token()
     {
@@ -908,6 +937,12 @@ public sealed class BusinessGatewayProxyTests
 
         var list = await client.GetAsync("/api/business-console/v1/master-data/code-rules?organizationId=org-001&environmentId=env-dev");
         var detail = await client.GetAsync("/api/business-console/v1/master-data/code-rules/master-data.sku?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var listJson = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var rule = listJson.RootElement.GetProperty("data").GetProperty("rules")[0];
+        var scope = rule.GetProperty("scope").GetString();
+        Assert.Equal("organization, environment", scope);
+
         var version = await client.PostAsJsonAsync("/api/business-console/v1/master-data/code-rules/master-data.sku/versions", new
         {
             organizationId = "org-001",
@@ -915,11 +950,11 @@ public sealed class BusinessGatewayProxyTests
             ruleKey = "master-data.sku",
             displayName = "SKU code v2",
             appliesTo = "sku",
-            scope = 3,
+            scope,
             segments = new object[]
             {
-                new { type = 0, value = "SKU-" },
-                new { type = 2, width = 4, start = 1 },
+                new { type = "constant", value = "SKU-" },
+                new { type = "sequence", width = 4, start = 1 },
             },
             isActive = true,
             effectiveFromUtc = "2026-06-01T00:00:00Z",
@@ -933,20 +968,26 @@ public sealed class BusinessGatewayProxyTests
             ruleKey = "master-data.sku",
             segments = new object[]
             {
-                new { type = 0, value = "SKU-" },
-                new { type = 2, width = 4, start = 42 },
+                new { type = "constant", value = "SKU-" },
+                new { type = "sequence", width = 4, start = 42 },
             },
             siteCode = "SITE-01",
         });
 
-        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, version.StatusCode);
         Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+        var segments = rule.GetProperty("segments");
+        Assert.Equal("constant", segments[0].GetProperty("type").GetString());
+        Assert.Equal("sequence", segments[1].GetProperty("type").GetString());
+        Assert.Equal("none", segments[1].GetProperty("reset").GetString());
         Assert.Equal("internal-test-token", masterData.LastInternalToken);
         Assert.Equal(new BusinessConsoleCodeRuleContextRequest("org-001", "env-dev"), masterData.LastCodeRuleListRequest);
         Assert.Equal(new BusinessConsoleCodeRuleRequest("org-001", "env-dev", "master-data.sku"), masterData.LastCodeRuleDetailRequest);
         Assert.Equal("master-data.sku", masterData.LastCodeRuleVersionRequest!.RuleKey);
+        Assert.Equal(
+            Nerv.IIP.Contracts.Coding.ScopeDimension.Organization | Nerv.IIP.Contracts.Coding.ScopeDimension.Environment,
+            masterData.LastCodeRuleVersionRequest.Scope);
         Assert.Equal("user-admin", masterData.LastCodeRuleVersionCreatedBy);
         Assert.Equal("align plant convention", masterData.LastCodeRuleVersionRequest.ChangeReason);
         Assert.Equal("master-data.sku", masterData.LastCodeRulePreviewRequest!.RuleKey);
@@ -7127,6 +7168,65 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("active", document.RootElement.GetProperty("data").GetProperty("status").GetString());
     }
 
+    [Theory]
+    [InlineData("engineering", "EngineeringBom")]
+    [InlineData("manufacturing", "ManufacturingBom")]
+    public async Task Engineering_bom_diff_facade_translates_console_kind(string consoleKind, string serviceKind)
+    {
+        var downstream = new RecordingHandler(request =>
+        {
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri!.Query);
+            if (request.RequestUri.AbsolutePath != "/api/business/v1/engineering/boms/diff"
+                || query["bomKind"] != serviceKind)
+                return JsonResponse(HttpStatusCode.BadRequest, new { success = false });
+
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                data = new BusinessConsoleBomDiffResponse(serviceKind, "BOM:A", "BOM:B", "SKU-FG", [], new(0, 0, 0, 0)),
+            });
+        });
+        using var http = new HttpClient(downstream) { BaseAddress = new Uri("http://engineering.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(new HttpBusinessProductEngineeringClient(http));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(
+            "/api/business-console/v1/engineering/boms/diff?organizationId=org-001&environmentId=env-dev"
+            + $"&bomKind={consoleKind}&fromBomCode=BOM&fromRevision=A&toBomCode=BOM&toRevision=B");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(serviceKind, document.RootElement.GetProperty("data").GetProperty("bomKind").GetString());
+    }
+
+    [Fact]
+    public async Task Engineering_bom_diff_returns_business_rejection_for_different_root_items()
+    {
+        const string reason = "工程 BOM 两个版本必须属于同一父物料才能比较。";
+        using var http = new HttpClient(new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK,
+            new { success = false, code = 0, message = reason }))) { BaseAddress = new Uri("http://engineering.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(new HttpBusinessProductEngineeringClient(http));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(
+            "/api/business-console/v1/engineering/boms/diff?organizationId=org-001&environmentId=env-dev"
+            + "&bomKind=engineering&fromBomCode=EBOM-A&fromRevision=1&toBomCode=EBOM-B&toRevision=1");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(reason, body.RootElement.GetProperty("message").GetString());
+    }
+
     [Fact]
     public async Task Engineering_bom_explosion_facade_forwards_context_and_internal_service_token()
     {
@@ -12752,6 +12852,25 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
         Assert.Equal("downstream-invalid-response", exception.Message);
+    }
+
+    [Fact]
+    public async Task Assign_personnel_skill_preserves_downstream_business_validation_as_bad_request()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK,
+            """{"data":null,"success":false,"message":"技能未启用。","code":0}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.AssignPersonnelSkillAsync(
+            "internal-test-token",
+            new BusinessConsoleAssignPersonnelSkillRequest(
+                "org-001", "env-dev", "worker-001", "SK-0001", "senior",
+                new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal("技能未启用。", error.Message);
     }
 
     [Fact]

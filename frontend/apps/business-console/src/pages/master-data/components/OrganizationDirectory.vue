@@ -173,10 +173,6 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
               <PlusIcon aria-hidden="true" />
               新建子部门
             </NvButton>
-            <NvButton size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
-              <PlusIcon aria-hidden="true" />
-              在此部门下新建班组
-            </NvButton>
             <MasterDataRowActions
               :row="selectedNode.item"
               entity-label="部门"
@@ -213,7 +209,10 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
           >
             加载班组中…
           </div>
-          <div v-else-if="!teamRows.length" class="grid gap-2 px-1 py-6 text-center">
+          <div
+            v-else-if="!teamRows.length && !teamListError"
+            class="grid gap-2 px-1 py-6 text-center"
+          >
             <p class="text-sm text-muted-foreground">还没有班组，点击「新建班组」创建第一条。</p>
           </div>
           <ul v-else class="divide-y rounded-md border border-border">

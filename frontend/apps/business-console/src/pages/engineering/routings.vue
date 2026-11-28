@@ -25,6 +25,7 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvEntityPicker,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -46,6 +47,7 @@ import {
 } from '@nerv-iip/ui'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { formatDate, today } from '@/utils/format'
 import {
   inlineErrorMessage,
@@ -78,8 +80,16 @@ const { skus } = useBusinessSkus()
 const { resources: workCenters, resourcesPending: workCentersPending } =
   useBusinessMasterDataResources('work-center')
 // 标准工序主数据（#397）：工序从「产品工程 › 标准工序」选，选中后自动带出其默认工作中心与标准工时。
-const { standardOperations, standardOperationsPending: standardOpsPending } =
-  useStandardOperations()
+const {
+  standardOperations,
+  standardOperationsPending: standardOpsPending,
+  standardOperationsError: standardOpsError,
+  refresh: refreshStandardOperations,
+} = useStandardOperations({ enabledOnly: true })
+const auth = useAuthStore()
+const canOpenStandardOperations = computed(() =>
+  auth.principal?.permissionCodes?.includes('business.engineering.standard-operations.read'),
+)
 
 const STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'all' },
@@ -432,16 +442,30 @@ async function openView(row: BusinessConsoleRoutingItem) {
                     >
                   </p>
                   <p
-                    v-if="!standardOpsPending && !hasOperations"
+                    v-if="!standardOpsPending && (standardOpsError || !hasOperations)"
                     class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
                     role="alert"
                   >
-                    还没有可选的标准工序。
-                    <RouterLink to="/engineering/standard-operations" class="font-medium underline"
-                      >去标准工序维护 →</RouterLink
+                    {{ standardOpsError ? '标准工序加载失败。' : '还没有可用的标准工序。' }}
+                    <RouterLink
+                      v-if="canOpenStandardOperations"
+                      to="/engineering/standard-operations"
+                      target="_blank"
+                      rel="noopener"
+                      class="font-medium underline"
+                      >前往标准工序</RouterLink
                     >
                   </p>
 
+                  <NvButton
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    :disabled="standardOpsPending"
+                    @click="refreshStandardOperations"
+                  >
+                    刷新工序候选
+                  </NvButton>
                   <FormSectionTitle>版本头</FormSectionTitle>
                   <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
                     <NvField :data-invalid="showErrors && !skuValid">
@@ -496,7 +520,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
                     <div
                       v-for="(op, index) in form.operations"
                       :key="index"
-                      class="grid sm:grid-cols-[4.5rem_1fr_1fr_6rem_10rem_auto] items-end gap-2 rounded-md border p-2"
+                      class="grid sm:grid-cols-[4.5rem_minmax(8rem,1fr)_minmax(12rem,2fr)_6rem_7rem_auto] items-end gap-2 rounded-md border p-2"
                     >
                       <NvField :data-invalid="showErrors && !sequencesValid">
                         <NvFieldLabel :for="`rt-seq-${index}`"
@@ -525,22 +549,20 @@ async function openView(row: BusinessConsoleRoutingItem) {
                         <NvFieldLabel :for="`rt-name-${index}`"
                           >工序 <span class="text-destructive">*</span></NvFieldLabel
                         >
-                        <NvSelect
+                        <NvEntityPicker
+                          :id="`rt-name-${index}`"
                           v-model="op.operationCode"
+                          :options="operationOptions"
+                          title="选择标准工序"
+                          placeholder="选择标准工序"
+                          search-placeholder="搜索工序名称 / 编码"
+                          empty-text="暂无可用标准工序"
+                          no-match-text="没有匹配的标准工序"
+                          :loading="standardOpsPending"
+                          :invalid="showErrors && !op.operationCode.trim()"
+                          :show-code="false"
                           @update:model-value="applyOperationDefaults(op)"
-                        >
-                          <NvSelectTrigger :id="`rt-name-${index}`"
-                            ><NvSelectValue placeholder="选择标准工序"
-                          /></NvSelectTrigger>
-                          <NvSelectContent>
-                            <NvSelectItem
-                              v-for="o in operationOptions"
-                              :key="o.value"
-                              :value="o.value"
-                              >{{ o.label }}</NvSelectItem
-                            >
-                          </NvSelectContent>
-                        </NvSelect>
+                        />
                       </NvField>
                       <NvField
                         :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0"

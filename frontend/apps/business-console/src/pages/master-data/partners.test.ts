@@ -31,7 +31,7 @@ const partnerRows = [
     partnerType: 'customer',
     partnerRoles: ['carrier'],
     taxId: '91440000MA5R',
-    creditLimit: 300000,
+    creditLimit: 30000000,
     creditCurrencyCode: 'CNY',
   },
   {
@@ -163,7 +163,8 @@ describe('master-data partners page', () => {
     expect(wrapper.text()).toContain('客户')
     expect(wrapper.text()).toContain('承运商')
     expect(wrapper.text()).toContain('供应商')
-    expect(wrapper.text()).toContain('CNY 300000')
+    const credit = wrapper.findAll('td').find((cell) => cell.text() === 'CNY 30,000,000')
+    expect(credit?.classes()).toContain('tabular-nums')
   })
 
   it('exposes a role filter select and a create-partner button', async () => {

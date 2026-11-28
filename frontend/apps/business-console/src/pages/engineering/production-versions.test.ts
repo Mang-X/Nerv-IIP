@@ -18,8 +18,8 @@ const pvRow = {
   organizationId: 'org-001',
   environmentId: 'env-dev',
   skuCode: 'SKU-1',
-  mbomVersionId: 'MBOM-1',
-  routingVersionId: 'RT-1',
+  mbomVersionId: 'MBOM-1:A',
+  routingVersionId: 'RT-1:A',
   validFrom: '2026-01-01',
   validTo: '2026-12-31',
   lotSizeMin: 10,
@@ -58,24 +58,6 @@ vi.mock('@/composables/engineering', () => ({
     updatePending: shallowRef(false),
     updateError: shallowRef(undefined),
   }),
-  usePublishedMboms: () => ({
-    filters: reactive({}),
-    mboms: computed(() => [
-      { bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' },
-    ]),
-    mbomsError: shallowRef(undefined),
-    mbomsPending: shallowRef(false),
-    refreshMboms: vi.fn(),
-  }),
-  usePublishedRoutings: () => ({
-    filters: reactive({}),
-    routings: computed(() => [
-      { routingCode: 'RT-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' },
-    ]),
-    routingsError: shallowRef(undefined),
-    routingsPending: shallowRef(false),
-    refreshRoutings: vi.fn(),
-  }),
   useProductionVersionResolve: () => ({
     resolve: stub.resolve,
     clear: vi.fn(() => {
@@ -87,6 +69,29 @@ vi.mock('@/composables/engineering', () => ({
     resolvedOnce,
   }),
 }))
+
+const candidatePages = vi.hoisted(() => ({ mbom: vi.fn(), routing: vi.fn() }))
+
+vi.mock('@nerv-iip/api-client', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsoleEngineeringManufacturingBomsQueryOptions: candidatePages.mbom,
+  listBusinessConsoleEngineeringRoutingsQueryOptions: candidatePages.routing,
+}))
+
+function listCandidates<T>(items: T[]) {
+  return ({ query }: { query: { skuCode: string; skip: number; take: number } }) => {
+    const candidates = query.skuCode === 'SKU-1' ? items : []
+    return {
+      query: async () => ({
+        success: true,
+        data: {
+          items: candidates.slice(query.skip, query.skip + query.take),
+          total: candidates.length,
+        },
+      }),
+    }
+  }
+}
 
 vi.mock('@/composables/master-data', () => ({
   useBusinessSkus: () => ({
@@ -118,6 +123,15 @@ const datePickerStub = {
   },
 }
 const formSelectStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'disabled'],
+    emits: ['update:modelValue'],
+    template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)">
+      <option value=""></option>
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>`,
+  },
+
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -152,6 +166,7 @@ const alertDialogStubs = {
 }
 
 const allStubs = {
+  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
   ...layoutStub,
   ...dialogStubs,
   ...datePickerStub,
@@ -172,6 +187,7 @@ async function openCreateAndFill(wrapper: ReturnType<typeof mount>) {
   const selects = wrapper.findAll('select')
   // 顺序：物料、MBOM、工艺路线、状态筛选、resolve 物料……取表单内前三个。
   await selects[0]!.setValue('SKU-1')
+  await flushPromises()
   await selects[1]!.setValue('MBOM-1:A')
   await selects[2]!.setValue('RT-1:A')
   // 生效起：表单内第一个 date input。
@@ -181,6 +197,12 @@ async function openCreateAndFill(wrapper: ReturnType<typeof mount>) {
 }
 
 beforeEach(() => {
+  candidatePages.mbom
+    .mockReset()
+    .mockImplementation(listCandidates([{ bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1' }]))
+  candidatePages.routing
+    .mockReset()
+    .mockImplementation(listCandidates([{ routingCode: 'RT-1', revision: 'A', skuCode: 'SKU-1' }]))
   stub.createProductionVersion.mockClear()
   stub.updateProductionVersion.mockClear()
   stub.archiveProductionVersion.mockClear()
@@ -300,8 +322,41 @@ describe('engineering production-versions page', () => {
       Record<string, unknown>,
     ]
     expect(id).toBe('pv-1')
-    expect(body.mbomVersionId).toBe('MBOM-1')
+    expect(body.mbomVersionId).toBe('MBOM-1:A')
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('编辑保留首页以外的 MBOM 和候选目录未返回的既有路线', async () => {
+    candidatePages.mbom.mockImplementation(
+      listCandidates([
+        ...Array.from({ length: 100 }, (_, index) => ({
+          bomCode: `MBOM-${index + 2}`,
+          revision: 'B',
+          skuCode: 'SKU-1',
+        })),
+        { bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1' },
+      ]),
+    )
+    candidatePages.routing.mockImplementation(
+      listCandidates([{ routingCode: 'RT-9', revision: 'A', skuCode: 'SKU-1' }]),
+    )
+    const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+
+    const mbom = wrapper.get<HTMLSelectElement>('#pv-mbom')
+    const routing = wrapper.get<HTMLSelectElement>('#pv-routing')
+    expect(mbom.element.value).toBe('MBOM-1:A')
+    expect(mbom.get('option[value="MBOM-1:A"]').text()).toContain('智能网关主机')
+    expect(routing.element.value).toBe('RT-1:A')
+    expect(routing.get('option[value="RT-1:A"]').text()).toContain('现有绑定（未列入候选）')
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(stub.updateProductionVersion).toHaveBeenCalledWith(
+      'pv-1',
+      expect.objectContaining({ mbomVersionId: 'MBOM-1:A', routingVersionId: 'RT-1:A' }),
+    )
   })
 
   it('归档：点「归档」出现二次确认，确认后带原因调用 archive', async () => {
@@ -327,8 +382,8 @@ describe('engineering production-versions page', () => {
     stub.resolve.mockImplementation(async () => {
       resolved.value = {
         skuCode: 'SKU-1',
-        mbomVersionId: 'MBOM-1',
-        routingVersionId: 'RT-1',
+        mbomVersionId: 'MBOM-1:A',
+        routingVersionId: 'RT-1:A',
         status: 'active',
       }
       resolvedOnce.value = true
@@ -337,8 +392,14 @@ describe('engineering production-versions page', () => {
     await flushPromises()
 
     // <select> 顺序：表单内 物料/MBOM/路线（3）、resolve 卡物料（第 4）、状态筛选（第 5）。
-    const selects = wrapper.findAll('select')
-    await selects[3]!.setValue('SKU-1')
+    await wrapper
+      .findAll('select')
+      .find(
+        (select) =>
+          select.find('option[value="SKU-1"]').exists() &&
+          !select.find('option[value="SKU-2"]').exists(),
+      )!
+      .setValue('SKU-1')
     await flushPromises()
 
     await wrapper
@@ -351,5 +412,63 @@ describe('engineering production-versions page', () => {
     const arg = stub.resolve.mock.calls[0]![0] as Record<string, unknown>
     expect(arg.skuCode).toBe('SKU-1')
     expect(wrapper.text()).toContain('命中物料')
+  })
+  it('先选 SKU 才绑定唯一版本，切换到无候选 SKU 清空且拦截保存', async () => {
+    const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '新建生产版本')!.trigger('click')
+    expect(wrapper.get('#pv-mbom').attributes('disabled')).toBeDefined()
+    await wrapper.get('#pv-sku').setValue('SKU-1')
+    await flushPromises()
+    expect((wrapper.get('#pv-mbom').element as HTMLSelectElement).value).toBe('MBOM-1:A')
+    expect((wrapper.get('#pv-routing').element as HTMLSelectElement).value).toBe('RT-1:A')
+    await wrapper.get('#pv-sku').setValue('SKU-2')
+    await flushPromises()
+    expect((wrapper.get('#pv-mbom').element as HTMLSelectElement).value).toBe('')
+    expect((wrapper.get('#pv-routing').element as HTMLSelectElement).value).toBe('')
+    expect(wrapper.text()).toContain('此物料暂无已发布MBOM')
+    expect(wrapper.text()).toContain('生产版本当前无需选择工厂')
+    await wrapper.get('form').trigger('submit')
+    expect(stub.createProductionVersion).not.toHaveBeenCalled()
+  })
+
+  it('候选超过上限截断时展示提示，允许直接输入目录外精确版本提交', async () => {
+    candidatePages.mbom.mockImplementation(() => ({
+      query: async () => ({
+        success: true,
+        data: {
+          items: [{ bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1' }],
+          total: 5001,
+        },
+      }),
+    }))
+    candidatePages.routing.mockImplementation(() => ({
+      query: async () => ({
+        success: true,
+        data: {
+          items: [{ routingCode: 'RT-1', revision: 'A', skuCode: 'SKU-1' }],
+          total: 5001,
+        },
+      }),
+    }))
+
+    const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '新建生产版本')!.trigger('click')
+    await wrapper.get('#pv-sku').setValue('SKU-1')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5001')
+    await wrapper.get('#pv-mbom-exact').setValue('MBOM-5001:1')
+    await wrapper.get('#pv-routing-exact').setValue('RT-5001:1')
+    const dates = wrapper.findAll('input[type="date"]')
+    await dates[0]!.setValue('2026-03-01')
+    await flushPromises()
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createProductionVersion).toHaveBeenCalledTimes(1)
+    const body = stub.createProductionVersion.mock.calls[0]![0] as Record<string, unknown>
+    expect(body.mbomVersionId).toBe('MBOM-5001:1')
+    expect(body.routingVersionId).toBe('RT-5001:1')
   })
 })

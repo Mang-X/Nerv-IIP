@@ -72,7 +72,7 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
 
 <template>
   <FieldGroup class="gap-4">
-    <Field>
+    <Field class="sticky top-0 z-10 shrink-0 bg-background pb-1">
       <FieldLabel for="iam-permission-search">搜索权限</FieldLabel>
       <NvInput
         id="iam-permission-search"

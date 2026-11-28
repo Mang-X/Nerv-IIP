@@ -66,7 +66,7 @@ vi.mock('@/composables/master-data', () => ({
       take: 10,
     }),
     refreshUoms: vi.fn(),
-    uoms: computed(() => [uomRow, uomRowBox]),
+    uoms: computed(() => [uomRow]),
     uomsError: shallowRef(undefined),
     uomsPending: shallowRef(false),
     uomsTotal: computed(() => 2),
@@ -99,8 +99,9 @@ vi.mock('@/composables/master-data', () => ({
     actionError: shallowRef(undefined),
   }),
   // 量纲实时拉取：实时为空，页面回退量纲常量。
-  useBusinessMasterDataResources: () => ({
-    resources: shallowRef([]),
+  useBusinessMasterDataResources: (resourceType: string) => ({
+    resources: shallowRef(resourceType === 'unit-of-measure' ? [uomRow, uomRowBox] : []),
+    refreshResources: vi.fn(),
     resourcesPending: shallowRef(false),
   }),
 }))

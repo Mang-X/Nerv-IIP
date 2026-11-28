@@ -449,6 +449,11 @@ describe('master-data devices page', () => {
     form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
+    const model = document.getElementById('dev-model')
+    expect(document.activeElement).toBe(model)
+    expect(model?.getAttribute('aria-describedby')).toBe('dev-model-error')
+    expect(document.getElementById('dev-model-error')?.textContent).toContain('请填写设备型号')
+    expect(form?.textContent).toContain('定位首个错误')
     expect(stub.create).not.toHaveBeenCalled()
   })
 

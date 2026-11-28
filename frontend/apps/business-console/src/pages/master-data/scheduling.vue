@@ -16,6 +16,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import ShiftWorkingTime from './components/ShiftWorkingTime.vue'
 import WorkCalendarTab from './components/WorkCalendarTab.vue'
 import { useShiftCalendarPage } from './useShiftCalendarPage'
 
@@ -130,7 +131,7 @@ const {
 
       <!-- 班次 -->
       <NvTabsContent value="shift" class="grid gap-3">
-        <NvToolbar v-model:search="shiftKeyword" search-placeholder="在当前页内筛选班次编码、名称">
+        <NvToolbar v-model:search="shiftKeyword" search-placeholder="搜索班次编码、名称">
           <template #filters>
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>
@@ -168,7 +169,11 @@ const {
               :detail-fields="baseDetailFields(row, '班次编码', '班次名称')"
               @toggle="(row) => lifecycle.request(row, shiftActions, '班次')"
               @edit="openEditShift"
-            />
+            >
+              <template #detail>
+                <ShiftWorkingTime :code="row.code" :fetch-detail="shiftActions.fetchDetail" />
+              </template>
+            </MasterDataRowActions>
           </template>
         </NvDataTable>
       </NvTabsContent>

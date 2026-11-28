@@ -251,6 +251,21 @@ describe('engineering ebom page', () => {
     expect(uomSelect().value).toBe('SET')
   })
 
+  it('手动改单位后，迟到的基本单位不会覆盖选择，换组件会重新匹配', async () => {
+    const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    const component = wrapper.findAll('select')[1]!
+    const uom = wrapper.findAll('select')[2]!
+    await component.setValue('SKU-NEW')
+    await uom.setValue('PCS')
+    createdSkus.value = [{ code: 'SKU-NEW', displayName: '新主控板', baseUomCode: 'SET' }]
+    await flushPromises()
+    expect((uom.element as HTMLSelectElement).value).toBe('PCS')
+    await component.setValue('SKU-2')
+    await component.setValue('SKU-NEW')
+    expect((uom.element as HTMLSelectElement).value).toBe('SET')
+  })
+
   it('打开向导：生效日默认今天', async () => {
     const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
     await flushPromises()

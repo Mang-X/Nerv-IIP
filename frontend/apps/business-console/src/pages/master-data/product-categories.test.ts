@@ -82,6 +82,16 @@ beforeEach(() => {
   stub.toastError.mockClear()
 })
 
+it('新建产品分类时在基本信息中说明系统生成编码', async () => {
+  const wrapper = mount(ProductCategoriesPage, {
+    global: { stubs: { ...layoutStub, ...dialogStubs } },
+  })
+  await flushPromises()
+  await findButton(wrapper, '新建分类')!.trigger('click')
+  expect(wrapper.text()).toContain('基本信息')
+  expect(wrapper.text()).toContain('分类编码将在创建后自动生成')
+})
+
 describe('产品分类停用原因', () => {
   async function openArchiveDialog() {
     const wrapper = mount(ProductCategoriesPage, {

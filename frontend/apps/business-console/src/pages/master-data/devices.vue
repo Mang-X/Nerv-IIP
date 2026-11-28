@@ -29,10 +29,10 @@ definePage({
 })
 
 const devices = useMasterDataResource('device-asset')
-const sites = useMasterDataResource('site')
-const workshops = useBusinessWorkshops()
-const lines = useMasterDataResource('production-line')
-const workCenters = useMasterDataResource('work-center')
+const sites = useMasterDataResource('site', { all: true })
+const workshops = useBusinessWorkshops(true)
+const lines = useMasterDataResource('production-line', { all: true })
+const workCenters = useMasterDataResource('work-center', { all: true })
 const deviceActions = useMasterDataResourceActions('device-asset')
 // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
 const lifecycle = useMasterDataLifecycleConfirm()
@@ -149,18 +149,12 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
     { label: '退役日期', value: formatDate(row.retiredOn) },
   ]
 }
-const listRows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return devices.items.value
-  return devices.items.value.filter((row) =>
-    [row.code, row.displayName, row.snapshotVersion].some((value) =>
-      (value ?? '').toLowerCase().includes(kw),
-    ),
-  )
-})
+const listRows = devices.items
 const listErrorMessage = computed(() => inlineErrorMessage(devices.error.value))
 
 watch([keyword, pageSize], () => {
+  devices.filters.skip = 0
+  devices.filters.keyword = keyword.value.trim() || undefined
   page.value = 1
 })
 watch(
@@ -231,7 +225,7 @@ function openEdit(row: BusinessConsoleResourceItem) {
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索设备编码、名称">
       <template #filters>
         <IncludeDisabledFilter v-model="includeDisabled" />
       </template>

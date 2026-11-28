@@ -7,7 +7,7 @@ import {
 } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { formatDate, today } from '@/utils/format'
-import { friendlyErrorMessage } from '@/utils/notify'
+import { inlineErrorMessage } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -70,8 +70,9 @@ const {
   explosion,
   diff,
   whereUsed,
-  pending,
-  error,
+  pendingFor,
+  errorFor,
+  reset,
   loadBomDiff,
   loadEngineeringExplosion,
   loadManufacturingExplosion,
@@ -79,12 +80,31 @@ const {
   loadManufacturingWhereUsed,
 } = useBomAnalysis()
 
+function blankAnalysis() {
+  return { kind: 'engineering' as BomKind, effectiveDate: today(), submitted: false }
+}
+const traceComponentCode = ref('')
+const tabs = reactive({
+  explosion: blankAnalysis(),
+  'where-used': blankAnalysis(),
+  diff: blankAnalysis(),
+})
 const form = reactive({
-  kind: 'engineering' as BomKind,
+  get kind(): BomKind {
+    return tabs[requestView.value].kind
+  },
+  set kind(kind: BomKind) {
+    setKind(kind)
+  },
   view: 'tree' as AnalysisView,
   rootCode: '',
   componentCode: '',
-  effectiveDate: today(),
+  get effectiveDate() {
+    return tabs[requestView.value].effectiveDate
+  },
+  set effectiveDate(date: string) {
+    tabs[requestView.value].effectiveDate = date
+  },
   lotSize: '1',
   bomCode: '',
   revision: '',
@@ -93,7 +113,13 @@ const form = reactive({
   toBomCode: '',
   toRevision: '',
 })
-const submitted = ref(false)
+// 树与爆炸是同一次展开的两种呈现。
+const requestView = computed(() =>
+  form.view === 'tree' || form.view === 'explosion' ? 'explosion' : form.view,
+)
+const submitted = computed(() => tabs[requestView.value].submitted)
+const pending = computed(() => pendingFor(requestView.value))
+const error = computed(() => errorFor(requestView.value))
 
 const analysisViews: Array<{ value: AnalysisView; label: string }> = [
   { value: 'tree', label: '树视图' },
@@ -109,18 +135,18 @@ const kindOptions = [
 const {
   engineeringEntries,
   skuEntries,
+  itemEntries,
   pending: catalogPending,
   load: loadCatalog,
 } = useBomItemCatalog()
 
 const codeLabel = computed(() => (form.kind === 'engineering' ? '父项物料' : '产出物料'))
-// EBOM 分析吃工程物料 itemCode，MBOM 分析吃基础数据 skuCode —— 目录按 BOM 类型切换。
 const catalogEntries = computed(() =>
-  form.kind === 'engineering' ? engineeringEntries.value : skuEntries.value,
+  form.kind === 'engineering' ? itemEntries.value : skuEntries.value,
 )
 const catalogEmptyText = computed(() =>
   form.kind === 'engineering'
-    ? '暂无工程物料，请先在工程数据维护物料修订'
+    ? '暂无物料，请在基础数据或工程物料中维护'
     : '暂无物料主数据，请先在基础数据维护物料',
 )
 
@@ -226,7 +252,9 @@ const canSubmit = computed(() => {
     : form.rootCode.trim().length > 0
 })
 const root = computed(() => explosion.value?.root)
-const diagnostics = computed(() => explosion.value?.diagnostics ?? [])
+const diagnostics = computed(() =>
+  requestView.value === 'explosion' ? (explosion.value?.diagnostics ?? []) : [],
+)
 const diffRows = computed(() => diff.value?.lines ?? [])
 const whereUsedRows = computed(() => whereUsed.value?.items ?? [])
 const flattenedNodes = computed(() => flattenBom(root.value))
@@ -259,7 +287,7 @@ const isReady = computed(() => analysisState.value === 'ready')
 
 const idlePrompt = computed(() => {
   if (form.view === 'diff') return '请选择来源与目标 BOM 版本后执行对比。'
-  if (form.view === 'where-used') return '请选择组件物料后执行反查。'
+  if (form.view === 'where-used') return '请选择组件物料后反查。'
   return '请先选择物料并执行分析。'
 })
 
@@ -267,6 +295,7 @@ const idlePrompt = computed(() => {
 // 所以命中行数与诊断结论放同一张告警卡，而不是三张互不相干的计数卡。
 const analysisTone = computed<'danger' | 'warning' | 'neutral'>(() => {
   if (!isReady.value) return 'neutral'
+  if (requestView.value !== 'explosion') return 'neutral'
   if (errorCount.value > 0) return 'danger'
   if (warningCount.value > 0) return 'warning'
   return 'neutral'
@@ -275,6 +304,7 @@ const diagnosticStatus = computed(() => {
   if (analysisState.value === 'idle') return { label: '尚未分析', tone: 'neutral' as const }
   if (analysisState.value === 'loading') return { label: '分析中', tone: 'neutral' as const }
   if (analysisState.value === 'error') return { label: '分析失败', tone: 'danger' as const }
+  if (requestView.value !== 'explosion') return { label: '已完成', tone: 'neutral' as const }
   if (errorCount.value > 0)
     return { label: `${errorCount.value} 项阻断错误`, tone: 'danger' as const }
   if (warningCount.value > 0)
@@ -284,7 +314,9 @@ const diagnosticStatus = computed(() => {
 const diagnosticNote = computed(() => {
   if (analysisState.value === 'idle') return idlePrompt.value
   if (analysisState.value === 'loading') return '正在执行分析…'
-  if (analysisState.value === 'error') return '分析失败，无法判断 BOM 结构，请重试。'
+  if (analysisState.value === 'error') return '分析失败，请重试。'
+  if (requestView.value === 'diff') return '本次对比发现的差异行数。'
+  if (requestView.value === 'where-used') return '本次反查命中的父项行数。'
   if (errorCount.value > 0) {
     return `存在循环引用等阻断问题，展开结果不完整，请先修正 BOM 结构${warningCount.value > 0 ? `；另有 ${warningCount.value} 项警告` : ''}。`
   }
@@ -333,24 +365,29 @@ const tableEmptyMessage = computed(() => {
 })
 
 const errorMessage = computed(() =>
-  error.value
-    ? `分析失败，无法判断 BOM 结构：${friendlyErrorMessage(error.value, '请稍后重试。')}`
-    : '',
+  error.value ? `分析失败：${inlineErrorMessage(error.value, '请稍后重试。')}` : '',
 )
 
-watch(
-  () => form.kind,
-  () => {
-    form.rootCode = ''
-    form.componentCode = ''
-    form.bomCode = ''
-    form.revision = ''
+function setKind(kind: BomKind) {
+  const view = requestView.value
+  const tab = tabs[view]
+  if (tab.kind === kind) return
+  tab.kind = kind
+  tab.submitted = false
+  reset(view)
+  if (view === 'diff') {
     form.fromBomCode = ''
     form.fromRevision = ''
     form.toBomCode = ''
     form.toRevision = ''
-  },
-)
+  } else if (view === 'where-used') {
+    form.componentCode = ''
+  } else {
+    form.rootCode = ''
+    form.bomCode = ''
+    form.revision = ''
+  }
+}
 
 onMounted(() => {
   void loadCatalog()
@@ -368,11 +405,14 @@ function firstQuery(value: unknown): string | undefined {
 function applyRouteQuery() {
   const kind = firstQuery(route.query.kind)
   const view = firstQuery(route.query.view)
-  form.kind = kind === 'manufacturing' ? 'manufacturing' : 'engineering'
   if (view === 'tree' || view === 'explosion' || view === 'where-used' || view === 'diff')
     form.view = view
+  for (const tab of Object.values(tabs))
+    tab.kind = kind === 'manufacturing' ? 'manufacturing' : 'engineering'
   form.rootCode = firstQuery(route.query.itemCode) ?? firstQuery(route.query.skuCode) ?? ''
-  form.componentCode = firstQuery(route.query.componentCode) ?? ''
+  if (requestView.value === 'explosion')
+    traceComponentCode.value = firstQuery(route.query.componentCode) ?? ''
+  else form.componentCode = firstQuery(route.query.componentCode) ?? ''
   form.effectiveDate = firstQuery(route.query.effectiveDate) ?? today()
   form.lotSize = firstQuery(route.query.lotSize) ?? '1'
   form.bomCode = firstQuery(route.query.bomCode) ?? ''
@@ -384,70 +424,65 @@ function applyRouteQuery() {
 }
 
 async function submit() {
-  submitted.value = true
+  tabs[requestView.value].submitted = true
   if (!canSubmit.value) return
-  const lotSize = parsePositiveNumber(form.lotSize)
-  const bomCode = form.bomCode.trim() || undefined
-  const revision = form.revision.trim() || undefined
-  const effectiveDate = form.effectiveDate
+  const submittedForm = { ...form }
+  const lotSize = parsePositiveNumber(submittedForm.lotSize)
+  const bomCode = submittedForm.bomCode.trim() || undefined
+  const revision = submittedForm.revision.trim() || undefined
+  const effectiveDate = submittedForm.effectiveDate
 
-  await router.replace({
+  const expansion = requestView.value === 'explosion'
+  const comparing = submittedForm.view === 'diff'
+  const reversing = submittedForm.view === 'where-used'
+  const navigation = router.replace({
     query: {
       ...route.query,
-      kind: form.kind,
-      view: form.view,
-      effectiveDate: form.view === 'diff' ? undefined : effectiveDate,
-      ...(form.view === 'where-used'
-        ? { componentCode: form.componentCode.trim(), itemCode: undefined, skuCode: undefined }
-        : form.view === 'diff'
-          ? { componentCode: undefined, itemCode: undefined, skuCode: undefined }
-          : {
-              [form.kind === 'engineering' ? 'itemCode' : 'skuCode']: form.rootCode.trim(),
-              componentCode: undefined,
-            }),
-      lotSize:
-        form.view === 'where-used' || form.view === 'diff' ? undefined : String(lotSize ?? 1),
-      bomCode: form.view === 'diff' ? undefined : bomCode,
-      revision: form.view === 'diff' ? undefined : revision,
-      fromBomCode: form.view === 'diff' ? form.fromBomCode.trim() : undefined,
-      fromRevision: form.view === 'diff' ? form.fromRevision.trim() : undefined,
-      toBomCode: form.view === 'diff' ? form.toBomCode.trim() : undefined,
-      toRevision: form.view === 'diff' ? form.toRevision.trim() : undefined,
+      kind: submittedForm.kind,
+      view: submittedForm.view,
+      effectiveDate: comparing ? undefined : effectiveDate,
+      itemCode:
+        expansion && submittedForm.kind === 'engineering'
+          ? submittedForm.rootCode.trim()
+          : undefined,
+      skuCode:
+        expansion && submittedForm.kind === 'manufacturing'
+          ? submittedForm.rootCode.trim()
+          : undefined,
+      componentCode: reversing ? submittedForm.componentCode.trim() : undefined,
+      lotSize: expansion ? String(lotSize ?? 1) : undefined,
+      bomCode: expansion ? bomCode : undefined,
+      revision: expansion ? revision : undefined,
+      fromBomCode: comparing ? submittedForm.fromBomCode.trim() : undefined,
+      fromRevision: comparing ? submittedForm.fromRevision.trim() : undefined,
+      toBomCode: comparing ? submittedForm.toBomCode.trim() : undefined,
+      toRevision: comparing ? submittedForm.toRevision.trim() : undefined,
     },
   })
 
-  if (form.view === 'diff') {
-    await loadBomDiff({
-      bomKind: form.kind,
-      fromBomCode: form.fromBomCode.trim(),
-      fromRevision: form.fromRevision.trim(),
-      toBomCode: form.toBomCode.trim(),
-      toRevision: form.toRevision.trim(),
-    })
-    return
-  }
+  await Promise.all([navigation, runAnalysis()])
 
-  if (form.view === 'where-used') {
-    const input = { componentCode: form.componentCode.trim(), effectiveDate }
-    if (form.kind === 'engineering') await loadEngineeringWhereUsed(input)
-    else await loadManufacturingWhereUsed(input)
-    return
+  function runAnalysis() {
+    if (comparing) {
+      return loadBomDiff({
+        bomKind: submittedForm.kind,
+        fromBomCode: submittedForm.fromBomCode.trim(),
+        fromRevision: submittedForm.fromRevision.trim(),
+        toBomCode: submittedForm.toBomCode.trim(),
+        toRevision: submittedForm.toRevision.trim(),
+      })
+    }
+    if (reversing) {
+      const input = { componentCode: submittedForm.componentCode.trim(), effectiveDate }
+      return submittedForm.kind === 'engineering'
+        ? loadEngineeringWhereUsed(input)
+        : loadManufacturingWhereUsed(input)
+    }
+    const input = { code: submittedForm.rootCode.trim(), effectiveDate, lotSize, bomCode, revision }
+    return submittedForm.kind === 'engineering'
+      ? loadEngineeringExplosion(input)
+      : loadManufacturingExplosion(input)
   }
-
-  const input = {
-    code: form.rootCode.trim(),
-    effectiveDate,
-    lotSize,
-    bomCode,
-    revision,
-  }
-  if (form.kind === 'engineering') await loadEngineeringExplosion(input)
-  else await loadManufacturingExplosion(input)
-}
-
-// 失败原因已经由 errorMessage 呈现，这里吞掉 submit 的 rethrow，避免未处理的 Promise 拒绝。
-function retry() {
-  void submit().catch(() => {})
 }
 
 function parsePositiveNumber(value: string): number | undefined {
@@ -457,7 +492,8 @@ function parsePositiveNumber(value: string): number | undefined {
 
 function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
   return (
-    !!form.componentCode && row.itemCode?.toLowerCase() === form.componentCode.trim().toLowerCase()
+    !!traceComponentCode.value &&
+    row.itemCode?.toLowerCase() === traceComponentCode.value.trim().toLowerCase()
   )
 }
 </script>
@@ -478,6 +514,7 @@ function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
       />
       <NvMetricCard
         variant="alert"
+        v-if="requestView === 'explosion'"
         label="阻断问题"
         :value="isReady ? errorCount : '—'"
         :unit="isReady ? '项' : undefined"
@@ -487,6 +524,7 @@ function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
       />
       <NvMetricCard
         variant="alert"
+        v-if="requestView === 'explosion'"
         label="分析警告"
         :value="isReady ? warningCount : '—'"
         :unit="isReady ? '项' : undefined"
@@ -693,7 +731,7 @@ function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
         role="alert"
       >
         <span>{{ errorMessage }}</span>
-        <NvButton type="button" size="sm" variant="outline" :disabled="pending" @click="retry">
+        <NvButton type="button" size="sm" variant="outline" :disabled="pending" @click="submit">
           重试
         </NvButton>
       </div>

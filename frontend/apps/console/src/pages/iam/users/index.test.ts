@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, nextTick } from 'vue'
+import { NvDatePicker } from '@nerv-iip/ui'
 
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
@@ -467,7 +468,10 @@ describe('IAM users form dialogs', () => {
     await wrapper.get('#iam-create-login-name').setValue('new-user')
     await wrapper.get('#iam-create-email').setValue('new-user@nerv-iip.local')
     await wrapper.get('#iam-create-password').setValue('Password123!')
-    await wrapper.get('#iam-create-account-expires').setValue('2026-08-31')
+    expect(wrapper.get('label[for="iam-create-account-expires"]').text()).toBe('账号有效期')
+    expect(wrapper.find('button#iam-create-account-expires').exists()).toBe(true)
+    wrapper.getComponent(NvDatePicker).vm.$emit('update:modelValue', '2026-08-31')
+    await nextTick()
     await wrapper.get('#iam-create-role-role-erp-sales').trigger('click')
     await wrapper.get('form').trigger('submit')
 
@@ -505,7 +509,10 @@ describe('IAM users form dialogs', () => {
     const checkbox = wrapper.get('[role="checkbox"]')
     expect(checkbox.attributes('aria-checked')).toBe('true')
     await checkbox.trigger('click')
-    await wrapper.get('#iam-edit-account-expires').setValue('2026-09-30')
+    expect(wrapper.get('label[for="iam-edit-account-expires"]').text()).toBe('账号有效期')
+    expect(wrapper.find('button#iam-edit-account-expires').exists()).toBe(true)
+    wrapper.getComponent(NvDatePicker).vm.$emit('update:modelValue', '2026-09-30')
+    await nextTick()
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.emitted('submit')?.[0]).toEqual([

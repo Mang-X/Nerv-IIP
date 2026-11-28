@@ -14,7 +14,6 @@ import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import type { DirectoryCreatedItem } from '@/components/business/directoryCreators'
 import {
   useBusinessMasterDataResources,
-  useBusinessPartners,
   useCreateMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/master-data'
@@ -26,6 +25,7 @@ import {
   NvCheckbox,
   NvDatePicker,
   NvDialog,
+  NvDialogBody,
   NvDialogContent,
   NvDialogDescription,
   NvDialogFooter,
@@ -34,6 +34,7 @@ import {
   NvEntityPicker,
   NvField,
   NvFieldDescription,
+  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -50,6 +51,9 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { i18n } from '@/i18n'
 
+import { useFirstInvalidField } from './useFirstInvalidField'
+
+const { formElement, focusFirstInvalidField } = useFirstInvalidField()
 const locale = i18n.global.locale
 
 const props = defineProps<{
@@ -83,8 +87,8 @@ const returnFocus = useReturnFocusOnClose()
 const creation =
   useCreateMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('device-asset')
 const deviceActions = useMasterDataResourceActions('device-asset')
-const sites = useBusinessMasterDataResources('site')
-const devices = useBusinessMasterDataResources('device-asset')
+const sites = useBusinessMasterDataResources('site', { all: true })
+const devices = useBusinessMasterDataResources('device-asset', { all: true })
 
 const editingCode = props.editing?.code ?? null
 const showErrors = shallowRef(false)
@@ -145,6 +149,7 @@ function codeOptions(rows: BusinessConsoleResourceItem[], current: string) {
 // 设备类别取数据字典 `asset-class` CodeSet；字典为空时给空态引导，不编造码值。
 const assetClassCatalog = useBusinessMasterDataResources('reference-data', {
   codeSet: 'asset-class',
+  all: true,
 })
 const assetClassOptions = computed(() =>
   codeOptions(
@@ -154,7 +159,9 @@ const assetClassOptions = computed(() =>
 )
 
 // 供应商只列带 supplier 角色的业务伙伴（伙伴可同时是客户与供应商，按角色包含关系筛）。
-const { partners, partnersPending } = useBusinessPartners()
+const suppliers = useBusinessMasterDataResources('business-partner', { all: true })
+suppliers.filters.partnerType = 'supplier'
+const { resources: partners, resourcesPending: partnersPending } = suppliers
 const supplierOptions = computed(() =>
   codeOptions(
     partners.value
@@ -190,12 +197,16 @@ function setLevel(level: keyof typeof LOWER_LEVELS, value: string) {
   for (const lower of LOWER_LEVELS[level]) form[lower] = ''
 }
 
-const componentValidationMessage = computed(() => {
-  const invalid = form.components.find(
-    (component) => isComponentReady(component) && componentQuantity(component) <= 0,
+function isInvalidDecimal(value: string, minimum: number, precision: number) {
+  if (String(value).trim() === '') return false
+  const amount = Number(value)
+  return (
+    !Number.isFinite(amount) || amount < minimum || Number(amount.toFixed(precision)) !== amount
   )
-  return invalid ? '部件数量必须大于 0。' : ''
-})
+}
+
+const purchaseCostInvalid = computed(() => isInvalidDecimal(form.purchaseCost, 0, 2))
+
 const formValid = computed(
   () =>
     [
@@ -209,7 +220,9 @@ const formValid = computed(
       form.workCenterCode,
       form.stationCode,
       form.criticality,
-    ].every(isNonEmpty) && !componentValidationMessage.value,
+    ].every(isNonEmpty) &&
+    !purchaseCostInvalid.value &&
+    form.components.every((component) => !isInvalidDecimal(component.quantity, 0.001, 3)),
 )
 const saving = computed(() => creation.pending.value || deviceActions.updatePending.value)
 
@@ -311,6 +324,7 @@ function removeComponent(index: number) {
 async function submit() {
   if (!formValid.value) {
     showErrors.value = true
+    await focusFirstInvalidField()
     return
   }
   const payload = devicePayload()
@@ -337,287 +351,428 @@ async function submit() {
 
 <template>
   <NvDialog v-model:open="open">
-    <NvDialogContent class="sm:max-w-2xl" @close-auto-focus="returnFocus">
+    <NvDialogContent scrollable class="sm:max-w-2xl" @close-auto-focus="returnFocus">
       <NvDialogHeader>
         <NvDialogTitle>{{ editingCode ? `编辑设备 · ${editingCode}` : '新建设备' }}</NvDialogTitle>
         <NvDialogDescription class="sr-only">{{
           editingCode ? `设备 ${editingCode}` : '新建设备档案'
         }}</NvDialogDescription>
       </NvDialogHeader>
-      <form class="grid gap-4" @submit.prevent="submit">
-        <CarriedContextSummary
-          v-if="editingCode"
-          label="设备标识"
-          :items="[{ label: '设备编码', value: editingCode }]"
-        />
-        <p v-if="showErrors && !formValid" class="text-sm text-destructive" role="alert">
-          请检查标红字段后再提交。
-        </p>
-        <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.model)">
-            <NvFieldLabel for="dev-model"
-              >设备型号 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <NvInput id="dev-model" v-model="form.model" autocomplete="off" required />
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.manufacturer)">
-            <NvFieldLabel for="dev-maker"
-              >制造商 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <NvInput id="dev-maker" v-model="form.manufacturer" autocomplete="off" required />
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.serialNo)">
-            <NvFieldLabel for="dev-serial"
-              >出厂序列号 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <NvInput id="dev-serial" v-model="form.serialNo" autocomplete="off" required />
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.assetClassCode)">
-            <NvFieldLabel for="dev-class"
-              >设备类别 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <NvSearchSelect
-              id="dev-class"
-              v-model="form.assetClassCode"
-              :options="assetClassOptions"
-              placeholder="选择设备类别"
-              :loading="assetClassCatalog.resourcesPending.value"
-              empty-text="数据字典还没有设备类别，请先在「数据字典」维护"
-              aria-label="设备类别"
+      <form ref="formElement" novalidate @submit.prevent="submit">
+        <NvDialogBody>
+          <div class="grid gap-4">
+            <CarriedContextSummary
+              v-if="editingCode"
+              label="设备标识"
+              :items="[{ label: '设备编码', value: editingCode }]"
             />
-            <!-- 取值来源（非显而易见），保留一行。 -->
-            <NvFieldDescription>取自「数据字典」的设备类别。</NvFieldDescription>
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.criticality)">
-            <NvFieldLabel for="dev-criticality"
-              >关键度 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <NvSelect v-model="form.criticality">
-              <NvSelectTrigger id="dev-criticality"><NvSelectValue /></NvSelectTrigger>
-              <NvSelectContent>
-                <NvSelectItem v-for="o in CRITICALITY_OPTIONS" :key="o.value" :value="o.value">{{
-                  o.label
-                }}</NvSelectItem>
-              </NvSelectContent>
-            </NvSelect>
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.siteCode)">
-            <NvFieldLabel for="dev-site"
-              >所属工厂 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <DirectoryPicker
-              id="dev-site"
-              directory-type="site"
-              creatable
-              :model-value="form.siteCode"
-              :invalid="showErrors && !isNonEmpty(form.siteCode)"
-              @update:model-value="setLevel('siteCode', $event)"
-            />
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.workshopCode)">
-            <NvFieldLabel for="dev-workshop"
-              >所属车间 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <DirectoryPicker
-              id="dev-workshop"
-              directory-type="workshop"
-              creatable
-              :parent="{ siteCode: form.siteCode }"
-              :create-context="{ siteCode: form.siteCode }"
-              :model-value="form.workshopCode"
-              :invalid="showErrors && !isNonEmpty(form.workshopCode)"
-              @update:model-value="setLevel('workshopCode', $event)"
-            />
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.lineCode)">
-            <NvFieldLabel for="dev-line"
-              >所属产线 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <DirectoryPicker
-              id="dev-line"
-              directory-type="production-line"
-              creatable
-              :parent="{ siteCode: form.siteCode, workshopCode: form.workshopCode }"
-              :create-context="{ siteCode: form.siteCode, workshopCode: form.workshopCode }"
-              :model-value="form.lineCode"
-              :invalid="showErrors && !isNonEmpty(form.lineCode)"
-              @update:model-value="setLevel('lineCode', $event)"
-            />
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.workCenterCode)">
-            <NvFieldLabel for="dev-wc"
-              >所属工作中心 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <DirectoryPicker
-              id="dev-wc"
-              v-model="form.workCenterCode"
-              directory-type="work-center"
-              creatable
-              :parent="{ lineCode: form.lineCode }"
-              :create-context="{ siteCode: form.siteCode, lineCode: form.lineCode }"
-              :invalid="showErrors && !isNonEmpty(form.workCenterCode)"
-            />
-          </NvField>
-          <NvField :data-invalid="showErrors && !isNonEmpty(form.stationCode)">
-            <NvFieldLabel for="dev-station"
-              >所属工位 <span class="text-destructive">*</span></NvFieldLabel
-            >
-            <DirectoryPicker
-              id="dev-station"
-              v-model="form.stationCode"
-              directory-type="station"
-              creatable
-              :parent="{ lineCode: form.lineCode }"
-              :create-context="{ lineCode: form.lineCode }"
-              :invalid="showErrors && !isNonEmpty(form.stationCode)"
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="dev-purchase-date">购置日期</NvFieldLabel>
-            <NvDatePicker
-              id="dev-purchase-date"
-              v-model="form.purchaseDate"
-              :locale="locale"
-              clearable
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="dev-purchase-cost">购置成本</NvFieldLabel>
-            <NvInput
-              id="dev-purchase-cost"
-              v-model="form.purchaseCost"
-              type="number"
-              min="0"
-              step="0.01"
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="dev-currency">币种</NvFieldLabel>
-            <NvSearchSelect
-              id="dev-currency"
-              v-model="form.purchaseCurrencyCode"
-              :options="currencyOptionsIncluding(form.purchaseCurrencyCode)"
-              search-placeholder="搜索币种代码或名称"
-              aria-label="币种"
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="dev-warranty">保修到期</NvFieldLabel>
-            <NvDatePicker
-              id="dev-warranty"
-              v-model="form.warrantyExpiresOn"
-              :locale="locale"
-              clearable
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="dev-supplier">供应商</NvFieldLabel>
-            <NvEntityPicker
-              id="dev-supplier"
-              v-model="form.supplierPartnerCode"
-              :options="supplierOptions"
-              title="选择供应商"
-              placeholder="可留空"
-              empty-text="暂无供应商，请先在业务伙伴维护"
-              :loading="partnersPending"
-              aria-label="供应商"
-              clearable
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="dev-parent">父设备</NvFieldLabel>
-            <NvEntityPicker
-              id="dev-parent"
-              v-model="form.parentDeviceId"
-              :options="parentDeviceOptions"
-              title="选择父设备"
-              placeholder="可留空"
-              empty-text="暂无可挂靠的设备"
-              :loading="devices.resourcesPending.value"
-              aria-label="父设备"
-              clearable
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="dev-retired">退役日期</NvFieldLabel>
-            <NvDatePicker id="dev-retired" v-model="form.retiredOn" :locale="locale" clearable />
-          </NvField>
-          <NvField
-            orientation="horizontal"
-            class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2"
-          >
-            <NvFieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</NvFieldLabel>
-            <NvCheckbox id="dev-maintainable" v-model="form.maintainable" />
-          </NvField>
-        </NvFieldGroup>
-        <div class="grid gap-3">
-          <div class="flex items-center justify-between gap-3">
-            <NvFieldLabel>部件结构</NvFieldLabel>
-            <NvButton size="sm" variant="outline" type="button" @click="addComponent">
-              <PlusIcon aria-hidden="true" />
-              添加部件
-            </NvButton>
-          </div>
-          <div
-            v-for="(component, index) in form.components"
-            :key="index"
-            class="grid gap-3 rounded-md border px-3 py-3 sm:grid-cols-[1fr_1fr_6rem_auto_auto]"
-          >
-            <NvField>
-              <NvFieldLabel :for="`dev-component-code-${index}`">部件编码</NvFieldLabel>
-              <NvInput
-                :id="`dev-component-code-${index}`"
-                v-model="component.componentCode"
-                autocomplete="off"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel :for="`dev-component-name-${index}`">部件名称</NvFieldLabel>
-              <NvInput
-                :id="`dev-component-name-${index}`"
-                v-model="component.componentName"
-                autocomplete="off"
-              />
-            </NvField>
-            <NvField
-              :data-invalid="
-                showErrors && isComponentReady(component) && componentQuantity(component) <= 0
-              "
-            >
-              <NvFieldLabel :for="`dev-component-qty-${index}`">数量</NvFieldLabel>
-              <NvInput
-                :id="`dev-component-qty-${index}`"
-                v-model="component.quantity"
-                type="number"
-                min="0.001"
-                step="0.001"
-              />
-              <NvFieldDescription
-                v-if="
-                  showErrors && isComponentReady(component) && componentQuantity(component) <= 0
-                "
-                >必须大于 0。</NvFieldDescription
+            <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.model)">
+                <NvFieldLabel for="dev-model"
+                  >设备型号 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <NvInput
+                  id="dev-model"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.model) ? 'dev-model-error' : undefined
+                  "
+                  :aria-invalid="showErrors && !isNonEmpty(form.model)"
+                  :invalid="showErrors && !isNonEmpty(form.model)"
+                  v-model="form.model"
+                  autocomplete="off"
+                  required
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.model)"
+                  id="dev-model-error"
+                  :errors="['请填写设备型号。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.manufacturer)">
+                <NvFieldLabel for="dev-maker"
+                  >制造商 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <NvInput
+                  id="dev-maker"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.manufacturer) ? 'dev-maker-error' : undefined
+                  "
+                  :aria-invalid="showErrors && !isNonEmpty(form.manufacturer)"
+                  :invalid="showErrors && !isNonEmpty(form.manufacturer)"
+                  v-model="form.manufacturer"
+                  autocomplete="off"
+                  required
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.manufacturer)"
+                  id="dev-maker-error"
+                  :errors="['请填写制造商。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.serialNo)">
+                <NvFieldLabel for="dev-serial"
+                  >出厂序列号 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <NvInput
+                  id="dev-serial"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.serialNo) ? 'dev-serial-error' : undefined
+                  "
+                  :aria-invalid="showErrors && !isNonEmpty(form.serialNo)"
+                  :invalid="showErrors && !isNonEmpty(form.serialNo)"
+                  v-model="form.serialNo"
+                  autocomplete="off"
+                  required
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.serialNo)"
+                  id="dev-serial-error"
+                  :errors="['请填写出厂序列号。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.assetClassCode)">
+                <NvFieldLabel for="dev-class"
+                  >设备类别 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <NvSearchSelect
+                  id="dev-class"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.assetClassCode) ? 'dev-class-error' : undefined
+                  "
+                  :aria-invalid="showErrors && !isNonEmpty(form.assetClassCode)"
+                  v-model="form.assetClassCode"
+                  :options="assetClassOptions"
+                  placeholder="选择设备类别"
+                  :loading="assetClassCatalog.resourcesPending.value"
+                  empty-text="数据字典还没有设备类别，请先在「数据字典」维护"
+                  aria-label="设备类别"
+                />
+                <!-- 取值来源（非显而易见），保留一行。 -->
+                <NvFieldDescription v-if="!showErrors || isNonEmpty(form.assetClassCode)"
+                  >取自「数据字典」的设备类别。</NvFieldDescription
+                >
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.assetClassCode)"
+                  id="dev-class-error"
+                  :errors="['请选择设备类别。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.criticality)">
+                <NvFieldLabel for="dev-criticality"
+                  >关键度 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <NvSelect v-model="form.criticality">
+                  <NvSelectTrigger
+                    id="dev-criticality"
+                    :aria-describedby="
+                      showErrors && !isNonEmpty(form.criticality)
+                        ? 'dev-criticality-error'
+                        : undefined
+                    "
+                    :aria-invalid="showErrors && !isNonEmpty(form.criticality)"
+                    ><NvSelectValue
+                  /></NvSelectTrigger>
+                  <NvSelectContent>
+                    <NvSelectItem
+                      v-for="o in CRITICALITY_OPTIONS"
+                      :key="o.value"
+                      :value="o.value"
+                      >{{ o.label }}</NvSelectItem
+                    >
+                  </NvSelectContent>
+                </NvSelect>
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.criticality)"
+                  id="dev-criticality-error"
+                  :errors="['请选择关键度。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.siteCode)">
+                <NvFieldLabel for="dev-site"
+                  >所属工厂 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <DirectoryPicker
+                  id="dev-site"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.siteCode) ? 'dev-site-error' : undefined
+                  "
+                  directory-type="site"
+                  creatable
+                  :model-value="form.siteCode"
+                  :invalid="showErrors && !isNonEmpty(form.siteCode)"
+                  @update:model-value="setLevel('siteCode', $event)"
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.siteCode)"
+                  id="dev-site-error"
+                  :errors="['请选择所属工厂。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.workshopCode)">
+                <NvFieldLabel for="dev-workshop"
+                  >所属车间 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <DirectoryPicker
+                  id="dev-workshop"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.workshopCode) ? 'dev-workshop-error' : undefined
+                  "
+                  directory-type="workshop"
+                  creatable
+                  :parent="{ siteCode: form.siteCode }"
+                  :create-context="{ siteCode: form.siteCode }"
+                  :model-value="form.workshopCode"
+                  :invalid="showErrors && !isNonEmpty(form.workshopCode)"
+                  @update:model-value="setLevel('workshopCode', $event)"
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.workshopCode)"
+                  id="dev-workshop-error"
+                  :errors="['请选择所属车间。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.lineCode)">
+                <NvFieldLabel for="dev-line"
+                  >所属产线 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <DirectoryPicker
+                  id="dev-line"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.lineCode) ? 'dev-line-error' : undefined
+                  "
+                  directory-type="production-line"
+                  creatable
+                  :parent="{ siteCode: form.siteCode, workshopCode: form.workshopCode }"
+                  :create-context="{ siteCode: form.siteCode, workshopCode: form.workshopCode }"
+                  :model-value="form.lineCode"
+                  :invalid="showErrors && !isNonEmpty(form.lineCode)"
+                  @update:model-value="setLevel('lineCode', $event)"
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.lineCode)"
+                  id="dev-line-error"
+                  :errors="['请选择所属产线。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.workCenterCode)">
+                <NvFieldLabel for="dev-wc"
+                  >所属工作中心 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <DirectoryPicker
+                  id="dev-wc"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.workCenterCode) ? 'dev-wc-error' : undefined
+                  "
+                  v-model="form.workCenterCode"
+                  directory-type="work-center"
+                  creatable
+                  :parent="{ lineCode: form.lineCode }"
+                  :create-context="{ siteCode: form.siteCode, lineCode: form.lineCode }"
+                  :invalid="showErrors && !isNonEmpty(form.workCenterCode)"
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.workCenterCode)"
+                  id="dev-wc-error"
+                  :errors="['请选择所属工作中心。']"
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && !isNonEmpty(form.stationCode)">
+                <NvFieldLabel for="dev-station"
+                  >所属工位 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <DirectoryPicker
+                  id="dev-station"
+                  :aria-describedby="
+                    showErrors && !isNonEmpty(form.stationCode) ? 'dev-station-error' : undefined
+                  "
+                  v-model="form.stationCode"
+                  directory-type="station"
+                  creatable
+                  :parent="{ lineCode: form.lineCode }"
+                  :create-context="{ lineCode: form.lineCode }"
+                  :invalid="showErrors && !isNonEmpty(form.stationCode)"
+                />
+                <NvFieldError
+                  v-if="showErrors && !isNonEmpty(form.stationCode)"
+                  id="dev-station-error"
+                  :errors="['请选择所属工位。']"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel for="dev-purchase-date">购置日期</NvFieldLabel>
+                <NvDatePicker
+                  id="dev-purchase-date"
+                  v-model="form.purchaseDate"
+                  :locale="locale"
+                  clearable
+                />
+              </NvField>
+              <NvField :data-invalid="showErrors && purchaseCostInvalid">
+                <NvFieldLabel for="dev-purchase-cost">购置成本</NvFieldLabel>
+                <NvInput
+                  id="dev-purchase-cost"
+                  :aria-invalid="showErrors && purchaseCostInvalid"
+                  :invalid="showErrors && purchaseCostInvalid"
+                  :aria-describedby="
+                    showErrors && purchaseCostInvalid ? 'dev-purchase-cost-error' : undefined
+                  "
+                  v-model="form.purchaseCost"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                />
+                <NvFieldError
+                  v-if="showErrors && purchaseCostInvalid"
+                  id="dev-purchase-cost-error"
+                  :errors="['请输入非负且最多两位小数的成本。']"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel for="dev-currency">币种</NvFieldLabel>
+                <NvSearchSelect
+                  id="dev-currency"
+                  v-model="form.purchaseCurrencyCode"
+                  :options="currencyOptionsIncluding(form.purchaseCurrencyCode)"
+                  search-placeholder="搜索币种代码或名称"
+                  aria-label="币种"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel for="dev-warranty">保修到期</NvFieldLabel>
+                <NvDatePicker
+                  id="dev-warranty"
+                  v-model="form.warrantyExpiresOn"
+                  :locale="locale"
+                  clearable
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel for="dev-supplier">供应商</NvFieldLabel>
+                <NvEntityPicker
+                  id="dev-supplier"
+                  v-model="form.supplierPartnerCode"
+                  :options="supplierOptions"
+                  title="选择供应商"
+                  placeholder="可留空"
+                  empty-text="暂无供应商，请先在业务伙伴维护"
+                  :loading="partnersPending"
+                  aria-label="供应商"
+                  clearable
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel for="dev-parent">父设备</NvFieldLabel>
+                <NvEntityPicker
+                  id="dev-parent"
+                  v-model="form.parentDeviceId"
+                  :options="parentDeviceOptions"
+                  title="选择父设备"
+                  placeholder="可留空"
+                  empty-text="暂无可挂靠的设备"
+                  :loading="devices.resourcesPending.value"
+                  aria-label="父设备"
+                  clearable
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel for="dev-retired">退役日期</NvFieldLabel>
+                <NvDatePicker
+                  id="dev-retired"
+                  v-model="form.retiredOn"
+                  :locale="locale"
+                  clearable
+                />
+              </NvField>
+              <NvField
+                orientation="horizontal"
+                class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2"
               >
-            </NvField>
-            <NvField orientation="horizontal" class="items-center gap-2 self-end pb-2">
-              <NvCheckbox :id="`dev-component-critical-${index}`" v-model="component.critical" />
-              <NvFieldLabel :for="`dev-component-critical-${index}`" class="mb-0"
-                >关键</NvFieldLabel
+                <NvFieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</NvFieldLabel>
+                <NvCheckbox id="dev-maintainable" v-model="form.maintainable" />
+              </NvField>
+            </NvFieldGroup>
+            <div class="grid gap-3">
+              <div class="flex items-center justify-between gap-3">
+                <NvFieldLabel>部件结构</NvFieldLabel>
+                <NvButton size="sm" variant="outline" type="button" @click="addComponent">
+                  <PlusIcon aria-hidden="true" />
+                  添加部件
+                </NvButton>
+              </div>
+              <div
+                v-for="(component, index) in form.components"
+                :key="index"
+                class="grid gap-3 rounded-md border px-3 py-3 sm:grid-cols-[1fr_1fr_6rem_auto_auto]"
               >
-            </NvField>
-            <NvButton
-              class="self-end"
-              size="icon"
-              variant="ghost"
-              type="button"
-              :aria-label="`删除部件 ${index + 1}`"
-              @click="removeComponent(index)"
-            >
-              <Trash2Icon aria-hidden="true" />
-            </NvButton>
+                <NvField>
+                  <NvFieldLabel :for="`dev-component-code-${index}`">部件编码</NvFieldLabel>
+                  <NvInput
+                    :id="`dev-component-code-${index}`"
+                    v-model="component.componentCode"
+                    autocomplete="off"
+                  />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel :for="`dev-component-name-${index}`">部件名称</NvFieldLabel>
+                  <NvInput
+                    :id="`dev-component-name-${index}`"
+                    v-model="component.componentName"
+                    autocomplete="off"
+                  />
+                </NvField>
+                <NvField
+                  :data-invalid="showErrors && isInvalidDecimal(component.quantity, 0.001, 3)"
+                >
+                  <NvFieldLabel :for="`dev-component-qty-${index}`">数量</NvFieldLabel>
+                  <NvInput
+                    :id="`dev-component-qty-${index}`"
+                    :aria-invalid="showErrors && isInvalidDecimal(component.quantity, 0.001, 3)"
+                    :aria-describedby="
+                      showErrors && isInvalidDecimal(component.quantity, 0.001, 3)
+                        ? `dev-component-qty-error-${index}`
+                        : undefined
+                    "
+                    v-model="component.quantity"
+                    type="number"
+                    min="0.001"
+                    step="0.001"
+                  />
+                  <NvFieldError
+                    v-if="showErrors && isInvalidDecimal(component.quantity, 0.001, 3)"
+                    :id="`dev-component-qty-error-${index}`"
+                    :errors="['请输入大于 0 且最多三位小数的数量。']"
+                  />
+                </NvField>
+                <NvField orientation="horizontal" class="items-center gap-2 self-end pb-2">
+                  <NvCheckbox
+                    :id="`dev-component-critical-${index}`"
+                    v-model="component.critical"
+                  />
+                  <NvFieldLabel :for="`dev-component-critical-${index}`" class="mb-0"
+                    >关键</NvFieldLabel
+                  >
+                </NvField>
+                <NvButton
+                  class="self-end"
+                  size="icon"
+                  variant="ghost"
+                  type="button"
+                  :aria-label="`删除部件 ${index + 1}`"
+                  @click="removeComponent(index)"
+                >
+                  <Trash2Icon aria-hidden="true" />
+                </NvButton>
+              </div>
+            </div>
           </div>
-        </div>
+        </NvDialogBody>
         <NvDialogFooter>
+          <div v-if="showErrors && !formValid" class="flex flex-wrap items-center gap-2 sm:mr-auto">
+            <p class="text-sm text-destructive" role="alert">请检查标红字段后再提交。</p>
+            <NvButton type="button" size="sm" variant="ghost" @click="focusFirstInvalidField">
+              定位首个错误
+            </NvButton>
+          </div>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="saving || editLoading">
             <NvSpinner v-if="saving" aria-hidden="true" />
