@@ -58,6 +58,7 @@ public static class IamPermissionCatalog
         [NervIipPermissionCodes.QualityInspectionRecordsCreate] = "Create quality inspection records.",
         [NervIipPermissionCodes.QualityInspectionRecordsRead] = "Read quality inspection plans and records.",
         [NervIipPermissionCodes.QualityNcrRead] = "Read quality nonconformance reports.",
+        [NervIipPermissionCodes.QualityMeasuringDevicesManage] = "Register measuring devices and calibration records.",
         [NervIipPermissionCodes.QualityNcrManage] = "Create, disposition and close quality nonconformance reports.",
         [NervIipPermissionCodes.InventoryLocationsManage] = "Create and manage inventory locations.",
         [NervIipPermissionCodes.InventoryMovementsCreate] = "Create inventory stock movements.",

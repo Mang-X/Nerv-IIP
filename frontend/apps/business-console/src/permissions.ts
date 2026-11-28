@@ -43,6 +43,7 @@ export const BUSINESS_PERMISSION_CODES = {
   qualityInspectionRecordsRead: 'business.quality.inspection-records.read',
   qualityNcrRead: 'business.quality.ncr.read',
   qualityNcrManage: 'business.quality.ncr.manage',
+  qualityMeasuringDevicesManage: 'business.quality.measuring-devices.manage',
   inventoryLedgerRead: 'business.inventory.ledger.read',
   inventoryMovementsCreate: 'business.inventory.movements.create',
   inventoryCountsManage: 'business.inventory.counts.manage',

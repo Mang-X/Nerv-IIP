@@ -199,7 +199,7 @@ const form = reactive({
   rfqLineNo: '',
   supplierCode: '',
   quotationNo: '',
-  unitPrice: '0',
+  unitPrice: '',
   promisedDate: '',
 })
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
@@ -259,7 +259,7 @@ const invalid = computed(() => ({
     !(Number(quotedLine.value?.quantity) > 0),
   supplierCode: !supplierOptions.value.includes(form.supplierCode),
   promisedDate: !form.promisedDate,
-  unitPrice: !(Number(form.unitPrice) >= 0),
+  unitPrice: !Number.isFinite(Number(form.unitPrice)) || Number(form.unitPrice) <= 0,
 }))
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
@@ -268,7 +268,7 @@ function openDialog() {
   form.rfqLineNo = ''
   form.supplierCode = ''
   form.quotationNo = ''
-  form.unitPrice = '0'
+  form.unitPrice = ''
   form.promisedDate = ''
   showErrors.value = false
   open.value = true
@@ -450,7 +450,17 @@ async function submit() {
                 min="0"
                 step="0.01"
                 :data-invalid="showErrors && invalid.unitPrice ? '' : undefined"
+                :aria-describedby="
+                  showErrors && invalid.unitPrice ? 'erp-sq-price-error' : undefined
+                "
               />
+              <p
+                v-if="showErrors && invalid.unitPrice"
+                id="erp-sq-price-error"
+                class="text-sm text-destructive"
+              >
+                单价必须大于 0。
+              </p>
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-sq-date">
@@ -471,7 +481,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请选择询价单、带有物料与单位的询价明细及回价供应商，并填写非负单价与承诺交期。
+            请选择询价单、带有物料与单位的询价明细及回价供应商，并填写大于 0 的单价与承诺交期。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

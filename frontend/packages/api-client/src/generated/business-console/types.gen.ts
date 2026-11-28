@@ -2954,6 +2954,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateQualityNcrResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrResponse = {
+    ncrId?: string;
+    ncrCode?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    sourceType?: string;
+    sourceDocumentId?: string;
+    skuCode?: string;
+    defectQuantity?: number;
+    defectReason?: string;
+    batchNo?: string | null;
+    serialNo?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse | null;
 };
@@ -3196,6 +3217,34 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMeasuringDeviceResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceResponse = {
+    measuringDeviceId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    deviceCode?: string | null;
+    deviceType?: string;
+    accuracy?: string;
+    calibrationIntervalDays?: number;
+    calibratedAtUtc?: string;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordMeasuringDeviceCalibrationRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    calibrationNo?: string;
+    calibratedAtUtc?: string;
+    calibrationProvider?: string;
+    certificateFileId?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCalibrationRecordListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityCalibrationRecordListResponse | null;
 };
@@ -3338,6 +3387,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     groupName: string;
     severity: string;
     defaultDisposition?: string | null;
+    enabled?: boolean | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveQualityReasonRequest = {
@@ -7539,6 +7589,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     result?: string;
     inspectedAtUtc?: string;
     measurements?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementItem> | null;
+    planCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementItem = {
@@ -14616,6 +14667,33 @@ export type ListBusinessConsoleQualityNcrsResponses = {
 
 export type ListBusinessConsoleQualityNcrsResponse = ListBusinessConsoleQualityNcrsResponses[keyof ListBusinessConsoleQualityNcrsResponses];
 
+export type CreateBusinessConsoleQualityNcrData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/quality/ncrs';
+};
+
+export type CreateBusinessConsoleQualityNcrErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleQualityNcrResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateQualityNcrResponse;
+};
+
+export type CreateBusinessConsoleQualityNcrResponse = CreateBusinessConsoleQualityNcrResponses[keyof CreateBusinessConsoleQualityNcrResponses];
+
 export type GetBusinessConsoleQualityNcrData = {
     body?: never;
     path: {
@@ -14847,6 +14925,62 @@ export type ListBusinessConsoleQualityMeasuringDevicesResponses = {
 };
 
 export type ListBusinessConsoleQualityMeasuringDevicesResponse = ListBusinessConsoleQualityMeasuringDevicesResponses[keyof ListBusinessConsoleQualityMeasuringDevicesResponses];
+
+export type CreateBusinessConsoleQualityMeasuringDeviceData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/quality/measuring-devices';
+};
+
+export type CreateBusinessConsoleQualityMeasuringDeviceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleQualityMeasuringDeviceResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMeasuringDeviceResponse;
+};
+
+export type CreateBusinessConsoleQualityMeasuringDeviceResponse = CreateBusinessConsoleQualityMeasuringDeviceResponses[keyof CreateBusinessConsoleQualityMeasuringDeviceResponses];
+
+export type RecordBusinessConsoleQualityMeasuringDeviceCalibrationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordMeasuringDeviceCalibrationRequest;
+    path: {
+        measuringDeviceId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/quality/measuring-devices/{measuringDeviceId}/calibrations';
+};
+
+export type RecordBusinessConsoleQualityMeasuringDeviceCalibrationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleQualityMeasuringDeviceCalibrationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleQualityMeasuringDeviceCalibrationResponse = RecordBusinessConsoleQualityMeasuringDeviceCalibrationResponses[keyof RecordBusinessConsoleQualityMeasuringDeviceCalibrationResponses];
 
 export type ListBusinessConsoleQualityCalibrationRecordsData = {
     body?: never;

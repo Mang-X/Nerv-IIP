@@ -159,6 +159,7 @@ public static class NervIipSeedPermissions
         "business.quality.inspection-records.create",
         "business.quality.inspection-records.read",
         "business.quality.ncr.read",
+        "business.quality.measuring-devices.manage",
         "business.quality.ncr.manage",
         "business.inventory.locations.manage",
         "business.inventory.movements.create",

@@ -127,6 +127,36 @@ const voucherCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
+type VoucherLine = NonNullable<BusinessConsoleErpJournalVoucherItem['lines']>[number] & {
+  lineNo: number
+}
+const lineColumns: NvDataTableColumn<VoucherLine>[] = [
+  { key: 'accountCode', header: '科目' },
+  {
+    key: 'debitAmount',
+    header: '借方',
+    align: 'end',
+    accessor: (row) => formatAmount(row.debitAmount),
+  },
+  {
+    key: 'creditAmount',
+    header: '贷方',
+    align: 'end',
+    accessor: (row) => formatAmount(row.creditAmount),
+  },
+  { key: 'memo', header: '摘要' },
+]
+const selectedVoucher = shallowRef<BusinessConsoleErpJournalVoucherItem>()
+const linesOpen = shallowRef(false)
+const voucherLines = computed(() =>
+  (selectedVoucher.value?.lines ?? []).map((line, index) => ({ ...line, lineNo: index + 1 })),
+)
+
+function openLines(voucher: BusinessConsoleErpJournalVoucherItem) {
+  selectedVoucher.value = voucher
+  linesOpen.value = true
+}
+
 const open = shallowRef(false)
 const form = reactive({
   postingDate: '',
@@ -256,8 +286,38 @@ async function submit() {
       <template #cell-totalCreditAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalCreditAmount) }}</span></template
       >
+      <template #cell-voucherNo="{ row }">
+        <NvButton
+          variant="link"
+          class="h-auto p-0"
+          type="button"
+          :aria-label="`查看分录 ${row.voucherNo ?? ''}`"
+          @click="openLines(row)"
+        >
+          {{ row.voucherNo ?? '-' }}
+        </NvButton>
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
+
+    <NvDialog v-model:open="linesOpen">
+      <NvDialogContent class="sm:max-w-3xl">
+        <NvDialogHeader>
+          <NvDialogTitle>凭证分录 {{ selectedVoucher?.voucherNo }}</NvDialogTitle>
+          <NvDialogDescription
+            >过账日期 {{ formatDate(selectedVoucher?.postingDate) }}</NvDialogDescription
+          >
+        </NvDialogHeader>
+        <NvDataTable
+          :rows="voucherLines"
+          row-key="lineNo"
+          :columns="lineColumns"
+          :searchable="false"
+          :column-settings="false"
+          empty-message="凭证没有返回分录。"
+        />
+      </NvDialogContent>
+    </NvDialog>
 
     <NvDialog v-model:open="open">
       <NvDialogContent>

@@ -13,7 +13,6 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 import { useQualityFirstArticleInspections } from '@/composables/quality/useBusinessQuality'
@@ -37,7 +36,11 @@ const {
   refreshFirstArticleRecords,
 } = useQualityFirstArticleInspections()
 const { page, pageSize } = usePagedList(recordFilters, {
-  resetOn: [() => recordFilters.skuCode, () => recordFilters.result],
+  resetOn: [
+    () => recordFilters.skuCode,
+    () => recordFilters.result,
+    () => recordFilters.sourceType,
+  ],
 })
 
 const errorMessage = computed(() => inlineErrorMessage(firstArticleRecordsError.value))
@@ -45,6 +48,19 @@ const resultModel = computed({
   get: () => recordFilters.result || 'all',
   set: (value: string) => {
     recordFilters.result = value === 'all' ? undefined : value
+  },
+})
+function resetFilters() {
+  recordFilters.sourceType = undefined
+  recordFilters.skuCode = undefined
+  recordFilters.result = undefined
+  page.value = 1
+}
+defineExpose({ refresh: refreshFirstArticleRecords, resetFilters })
+const sourceModel = computed({
+  get: () => recordFilters.sourceType || 'all',
+  set: (value: string) => {
+    recordFilters.sourceType = value === 'all' ? undefined : value
   },
 })
 const columns: NvDataTableColumn<BusinessConsoleQualityItem>[] = [
@@ -61,46 +77,42 @@ function recordIdOf(row: BusinessConsoleQualityItem) {
 </script>
 
 <template>
-  <section class="grid gap-3" aria-labelledby="first-article-records-title">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 id="first-article-records-title" class="text-lg font-semibold">首件检验记录</h2>
-        <p class="text-sm text-muted-foreground">
-          仅显示首件确认产生的记录，可按物料和结果快速定位并打开打印详情。
-        </p>
-      </div>
-      <NvButton
-        type="button"
-        size="sm"
-        variant="outline"
-        :disabled="firstArticleRecordsPending"
-        @click="refreshFirstArticleRecords"
-      >
-        <RefreshCwIcon aria-hidden="true" />
-        刷新记录
-      </NvButton>
-    </div>
-
+  <section class="grid gap-3" aria-label="检验记录">
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvSelect v-model="sourceModel">
+          <NvSelectTrigger class="w-36" aria-label="按来源筛选检验记录">
+            <NvSelectValue placeholder="全部来源" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部来源</NvSelectItem>
+            <NvSelectItem value="first-article">首件</NvSelectItem>
+            <NvSelectItem value="receiving">来料</NvSelectItem>
+            <NvSelectItem value="operation">过程（工序）</NvSelectItem>
+            <NvSelectItem value="in-process">过程检验</NvSelectItem>
+            <NvSelectItem value="final">终检</NvSelectItem>
+            <NvSelectItem value="customer-return">客户退货</NvSelectItem>
+            <NvSelectItem value="maintenance">维修</NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
         <NvEntityPicker
           v-model="recordFilters.skuCode"
           class="w-64"
           :options="skuOptions"
           :loading="skusPending"
-          title="按物料筛选首件记录"
+          title="按物料筛选检验记录"
           placeholder="全部物料"
           clearable
-          aria-label="按物料筛选首件记录"
+          aria-label="按物料筛选检验记录"
         />
         <NvSelect v-model="resultModel">
-          <NvSelectTrigger class="w-36" aria-label="按结果筛选首件记录">
+          <NvSelectTrigger class="w-36" aria-label="按结果筛选检验记录">
             <NvSelectValue placeholder="全部结果" />
           </NvSelectTrigger>
           <NvSelectContent>
             <NvSelectItem value="all">全部结果</NvSelectItem>
             <NvSelectItem value="passed">合格</NvSelectItem>
-            <NvSelectItem value="rejected">不合格</NvSelectItem>
+            <NvSelectItem value="failed">不合格</NvSelectItem>
             <NvSelectItem value="conditional-release">让步放行</NvSelectItem>
           </NvSelectContent>
         </NvSelect>
@@ -122,7 +134,7 @@ function recordIdOf(row: BusinessConsoleQualityItem) {
       :loading="firstArticleRecordsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前筛选下没有首件检验记录。首件记录会在现场完成首件确认后出现在这里。"
+      empty-message="当前筛选下没有检验记录。"
       @update:page="page = $event"
       @update:page-size="(value) => (pageSize = String(value))"
     >

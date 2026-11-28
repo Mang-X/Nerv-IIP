@@ -78,6 +78,17 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleCreateMeasuringDeviceResponse> CreateMeasuringDeviceAsync(
+        string token, BusinessConsoleCreateMeasuringDeviceRequest request, CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> RecordCalibrationAsync(
+        string token, BusinessConsoleRecordMeasuringDeviceCalibrationRequest request, CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateQualityNcrResponse> CreateNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateQualityNcrRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(
         string internalBearerToken,
         string inspectionRecordId,
@@ -488,6 +499,32 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.Items.Select(ToQualityItem).ToArray(),
             response.Total);
     }
+
+    public async Task<BusinessConsoleCreateMeasuringDeviceResponse> CreateMeasuringDeviceAsync(
+        string token, BusinessConsoleCreateMeasuringDeviceRequest request, CancellationToken cancellationToken)
+    {
+        var id = await SendAsync<JsonElement>(token, HttpMethod.Post,
+            "/api/business/v1/quality/measuring-devices", request, cancellationToken);
+        return new BusinessConsoleCreateMeasuringDeviceResponse(FormatJsonScalar(id));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> RecordCalibrationAsync(
+        string token, BusinessConsoleRecordMeasuringDeviceCalibrationRequest request, CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(token, HttpMethod.Post,
+            $"/api/business/v1/quality/measuring-devices/{Uri.EscapeDataString(request.MeasuringDeviceId)}/calibrations",
+            request, cancellationToken);
+
+    public async Task<BusinessConsoleCreateQualityNcrResponse> CreateNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateQualityNcrRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await SendAsync<DownstreamCreateNcrResponse>(
+            internalBearerToken, HttpMethod.Post, "/api/business/v1/quality/ncrs", request, cancellationToken);
+        return new BusinessConsoleCreateQualityNcrResponse(FormatJsonScalar(result.NcrId), result.NcrCode);
+    }
+
+    private sealed record DownstreamCreateNcrResponse(JsonElement NcrId, string NcrCode);
 
     public async Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(
         string internalBearerToken,

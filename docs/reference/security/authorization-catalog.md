@@ -69,6 +69,7 @@
 - `business.quality.inspection-records.read`
 - `business.quality.ncr.read`
 - `business.quality.ncr.manage`
+- `business.quality.measuring-devices.manage`
 - `business.inventory.locations.manage`
 - `business.inventory.movements.create`
 - `business.inventory.ledger.read`

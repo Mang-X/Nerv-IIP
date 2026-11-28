@@ -47,7 +47,7 @@ import {
 import { PackageSearchIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess, notifyWarning } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -155,7 +155,9 @@ const columns: NvDataTableColumn<SparePartRow>[] = [
     key: 'inventoryPostingFailureReason',
     header: '库存过账',
     accessor: (row) =>
-      row.inventoryPostingFailureReason ? `过账失败：${row.inventoryPostingFailureReason}` : '—',
+      row.inventoryPostingFailureReason
+        ? `过账失败：${row.inventoryPostingFailureReason}`
+        : '未收到失败回执',
   },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
@@ -210,9 +212,18 @@ async function submitCreate() {
   }
 
   try {
-    await createSparePart(body)
+    const response = await createSparePart(body)
     createOpen.value = false
-    notifySuccess('备件需求已创建')
+    await refreshSpareParts()
+    const lineId = response?.data?.sparePartLineId
+    const failure =
+      lineId &&
+      spareParts.value.find((row) => row.sparePartLineId === lineId)?.inventoryPostingFailureReason
+    if (failure) {
+      notifyWarning(`备件需求已登记，库存过账失败：${failure}`)
+    } else {
+      notifySuccess('备件需求已登记，扣库过账结果请查看库存过账列。')
+    }
   } catch (error) {
     notifyOperationFailure('备件需求创建失败', error, '备件需求创建失败，请稍后重试。')
   }

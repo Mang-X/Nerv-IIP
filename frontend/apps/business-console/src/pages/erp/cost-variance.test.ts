@@ -154,6 +154,21 @@ describe('工单成本差异', () => {
     expect(wrapper.text()).toContain('CNY 600.00')
     expect(wrapper.text()).toContain('CNY 500.00')
   })
+  it('按分显示带六位小数的人工金额和资本化金额', () => {
+    data.workOrderData.value = {
+      ...fixture(),
+      actualLaborCost: 16.465968,
+      totalAccumulatedCost: 123.456789,
+      capitalizedCost: 100.000001,
+      capitalizationVarianceAmount: 23.456788,
+    }
+    const text = render().text()
+    expect(text).toContain('CNY 16.47')
+    expect(text).toContain('CNY 123.46')
+    expect(text).toContain('CNY 100.00')
+    expect(text).toContain('CNY 23.46')
+    expect(text).not.toContain('CNY 16.465968')
+  })
   it('无标准基准仍显示实际，机器未启用不冒充零金额', async () => {
     data.workOrderData.value = {
       ...fixture(),

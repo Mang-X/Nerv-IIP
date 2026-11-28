@@ -227,3 +227,27 @@ describe('#3278 S4 stableRowKey 兜底语义', () => {
     expect(keys).not.toContain('凭证')
   })
 })
+
+it('点开凭证号可核对同一凭证的借贷分录', async () => {
+  hoisted.rows!.value = [
+    {
+      ...voucher('v-6', 'JV-2026-0006', 16.47),
+      lines: [
+        { accountCode: '1403', debitAmount: 16.47, creditAmount: 0, memo: '领入材料' },
+        { accountCode: '2202', debitAmount: 0, creditAmount: 16.47, memo: '应付材料款' },
+      ],
+    },
+  ]
+  const wrapper = mount(VouchersPage, { attachTo: document.body, global: { stubs } })
+  try {
+    await wrapper.get('button[aria-label="查看分录 JV-2026-0006"]').trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog?.textContent).toContain('1403')
+    expect(dialog?.textContent).toContain('2202')
+    expect(dialog?.textContent).toContain('¥16.47')
+    expect(dialog?.textContent).toContain('应付材料款')
+  } finally {
+    wrapper.unmount()
+  }
+})

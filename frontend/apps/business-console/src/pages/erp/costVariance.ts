@@ -1,7 +1,13 @@
-import { machineAmount, machineHours } from './machineOverhead'
+import { machineHours } from './machineOverhead'
 
-export const costAmount = (value: number | null | undefined, currency: string | null | undefined) =>
-  machineAmount(value ?? null, currency ?? null)
+const amountFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+export function costAmount(value: number | null | undefined, currency: string | null | undefined) {
+  return value == null || !currency ? '—' : `${currency} ${amountFormatter.format(value)}`
+}
 export const costHours = (value: number | null | undefined) => machineHours(value ?? null)
 
 const directions: Record<string, string> = {

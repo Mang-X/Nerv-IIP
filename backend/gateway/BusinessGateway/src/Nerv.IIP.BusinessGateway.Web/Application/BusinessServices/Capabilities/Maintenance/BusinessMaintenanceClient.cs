@@ -882,7 +882,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 inspection.Inspector,
                 inspection.Result,
                 inspection.InspectedAtUtc,
-                inspection.Measurements ?? [])).ToArray(),
+                inspection.Measurements ?? [],
+                inspection.PlanCode)).ToArray(),
             inspections.Skip,
             inspections.Take,
             inspections.Total);
@@ -1211,7 +1212,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string Inspector,
         string Result,
         DateTimeOffset InspectedAtUtc,
-        IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementItem>? Measurements = null);
+        IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementItem>? Measurements = null,
+        string? PlanCode = null);
 
     private sealed record DownstreamMaintenanceSparePartListItem(
         JsonElement SparePartLineId,

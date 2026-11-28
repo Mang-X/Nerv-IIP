@@ -617,6 +617,7 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal("inspector-002", item.Inspector);
         Assert.Equal("failed", item.Result);
         Assert.Equal(plan.Id, item.PlanId);
+        Assert.Equal("PM-INSPECT", item.PlanCode);
     }
 
     [Fact]

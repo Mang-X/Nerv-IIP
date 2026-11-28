@@ -106,13 +106,13 @@ const cases = [
     name: '采购报价承诺日期',
     page: SupplierQuotations,
     open: '录入报价',
-    fields: {},
+    fields: { 'erp-sq-price': '10' },
     dates: ['erp-sq-date'],
     payload: {
       rfqNo: 'RFQ-001',
       supplierCode: 'SUP-001',
       quotationNo: undefined,
-      lines: [{ ...line, unitPrice: 0, promisedDate: '2026-06-19' }],
+      lines: [{ ...line, unitPrice: 10, promisedDate: '2026-06-19' }],
     },
   },
   {
@@ -347,6 +347,11 @@ it('供应商报价必须明确选择多行询价中的具体行，并提交所�
   expect(state.save).not.toHaveBeenCalled()
   await wrapper.findAll('form select')[1]!.setValue('20')
   expect(wrapper.text()).toContain('SKU-SECOND')
+  await wrapper.get('#erp-sq-price').setValue('0')
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.text()).toContain('单价必须大于 0。')
+  expect(state.save).not.toHaveBeenCalled()
+  await wrapper.get('#erp-sq-price').setValue('10')
   await wrapper.get('form').trigger('submit')
   await flushPromises()
   expect(state.save).toHaveBeenCalledWith(
@@ -357,7 +362,7 @@ it('供应商报价必须明确选择多行询价中的具体行，并提交所�
           lineNo: '20',
           skuCode: 'SKU-SECOND',
           quantity: 3,
-          unitPrice: 0,
+          unitPrice: 10,
           promisedDate: '2026-06-20',
         },
       ],

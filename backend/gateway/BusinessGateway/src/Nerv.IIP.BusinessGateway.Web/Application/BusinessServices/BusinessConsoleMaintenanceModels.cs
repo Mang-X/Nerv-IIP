@@ -292,7 +292,8 @@ public sealed record BusinessConsoleMaintenanceInspectionItem(
     string Inspector,
     string Result,
     DateTimeOffset InspectedAtUtc,
-    IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementItem>? Measurements = null);
+    IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementItem>? Measurements = null,
+    string? PlanCode = null);
 
 public sealed record BusinessConsoleMaintenanceInspectionMeasurementItem(
     string CharacteristicCode,

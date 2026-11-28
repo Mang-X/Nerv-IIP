@@ -146,6 +146,7 @@ function blankForm(): QualityReasonForm {
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 // null = 新建，否则为正在编辑原因的 reasonCode（编码即身份，编辑态只读）。
+const restoring = shallowRef(false)
 const editingCode = shallowRef<string | null>(null)
 const form = reactive<QualityReasonForm>(blankForm())
 
@@ -159,6 +160,7 @@ const canSubmit = computed(
 
 function openCreate() {
   editingCode.value = null
+  restoring.value = false
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
@@ -166,6 +168,7 @@ function openCreate() {
 function openEdit(row: QualityReasonItem) {
   if (!row.reasonCode) return
   editingCode.value = row.reasonCode
+  restoring.value = row.enabled === false
   showErrors.value = false
   Object.assign(form, {
     reasonCode: row.reasonCode ?? '',
@@ -190,8 +193,8 @@ async function submitForm() {
   }
   try {
     if (editingCode.value) {
-      await updateReason(editingCode.value, shared)
-      notifySuccess(`原因「${shared.reasonName}」已更新。`)
+      await updateReason(editingCode.value, { ...shared, enabled: restoring.value || undefined })
+      notifySuccess(`原因「${shared.reasonName}」已${restoring.value ? '重新启用' : '更新'}。`)
     } else {
       const body: CreateQualityReasonRequest = {
         organizationId: filters.organizationId,
@@ -360,7 +363,7 @@ async function confirmArchive() {
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
                   <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
-                  {{ editingCode ? '保存修改' : '创建原因' }}
+                  {{ restoring ? '确认重新启用' : editingCode ? '保存修改' : '创建原因' }}
                 </NvButton>
               </NvDialogFooter>
             </form>
@@ -416,7 +419,9 @@ async function confirmArchive() {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</NvButton>
+          <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">{{
+            row.enabled === false ? '重新启用' : '编辑'
+          }}</NvButton>
           <NvButton
             type="button"
             variant="ghost"

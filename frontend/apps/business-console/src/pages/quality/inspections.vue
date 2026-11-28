@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shallowRef } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
@@ -35,6 +36,7 @@ definePage({
   },
 })
 
+const recordsList = shallowRef<InstanceType<typeof FirstArticleInspectionRecords>>()
 const {
   INSPECTION_PLAN_CATEGORY_OPTIONS,
   SOURCE_DOCUMENT_KINDS,
@@ -95,7 +97,7 @@ const {
   unitPolicyFor,
   uomCatalog,
   useInspectionPlan,
-} = useInspectionPage()
+} = useInspectionPage(() => recordsList.value?.resetFilters())
 </script>
 
 <template>
@@ -133,8 +135,8 @@ const {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="inspectionPlansPending"
-          @click="refreshInspectionPlans"
+          :disabled="activeView === 'plans' && inspectionPlansPending"
+          @click="activeView === 'plans' ? refreshInspectionPlans() : recordsList?.refresh()"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -145,7 +147,7 @@ const {
     <NvTabs v-model="activeView">
       <NvTabsList>
         <NvTabsTrigger value="plans">检验方案</NvTabsTrigger>
-        <NvTabsTrigger value="first-article-records">首件检验记录</NvTabsTrigger>
+        <NvTabsTrigger value="first-article-records">检验记录</NvTabsTrigger>
       </NvTabsList>
 
       <NvTabsContent value="plans" class="grid gap-3">
@@ -231,6 +233,7 @@ const {
 
       <NvTabsContent value="first-article-records" class="grid gap-3">
         <FirstArticleInspectionRecords
+          ref="recordsList"
           :sku-options="skuCatalog.skuOptions.value"
           :skus-pending="skuCatalog.skusPending.value"
           @open-record="openFirstArticleRecord"

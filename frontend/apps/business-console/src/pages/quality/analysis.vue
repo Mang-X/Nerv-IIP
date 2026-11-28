@@ -594,6 +594,15 @@ function spcViolationKey(row: QualitySpcViolation) {
         </template>
       </NvToolbar>
 
+      <p
+        v-if="spc.filters.skuCode && !inspectionPlansPending && !planOptions.length"
+        class="text-sm text-muted-foreground"
+      >
+        当前方案目录未找到该物料的检验方案。
+        <RouterLink to="/quality/inspections" class="text-brand underline underline-offset-4">
+          配置检验方案
+        </RouterLink>
+      </p>
       <div class="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <NvMetricCard
           variant="facets"

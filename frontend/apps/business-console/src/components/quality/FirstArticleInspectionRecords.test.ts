@@ -53,7 +53,7 @@ const stubs = {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<select data-testid="result-filter" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="all">全部结果</option><option value="passed">合格</option><option value="rejected">不合格</option></select>',
+      '<select data-testid="result-filter" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="all">全部结果</option><option value="passed">合格</option><option value="failed">不合格</option></select>',
   },
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { template: '<span><slot /></span>' },
@@ -83,7 +83,7 @@ describe('首件检验记录列表', () => {
     })
 
     await wrapper.get('[data-testid="sku-filter"]').setValue('SKU-FA-001')
-    await wrapper.get('[data-testid="result-filter"]').setValue('passed')
+    await wrapper.findAll('[data-testid="result-filter"]')[1]!.setValue('passed')
     expect(state.filters.skuCode).toBe('SKU-FA-001')
     expect(state.filters.result).toBe('passed')
 
@@ -94,7 +94,7 @@ describe('首件检验记录列表', () => {
     await recordButton?.trigger('click')
     expect(wrapper.emitted('open-record')).toEqual([['record-1']])
 
-    await wrapper.get('[data-testid="result-filter"]').setValue('rejected')
-    expect(state.filters.result).toBe('rejected')
+    await wrapper.findAll('[data-testid="result-filter"]')[1]!.setValue('failed')
+    expect(state.filters.result).toBe('failed')
   })
 })

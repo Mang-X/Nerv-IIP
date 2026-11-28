@@ -201,6 +201,13 @@ public sealed class QualityEndpointContractTests
             CancellationToken.None);
 
         Assert.False(archived.Enabled);
+
+        var restored = await new UpdateQualityReasonCommandHandler(dbContext).Handle(
+            new UpdateQualityReasonCommand("org-001", "env-dev", "QR-SCRATCH", "Deep scratch", "Appearance", "major", "scrap", Enabled: true),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.True(restored.Enabled);
+        Assert.Equal(archived.ReasonCode, restored.ReasonCode);
     }
 
     [Fact]

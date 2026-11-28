@@ -84,12 +84,7 @@ export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceList
     ),
   )
 
-  const createMutation = useMutation({
-    ...createBusinessConsoleMaintenanceSparePartMutationOptions(),
-    onSuccess() {
-      void refetchWithBusinessContext(filters, sparePartsQuery)
-    },
-  })
+  const createMutation = useMutation(createBusinessConsoleMaintenanceSparePartMutationOptions())
 
   return {
     filters,

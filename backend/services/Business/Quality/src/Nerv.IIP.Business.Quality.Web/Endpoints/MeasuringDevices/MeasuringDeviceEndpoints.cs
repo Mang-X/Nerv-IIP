@@ -9,7 +9,7 @@ using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 namespace Nerv.IIP.Business.Quality.Web.Endpoints.MeasuringDevices;
 
 public sealed record CreateMeasuringDeviceRequest(string OrganizationId, string EnvironmentId, string? DeviceCode, string DeviceType, string Accuracy, int CalibrationIntervalDays, DateTimeOffset CalibratedAtUtc, string? IdempotencyKey = null);
-public sealed record RecordCalibrationRequest(MeasuringDeviceId MeasuringDeviceId, string CalibrationNo, DateTimeOffset CalibratedAtUtc, string CalibrationProvider, string? CertificateFileId);
+public sealed record RecordCalibrationRequest(MeasuringDeviceId MeasuringDeviceId, string CalibrationNo, DateTimeOffset CalibratedAtUtc, string CalibrationProvider, string? CertificateFileId, string? OrganizationId = null, string? EnvironmentId = null);
 public sealed record ChangeMeasuringDeviceStatusRequest(MeasuringDeviceId MeasuringDeviceId, string Status);
 public sealed record CalibrationDashboardRequest(string OrganizationId, string EnvironmentId, int WarningDays = 7);
 public sealed record CalibrationDashboardResponse(int Current, int Warning, int Overdue, IReadOnlyCollection<CalibrationDashboardItem> Items);
@@ -56,7 +56,7 @@ public sealed class CreateMeasuringDeviceEndpoint(ISender sender) : QualityEndpo
 public sealed class RecordCalibrationEndpoint(ISender sender) : QualityEndpoint<RecordCalibrationRequest, ResponseData<AcceptedResponse>>
 {
     public override void Configure() => ConfigureQualityContract(QualityInspectionEndpointContracts.Get<RecordCalibrationEndpoint>());
-    public override async Task HandleAsync(RecordCalibrationRequest req, CancellationToken ct) { await sender.Send(new RecordMeasuringDeviceCalibrationCommand(req.MeasuringDeviceId, req.CalibrationNo, req.CalibratedAtUtc, req.CalibrationProvider, req.CertificateFileId), ct); await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct); }
+    public override async Task HandleAsync(RecordCalibrationRequest req, CancellationToken ct) { await sender.Send(new RecordMeasuringDeviceCalibrationCommand(req.MeasuringDeviceId, req.CalibrationNo, req.CalibratedAtUtc, req.CalibrationProvider, req.CertificateFileId, req.OrganizationId, req.EnvironmentId), ct); await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct); }
 }
 public sealed class ChangeMeasuringDeviceStatusEndpoint(ISender sender) : QualityEndpoint<ChangeMeasuringDeviceStatusRequest, ResponseData<AcceptedResponse>>
 {

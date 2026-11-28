@@ -63,7 +63,7 @@ describe('首件检验数据编排', () => {
     state.activate.mockReset()
   })
 
-  it('首件记录查询始终携带 first-article，并透传 SKU 与结果筛选', async () => {
+  it('检验记录默认包含全部来源，也可按客户退货筛选', async () => {
     const quality = await import('./useBusinessQuality')
     const useFirstArticle = (
       quality as unknown as {
@@ -83,11 +83,19 @@ describe('首件检验数据编排', () => {
       result: 'passed',
     })
 
+    expect(state.queryOptions?.['query']).not.toHaveProperty('sourceType')
+    useFirstArticle({
+      organizationId: 'org-1',
+      environmentId: 'env-1',
+      sourceType: 'customer-return',
+      skuCode: 'SKU-FA-001',
+      result: 'passed',
+    })
     expect(state.queryOptions).toEqual({
       query: expect.objectContaining({
         organizationId: 'org-1',
         environmentId: 'env-1',
-        sourceType: 'first-article',
+        sourceType: 'customer-return',
         keyword: 'SKU-FA-001',
         status: 'passed',
       }),

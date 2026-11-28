@@ -18,9 +18,9 @@ const planSheetSource = readFileSync(
 )
 
 describe('首件检验工作台合同', () => {
-  it('在既有检验页提供首件方案与首件记录两个平级入口', () => {
+  it('在既有检验页提供保留首件方案入口并提供全来源检验记录页签', () => {
     expect(pageSource).toContain('首件检验方案')
-    expect(pageSource).toContain('首件检验记录')
+    expect(pageSource).toContain('>检验记录</NvTabsTrigger>')
     expect(pageSource).toContain('FirstArticlePlanSheet')
     expect(pageSource).toContain('FirstArticleInspectionRecords')
     expect(pageSource).toContain('启用首件方案')

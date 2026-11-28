@@ -44,6 +44,7 @@ import {
   notifyError,
   notifyOperationFailure,
   notifySuccess,
+  notifyWarning,
 } from '@/utils/notify'
 import type { SourceDocumentKind } from '@/composables/catalog/useSourceDocumentCatalog'
 import { readFaceText } from '@/utils/readFace'
@@ -52,7 +53,7 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-export function useInspectionPage() {
+export function useInspectionPage(onDirectRecordCreated: () => void) {
   const route = useRoute()
   const router = useRouter()
   const auth = useAuthStore()
@@ -125,6 +126,16 @@ export function useInspectionPage() {
   // 换了来源类型，已选的来源单据就不属于这一类了。
   function changeSourceType(value: unknown) {
     recordForm.sourceType = typeof value === 'string' ? value : ''
+    recordForm.sourceService =
+      (
+        {
+          operation: 'mes-operation',
+          receiving: 'wms',
+          final: 'mes',
+          maintenance: 'maintenance',
+          'customer-return': 'customer-return',
+        } as Record<string, string>
+      )[recordForm.sourceType] ?? ''
     recordForm.sourceDocumentId = ''
   }
 
@@ -589,6 +600,7 @@ export function useInspectionPage() {
   }
   async function openFirstArticleRecord(inspectionRecordId: string) {
     activeView.value = 'first-article-records'
+    recordDetailOpen.value = true
     await router.push({
       path: '/quality/inspections',
       query: { ...route.query, view: 'first-article-records', inspectionRecordId },
@@ -771,8 +783,10 @@ export function useInspectionPage() {
         ? { workOrderId: contextWorkOrderId.value, operationTaskId: contextOperationTaskId.value }
         : null
     submittedOperationSource.value = null
+    let createdRecordId: string | undefined
     try {
-      await createInspectionRecord(body)
+      const response = await createInspectionRecord(body)
+      createdRecordId = response?.data?.inspectionRecordId
     } catch (error) {
       notifyOperationFailure('检验记录提交失败', error, '检验记录提交失败，请稍后重试。')
       return
@@ -781,6 +795,13 @@ export function useInspectionPage() {
     if (sourceIdentity === operationSourceIdentity.value)
       submittedOperationSource.value = operationSource
     notifySuccess(`${inspectionSubmissionSubject()}已提交。`)
+    if (createdRecordId) {
+      onDirectRecordCreated()
+      if (!operationSource) await openFirstArticleRecord(createdRecordId)
+    }
+    if (body.resultLines?.some((line) => line.result === 'failed')) {
+      notifyWarning('若检验结果判定为不合格且尚未关联报告，请在检验记录详情开立 NCR。')
+    }
   }
 
   const INSPECTION_PLAN_CATEGORY_OPTIONS = INSPECTION_PLAN_CATEGORIES.map((value) => ({

@@ -341,6 +341,13 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
       :count="`${total} 个${inProgress ? '检验中的任务' : '待检任务'}`"
     >
       <template #actions>
+        <NvButton size="sm" variant="outline" as-child>
+          <RouterLink
+            :to="{ path: '/quality/inspections', query: { view: 'first-article-records' } }"
+          >
+            查看检验记录
+          </RouterLink>
+        </NvButton>
         <NvButton size="sm" variant="outline" :disabled="pending" @click="refreshTasks">
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -397,8 +404,16 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
     </div>
 
     <div class="grid gap-4 rounded-xl border bg-card p-4 shadow-sm">
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <h2 class="text-base font-semibold">先处理最紧急的任务</h2>
+      <h2 class="text-base font-semibold">先处理最紧急的任务</h2>
+
+      <div v-if="locatorMessage" class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm font-medium" role="status">{{ locatorMessage }}</p>
+        <NvButton size="sm" variant="ghost" @click="router.replace('/quality/inspection-tasks')">
+          查看全部待检任务
+        </NvButton>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
         <div class="flex flex-wrap gap-2" role="tablist" aria-label="来源类型">
           <NvButton
             v-for="tab in sourceTabs"
@@ -412,22 +427,12 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
             {{ tab.label }}
           </NvButton>
         </div>
-      </div>
+        <NvRadioGroup v-model="filters.status" aria-label="任务状态" class="flex flex-wrap gap-4">
+          <NvRadioGroupItem value="pending">待认领</NvRadioGroupItem>
+          <NvRadioGroupItem value="in-progress">检验中</NvRadioGroupItem>
+        </NvRadioGroup>
 
-      <div v-if="locatorMessage" class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-sm font-medium" role="status">{{ locatorMessage }}</p>
-        <NvButton size="sm" variant="ghost" @click="router.replace('/quality/inspection-tasks')">
-          查看全部待检任务
-        </NvButton>
-      </div>
-
-      <NvRadioGroup v-model="filters.status" aria-label="任务状态" class="flex flex-wrap gap-4">
-        <NvRadioGroupItem value="pending">待认领</NvRadioGroupItem>
-        <NvRadioGroupItem value="in-progress">检验中</NvRadioGroupItem>
-      </NvRadioGroup>
-
-      <div class="grid gap-3 sm:grid-cols-[minmax(0,280px)_auto] sm:items-end">
-        <NvField>
+        <NvField class="w-64">
           <NvFieldLabel for="inspection-task-sku">按 SKU 查找</NvFieldLabel>
           <NvEntityPicker
             id="inspection-task-sku"
@@ -569,11 +574,5 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
         </form>
       </NvDialogContent>
     </NvDialog>
-
-    <p class="text-xs text-muted-foreground">
-      <RouterLink class="underline underline-offset-2" to="/quality/inspections"
-        >查看检验记录</RouterLink
-      >
-    </p>
   </BusinessLayout>
 </template>

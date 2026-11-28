@@ -68,6 +68,7 @@ public static class NervIipPermissionCodes
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";
     public const string QualityInspectionRecordsRead = "business.quality.inspection-records.read";
     public const string QualityNcrRead = "business.quality.ncr.read";
+    public const string QualityMeasuringDevicesManage = "business.quality.measuring-devices.manage";
     public const string QualityNcrManage = "business.quality.ncr.manage";
 
     // business.inventory.*

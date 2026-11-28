@@ -132,6 +132,19 @@ describe('quality route location behavior', () => {
     ])
   })
 
+  it('切换到客户退货时带出来源服务并清除旧单据', async () => {
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { sourceDocumentId: string; sourceService: string }
+      changeSourceType: (value: string) => void
+    }
+    vm.recordForm.sourceDocumentId = 'WO-OLD'
+    vm.changeSourceType('customer-return')
+    expect(vm.recordForm.sourceService).toBe('customer-return')
+    expect(vm.recordForm.sourceDocumentId).toBe('')
+  })
+
   it('uses the first-article source contract when creating a record from a first-article plan', async () => {
     const firstArticlePlan = {
       id: 'PLAN-FA-001',

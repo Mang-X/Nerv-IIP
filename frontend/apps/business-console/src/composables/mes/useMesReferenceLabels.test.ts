@@ -24,7 +24,10 @@ import {
  * 只读表的旁路导出：只要有人把归一化加回 `statusLabel`，这里立刻红。
  */
 it('显示追溯来源状态', () => {
-  expect(useMesReferenceLabels().statusLabel('Source')).toBe('来源')
+  const { statusLabel } = useMesReferenceLabels()
+  expect(statusLabel('Source')).toBe('来源')
+  expect(statusLabel('Reported')).toBe('已报工')
+  expect(statusLabel('Produced')).toBe('已产出')
 })
 
 describe('MES 状态词表不吸收契约漂移', () => {

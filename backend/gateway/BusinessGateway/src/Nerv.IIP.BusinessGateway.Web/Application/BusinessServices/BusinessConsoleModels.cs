@@ -1911,7 +1911,8 @@ public sealed record BusinessConsoleUpdateQualityReasonRequest(
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition);
+    string? DefaultDisposition,
+    bool? Enabled = null);
 
 public sealed record BusinessConsoleArchiveQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
@@ -2153,6 +2154,30 @@ public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
 /// 按 id 取单条 NCR 详情（PDA 检验结果页「已触发 NCR」→ 打开 NCR 的互链）。代理真实详情端点，
 /// org/env 随查询下传由 Quality 服务端做租户过滤（越权 id 与不存在同为 not found）。
 /// </summary>
+public sealed record BusinessConsoleCreateMeasuringDeviceRequest(
+    string OrganizationId, string EnvironmentId, string? DeviceCode, string DeviceType,
+    string Accuracy, int CalibrationIntervalDays, DateTimeOffset CalibratedAtUtc, string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleRecordMeasuringDeviceCalibrationRequest(
+    [property: RouteParam] string MeasuringDeviceId,
+    string OrganizationId, string EnvironmentId, string CalibrationNo, DateTimeOffset CalibratedAtUtc,
+    string CalibrationProvider, string? CertificateFileId = null);
+
+public sealed record BusinessConsoleCreateMeasuringDeviceResponse(string MeasuringDeviceId);
+
+public sealed record BusinessConsoleCreateQualityNcrRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceType,
+    string SourceDocumentId,
+    string SkuCode,
+    decimal DefectQuantity,
+    string DefectReason,
+    string? BatchNo = null,
+    string? SerialNo = null);
+
+public sealed record BusinessConsoleCreateQualityNcrResponse(string NcrId, string NcrCode);
+
 public sealed record BusinessConsoleQualityNcrDetailRequest(
     [property: RouteParam] string NcrId,
     [property: QueryParam] string OrganizationId,

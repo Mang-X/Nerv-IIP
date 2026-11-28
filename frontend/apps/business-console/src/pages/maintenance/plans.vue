@@ -223,6 +223,7 @@ async function submitPlan(submission: PlanFormSubmission) {
   try {
     if (submission.mode === 'create') {
       await createPlan(submission.body)
+      await refreshPlans()
       notifySuccess('保养计划已创建')
     } else {
       await updatePlan(submission.planId, submission.body)

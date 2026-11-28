@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import {
+  createBusinessConsoleQualityMeasuringDevice,
+  recordBusinessConsoleQualityMeasuringDeviceCalibration,
+} from '@nerv-iip/api-client'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -12,10 +19,24 @@ import {
 } from '@/composables/quality/useBusinessQualityLedgers'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import { formatDate, formatDateTime } from '@/utils/format'
-import { friendlyErrorMessage } from '@/utils/notify'
+import {
+  friendlyErrorMessage,
+  notifyOperationFailure,
+  notifySuccess,
+  notifyWarning,
+} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
+  NvInput,
+  NvFieldLabel,
+  NvField,
+  NvDialogTitle,
+  NvDialogHeader,
+  NvDialogFooter,
+  NvDialogDescription,
+  NvDialogContent,
+  NvDialog,
   NvMetricCard,
   NvPageHeader,
   NvSelect,
@@ -34,7 +55,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -237,6 +258,99 @@ function refreshAll() {
   void refreshMeasuringDevices()
   void refreshCalibrationRecords()
 }
+const auth = useAuthStore()
+const canManage = computed(() =>
+  auth.principal?.permissionCodes?.includes(P.qualityMeasuringDevicesManage),
+)
+const writeMode = shallowRef<'device' | 'calibration'>('device')
+const writeOpen = shallowRef(false)
+const saving = shallowRef(false)
+const writeTarget = shallowRef<QualityMeasuringDeviceItem>()
+const writeForm = reactive({
+  deviceCode: '',
+  deviceType: '',
+  accuracy: '',
+  interval: '',
+  calibrationNo: '',
+  provider: '',
+  calibratedOn: '',
+})
+function openWrite(mode: 'device' | 'calibration') {
+  writeMode.value = mode
+  writeTarget.value = selectedDevice.value
+  Object.assign(writeForm, {
+    deviceCode: '',
+    deviceType: '',
+    accuracy: '',
+    interval: '',
+    calibrationNo: '',
+    provider: '',
+    calibratedOn: '',
+  })
+  writeOpen.value = true
+}
+async function submitWrite() {
+  if (!canManage.value || saving.value || !hasBusinessContext(deviceFilters)) return
+  const { organizationId, environmentId } = deviceFilters
+  const date = new Date(`${writeForm.calibratedOn}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return
+  const calibratedAtUtc = date.toISOString()
+  const isDevice = writeMode.value === 'device'
+  saving.value = true
+  try {
+    if (isDevice) {
+      const interval = Number(writeForm.interval)
+      if (
+        !Number.isInteger(interval) ||
+        interval <= 0 ||
+        !writeForm.deviceType.trim() ||
+        !writeForm.accuracy.trim()
+      ) {
+        notifyWarning('请填写器具类型、准确度和正整数校准周期。')
+        return
+      }
+      const { data } = await createBusinessConsoleQualityMeasuringDevice({
+        body: {
+          organizationId,
+          environmentId,
+          calibratedAtUtc,
+          deviceCode: writeForm.deviceCode.trim() || undefined,
+          deviceType: writeForm.deviceType.trim(),
+          accuracy: writeForm.accuracy.trim(),
+          calibrationIntervalDays: interval,
+        },
+        throwOnError: true,
+      })
+      if (!data.success || !data.data?.measuringDeviceId)
+        throw new Error(data.message || '建档失败。')
+    } else {
+      const measuringDeviceId = writeTarget.value?.measuringDeviceId
+      if (!measuringDeviceId || !writeForm.calibrationNo.trim() || !writeForm.provider.trim()) {
+        notifyWarning('请选择计量器具并填写校准编号和机构。')
+        return
+      }
+      const { data } = await recordBusinessConsoleQualityMeasuringDeviceCalibration({
+        path: { measuringDeviceId },
+        body: {
+          organizationId,
+          environmentId,
+          calibratedAtUtc,
+          calibrationNo: writeForm.calibrationNo.trim(),
+          calibrationProvider: writeForm.provider.trim(),
+        },
+        throwOnError: true,
+      })
+      if (!data.success || !data.data?.accepted) throw new Error(data.message || '登记失败。')
+    }
+    writeOpen.value = false
+    notifySuccess(isDevice ? '计量器具已建档。' : '校准记录已登记。')
+    refreshAll()
+  } catch (error) {
+    notifyOperationFailure('保存失败', error, '保存失败，请稍后重试。')
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
@@ -247,6 +361,19 @@ function refreshAll() {
       :count="deviceErrorMessage ? '台账加载失败' : `${measuringDevicesTotal} 件计量器具`"
     >
       <template #actions>
+        <NvButton v-if="canManage" size="sm" type="button" @click="openWrite('device')">
+          新建计量器具
+        </NvButton>
+        <NvButton
+          v-if="canManage"
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="!selectedDevice?.measuringDeviceId"
+          @click="openWrite('calibration')"
+        >
+          登记校准记录
+        </NvButton>
         <NvButton
           size="sm"
           type="button"
@@ -351,7 +478,7 @@ function refreshAll() {
       :loading="measuringDevicesPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前范围内没有计量器具。器具建档并登记检定周期后会出现在这里。"
+      empty-message="当前范围内没有计量器具。计量管理员可新建器具并登记校准周期。"
       @update:page="devicePaging.page.value = $event"
       @update:page-size="(value) => (devicePaging.pageSize.value = String(value))"
       @row-click="selectDevice"
@@ -419,10 +546,72 @@ function refreshAll() {
         :loading="calibrationRecordsPending"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前范围内没有校准记录。器具送检回证后会在这里留下证书流水。"
+        empty-message="当前范围内没有校准记录。选择已建档器具后，可登记送检回证。"
         @update:page="recordPaging.page.value = $event"
         @update:page-size="(value) => (recordPaging.pageSize.value = String(value))"
       />
     </section>
+    <NvDialog v-model:open="writeOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>{{
+            writeMode === 'device' ? '新建计量器具' : '登记校准记录'
+          }}</NvDialogTitle>
+          <NvDialogDescription>
+            {{ writeMode === 'device' ? '填写器具规格和校准周期。' : writeTarget?.deviceCode }}
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitWrite">
+          <template v-if="writeMode === 'device'">
+            <NvField>
+              <NvFieldLabel for="cal-deviceCode">器具编码（可由系统生成）</NvFieldLabel>
+              <NvInput id="cal-deviceCode" v-model="writeForm.deviceCode" type="text" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="cal-deviceType">器具类型</NvFieldLabel>
+              <NvInput id="cal-deviceType" v-model="writeForm.deviceType" type="text" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="cal-accuracy">准确度</NvFieldLabel>
+              <NvInput id="cal-accuracy" v-model="writeForm.accuracy" type="text" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="cal-interval">校准周期（天）</NvFieldLabel>
+              <NvInput
+                id="cal-interval"
+                v-model="writeForm.interval"
+                type="number"
+                required
+                min="1"
+                step="1"
+              />
+            </NvField>
+          </template>
+          <template v-else>
+            <NvField>
+              <NvFieldLabel for="cal-calibrationNo">校准编号</NvFieldLabel>
+              <NvInput
+                id="cal-calibrationNo"
+                v-model="writeForm.calibrationNo"
+                type="text"
+                required
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="cal-provider">校准机构</NvFieldLabel>
+              <NvInput id="cal-provider" v-model="writeForm.provider" type="text" required />
+            </NvField>
+          </template>
+          <NvField>
+            <NvFieldLabel for="cal-calibratedOn">校准日期</NvFieldLabel>
+            <NvInput id="cal-calibratedOn" v-model="writeForm.calibratedOn" type="date" required />
+          </NvField>
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="writeOpen = false">取消</NvButton>
+            <NvButton type="submit" :disabled="saving">保存</NvButton>
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>
