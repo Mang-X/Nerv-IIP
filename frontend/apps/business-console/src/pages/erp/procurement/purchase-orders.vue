@@ -122,7 +122,7 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   {
     key: 'purchaseOrderNo',
     header: '采购单',
-    width: 'w-40',
+    width: 'w-56',
     cellClass: 'font-medium whitespace-normal break-all',
   },
   { key: 'status', header: '订单状态', width: 'w-24' },

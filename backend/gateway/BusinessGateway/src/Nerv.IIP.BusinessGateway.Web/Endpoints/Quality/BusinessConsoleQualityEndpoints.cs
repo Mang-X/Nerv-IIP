@@ -1286,6 +1286,15 @@ public sealed class CreateMeasuringDeviceBusinessConsoleEndpoint(
         quality.CreateMeasuringDeviceAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+public sealed class BusinessConsoleCreateMeasuringDeviceRequestValidator
+    : Validator<BusinessConsoleCreateMeasuringDeviceRequest>
+{
+    public BusinessConsoleCreateMeasuringDeviceRequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
 [HttpPost("/api/business-console/v1/quality/measuring-devices/{measuringDeviceId}/calibrations")]
 [BusinessGatewayOperationId("recordBusinessConsoleQualityMeasuringDeviceCalibration")]
 public sealed class RecordMeasuringDeviceCalibrationBusinessConsoleEndpoint(

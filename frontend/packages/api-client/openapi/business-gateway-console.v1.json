@@ -10305,6 +10305,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -49065,6 +49075,8 @@
           },
           "idempotencyKey": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }

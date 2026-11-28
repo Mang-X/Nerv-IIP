@@ -101,13 +101,18 @@ export function registerDocumentIdentity() {
           const cell = page.getByRole('cell', { name: code, exact: true })
           await expect(cell).toBeVisible()
           const lines = await cell.evaluate((element) => {
+            const lineTops = new Set<number>()
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
             const range = document.createRange()
-            range.selectNodeContents(element)
-            return new Set(
-              Array.from(range.getClientRects())
-                .filter((rect) => rect.width > 0)
-                .map((rect) => rect.top),
-            ).size
+            while (walker.nextNode()) {
+              const node = walker.currentNode
+              if (!node.textContent?.trim()) continue
+              range.selectNodeContents(node)
+              for (const rect of range.getClientRects()) {
+                if (rect.width > 0) lineTops.add(rect.top)
+              }
+            }
+            return lineTops.size
           })
           expect(lines, '常规单号应有足够宽度保持一行').toBe(1)
         }
@@ -149,6 +154,18 @@ export function registerDocumentIdentity() {
           page.getByRole('cell', { name: '宁波密封件制造有限公司 SUP-SEAL-01' }),
         ).toBeVisible()
         await assertStandardCodeFits('PO-20260928-000001')
+        if (width === 1440) {
+          const approval = page.getByRole('columnheader', { name: '审批', exact: true })
+          await expect(approval).toBeInViewport({ ratio: 1 })
+          for (const name of ['订单状态', '收货状态']) {
+            const status = page.getByRole('columnheader', { name, exact: true })
+            await expect(status).toBeInViewport({ ratio: 1 })
+            const statusBox = (await status.boundingBox())!
+            expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(
+              (await approval.boundingBox())!.x,
+            )
+          }
+        }
         await expect(page.getByRole('cell', { name: '油封 φ20 骨架式 SEAL-020' })).toBeVisible()
         await page.screenshot({ path: testInfo.outputPath('purchase-orders.png') })
         await assertTextStaysInCells()

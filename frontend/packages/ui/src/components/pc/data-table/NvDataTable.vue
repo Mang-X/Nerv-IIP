@@ -419,7 +419,8 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                 cn(
                   'nv-dt-th h-10 overflow-hidden text-xs font-medium text-muted-foreground',
                   alignClass[col.align ?? 'start'],
-                  widthClass(col.width ?? 'w-32'),
+                  widthClass(col.width),
+                  !col.width && 'nv-dt-fill',
                   col.headerClass,
                 )
               "
@@ -615,9 +616,6 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
    widened to fit its content; when the declarations leave spare room, the
    surplus is shared out across the columns.
 
-   Giving every data column a width lets the table overflow horizontally when
-   their combined widths exceed the scroll container.
-
    `:deep()` is required, not decoration: `Table` primitive's root element is the
    scroll wrapper `<div>`, so Vue puts this component's scope id on that div —
    the inner `<table>` never carries it, and a bare `.nv-dt-table` selector here
@@ -627,6 +625,12 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     min-width: 100%;
     border-collapse: separate;
     border-spacing: 0;
+  }
+
+  /* Let undeclared columns absorb spare space before the fixed layout widens
+     columns with explicit widths. */
+  .nv-dt-fill {
+    width: 100%;
   }
 
   /* Header: a slightly recessed second surface, sticky when asked. */

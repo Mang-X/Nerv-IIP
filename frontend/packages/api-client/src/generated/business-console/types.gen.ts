@@ -14935,6 +14935,10 @@ export type CreateBusinessConsoleQualityMeasuringDeviceData = {
 
 export type CreateBusinessConsoleQualityMeasuringDeviceErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14943,6 +14947,8 @@ export type CreateBusinessConsoleQualityMeasuringDeviceErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleQualityMeasuringDeviceError = CreateBusinessConsoleQualityMeasuringDeviceErrors[keyof CreateBusinessConsoleQualityMeasuringDeviceErrors];
 
 export type CreateBusinessConsoleQualityMeasuringDeviceResponses = {
     /**
