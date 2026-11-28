@@ -252,11 +252,11 @@
     },
     {
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamMemberAccountDirectoryPostgresTests.cs",
-      "factoryCallCount": 2,
+      "factoryCallCount": 3,
       "ownerships": [
         {
           "strategy": "best-effort-dispose",
-          "factoryCallCount": 2,
+          "factoryCallCount": 3,
           "reason": "The IAM member-account directory proof uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
         }
       ]
@@ -274,7 +274,7 @@
     },
     {
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
-      "sourceSha256": "cf1c7ae546e37a295eeaf4afbba7f669bb8b5b38922087d425e24494585f55e9",
+      "sourceSha256": "8c3b84b14b2294fdbd62ffd32a4597acb4980bbb53889ebbbedbfacd97a99a51",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -303,7 +303,7 @@
         {
           "strategy": "best-effort-dispose",
           "factoryCallCount": 2,
-          "reason": "两条信封字段预算的真库证据用例各自 await using 一个受治理临时库，走共享 helper 的 dispose 生命周期，不声称显式 DROP 失败证据。"
+          "reason": "\u4e24\u6761\u4fe1\u5c01\u5b57\u6bb5\u9884\u7b97\u7684\u771f\u5e93\u8bc1\u636e\u7528\u4f8b\u5404\u81ea await using \u4e00\u4e2a\u53d7\u6cbb\u7406\u4e34\u65f6\u5e93\uff0c\u8d70\u5171\u4eab helper \u7684 dispose \u751f\u547d\u5468\u671f\uff0c\u4e0d\u58f0\u79f0\u663e\u5f0f DROP \u5931\u8d25\u8bc1\u636e\u3002"
         }
       ]
     },

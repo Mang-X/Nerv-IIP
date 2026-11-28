@@ -864,7 +864,8 @@
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres",
-        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Production_planner_query_filters_role_scope_and_active_accounts_on_postgres"
+        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Production_planner_query_filters_role_scope_and_active_accounts_on_postgres",
+        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Session_list_pages_by_status_and_expired_sessions_remain_unrevoked_on_postgres"
       ]
     },
     {
