@@ -422,9 +422,7 @@ const headerCount = computed(() => {
   if (outboundOrdersPending.value) return '加载中'
   return `${outboundOrdersTotal.value} 张出库单`
 })
-const pageOpenCount = computed(
-  () => outboundOrders.value.filter((r) => (r.status ?? '').toLowerCase() !== 'completed').length,
-)
+const pageOpenCount = computed(() => outboundOrders.value.filter(canComplete).length)
 const metricCells = computed<NvMetricStripCell[]>(() => {
   if (!listReady.value) {
     return [
@@ -445,7 +443,7 @@ const metricCells = computed<NvMetricStripCell[]>(() => {
     {
       key: 'completed',
       label: '本页已完成',
-      value: outboundOrders.value.length - pageOpenCount.value,
+      value: outboundOrders.value.filter((r) => r.status?.toLowerCase() === 'completed').length,
       unit: '张',
       valueTone: 'success',
     },
@@ -460,7 +458,7 @@ const columns: NvDataTableColumn<OutboundRow>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.outboundOrderNo ?? '无',
   },
-  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'status', header: '状态', width: 'w-64' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
   // 分配作业池与完成动作并排（#3849）：按钮数决定列宽，列宽不够会压到相邻列上。
   { key: 'actions', header: '操作', align: 'end', width: 'w-[14rem]' },
@@ -588,11 +586,17 @@ function refreshAll() {
           :label="statusLabel(row.status)"
           :tone="wmsStatusTone(row.status)"
         />
-        <p v-if="row.failureMessage" class="text-sm text-muted-foreground">
+        <p
+          v-if="row.failureMessage"
+          class="whitespace-normal wrap-anywhere text-sm text-muted-foreground"
+        >
           {{ row.failureMessage }}
         </p>
         <template v-for="line in row.lines" :key="line.lineNo">
-          <p v-if="line.inventoryMovementId" class="text-sm text-muted-foreground">
+          <p
+            v-if="line.inventoryMovementId"
+            class="whitespace-normal wrap-anywhere text-sm text-muted-foreground"
+          >
             库存流水 {{ line.inventoryMovementId }}
           </p>
         </template>

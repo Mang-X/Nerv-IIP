@@ -336,6 +336,19 @@ const pendingEmptyMessage = computed(() => {
   return '当前没有按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。'
 })
 
+const blockerAreaLabels: Readonly<Record<string, string>> = {
+  ...MES_READINESS_AREA_LABELS,
+  'quality-hold': '质量与工艺',
+  'capacity-schedule': '产能与排程',
+  'material-kitting': '物料齐套',
+  'material-receipt': '完工入库',
+}
+const blockerReasonLabels: Readonly<Record<string, string>> = {
+  WORK_ORDER_ON_HOLD: '工单已挂起',
+  SCHEDULE_INVALIDATED: '排程已失效',
+  RECEIPT_POSTING_FAILED: '完工入库过账失败',
+}
+
 type BlockerRow = (typeof blockers)['value'][number]
 const blockerColumns: NvDataTableColumn<BlockerRow>[] = [
   // 区域码词表与生产准备检查页共用；阻塞代码走 MES 就绪原因目录，取它的中文说法。
@@ -343,13 +356,18 @@ const blockerColumns: NvDataTableColumn<BlockerRow>[] = [
     key: 'areaCode',
     header: '区域',
     width: 'w-28',
-    accessor: (r) => labelFor(MES_READINESS_AREA_LABELS, r.areaCode) || '未知',
+    accessor: (r) => labelFor(blockerAreaLabels, r.areaCode, '其他来源'),
   },
   {
     key: 'code',
     header: '阻塞原因',
     cellClass: 'font-medium',
-    accessor: (r) => (r.code ? describeMesReadinessReason(r.code).label : '未知'),
+    accessor: (r) => {
+      const code = r.code ?? ''
+      if (Object.hasOwn(blockerReasonLabels, code)) return blockerReasonLabels[code]
+      const reason = describeMesReadinessReason(code)
+      return reason.label && reason.label !== code ? reason.label : '其他阻塞'
+    },
   },
   { key: 'message', header: '说明', accessor: (r) => r.message ?? '无说明' },
   { key: 'count', header: '数量', align: 'end', width: 'w-20' },

@@ -165,3 +165,7 @@ export function resolveDeltaTone(delta: NvMetricDelta): NvMetricTone {
   if (delta.direction === 'down') return 'danger'
   return 'neutral'
 }
+
+export function hasMeaningfulTrend(series?: number[]): boolean {
+  return !!series && series.length > 1 && Math.max(...series) !== Math.min(...series)
+}

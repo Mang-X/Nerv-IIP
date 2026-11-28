@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
@@ -19,6 +21,8 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import ShiftWorkingTime from './components/ShiftWorkingTime.vue'
 import WorkCalendarTab from './components/WorkCalendarTab.vue'
 import { useShiftCalendarPage } from './useShiftCalendarPage'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -136,7 +140,11 @@ const {
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>
           <template #actions>
-            <NvButton size="sm" type="button" @click="openShiftForm()"
+            <NvButton
+              v-if="can(P.masterDataResourcesManage)"
+              size="sm"
+              type="button"
+              @click="openShiftForm()"
               ><PlusIcon aria-hidden="true" />新建班次</NvButton
             >
           </template>
@@ -164,6 +172,7 @@ const {
           /></template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions
+              :read-only="!can(P.masterDataResourcesManage)"
               :row="row"
               entity-label="班次"
               :detail-fields="baseDetailFields(row, '班次编码', '班次名称')"

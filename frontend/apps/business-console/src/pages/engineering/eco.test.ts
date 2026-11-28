@@ -114,6 +114,7 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
   NvDialog: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
+  NvDialogBody: { template: '<div data-testid="eco-dialog-body"><slot /></div>' },
   NvDialogContent: { template: '<div data-testid="eco-dialog-content"><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div data-testid="eco-dialog-footer"><slot /></div>' },
@@ -377,7 +378,10 @@ describe('engineering eco page', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="eco-dialog-content"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="eco-dialog-footer"]').text()).toContain('发布变更')
+    const body = wrapper.get('[data-testid="eco-dialog-body"]')
+    expect(body.text()).toContain('对象种类')
+    expect(body.find('[data-testid="eco-dialog-footer"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="eco-dialog-footer"]').text()).toContain('发布变更')
   })
 
   it('发布前可预览工程变更影响链且不触发发布', async () => {

@@ -14,8 +14,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ select: [taskId: string] }>()
 const columns: NvDataTableColumn<ScheduleTask>[] = [
-  { key: 'operationId', header: '工序' },
-  { key: 'status', header: '状态' },
+  { key: 'operationId', header: '工序', cellClass: 'whitespace-normal' },
+  { key: 'status', header: '状态', width: 'w-20' },
 ]
 const groups = computed(() => {
   const orders = new Map(props.workOrders.map((order) => [order.workOrderId, order]))
@@ -116,14 +116,18 @@ function progress(order: SchedulingWorkOrderFacts | undefined, tasks: ScheduleTa
           <template #cell-operationId="{ row }">
             <button
               type="button"
-              class="text-left text-primary hover:underline"
+              class="max-w-full text-left wrap-anywhere text-primary hover:underline"
+              :title="row.operationId"
               :data-operation="row.id"
               :aria-pressed="row.id === selectedTaskId"
               @click.stop="emit('select', row.id)"
             >
               {{ row.operationId }}
             </button>
-            <p v-if="row.predecessors?.length" class="mt-1 text-xs text-muted-foreground">
+            <p
+              v-if="row.predecessors?.length"
+              class="mt-1 wrap-anywhere text-xs text-muted-foreground"
+            >
               前序 {{ row.predecessors.join('、') }}
             </p>
           </template>

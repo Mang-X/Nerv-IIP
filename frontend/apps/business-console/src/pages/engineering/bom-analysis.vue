@@ -673,7 +673,7 @@ function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
           <NvButton type="submit" :disabled="pending">
             <NvSpinner v-if="pending" aria-hidden="true" />
             <NetworkIcon v-else aria-hidden="true" />
-            对比
+            执行对比
           </NvButton>
         </div>
       </div>
@@ -737,7 +737,10 @@ function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
       </div>
     </form>
 
-    <NvToolbar v-if="form.view !== 'where-used'" search-placeholder="按物料、BOM 或路径筛选" />
+    <NvToolbar
+      v-if="form.view !== 'where-used' && form.view !== 'diff'"
+      search-placeholder="按物料、BOM 或路径筛选"
+    />
 
     <NvDataTable
       v-if="form.view === 'tree'"

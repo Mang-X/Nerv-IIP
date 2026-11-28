@@ -1,6 +1,7 @@
 import {
   UUID_PATTERN,
   readFaceState,
+  deviceControlState,
   routeState,
   equipmentComposableState,
   overviewState,
@@ -19,6 +20,8 @@ import EquipmentDetailPage from './[deviceAssetId].vue'
 
 describe('equipment pages', () => {
   beforeEach(() => {
+    deviceControlState.error = undefined
+    deviceControlState.refreshCommands.mockClear()
     if (routeState.route) {
       routeState.route.params.deviceAssetId = 'DEV-OIL-01'
     }
@@ -56,6 +59,20 @@ describe('equipment pages', () => {
     readFaceState.currentDeviceAssetId = 'DEV-OIL-01'
     readFaceState.workOrders = undefined
     readFaceState.spareParts = undefined
+  })
+
+  it('shows a retryable history error instead of the command table', async () => {
+    deviceControlState.error = new Error('控制命令记录暂时不可用')
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toContain(
+      '控制命令记录暂时不可用',
+    )
+    expect(wrapper.text()).not.toContain('该设备还没有控制命令记录')
+    expect(wrapper.text()).not.toContain('spindle.speed')
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试')
+    await retry!.trigger('click')
+    expect(deviceControlState.refreshCommands).toHaveBeenCalledOnce()
   })
 
   it('updates the device filter and refreshes when route device id changes', async () => {

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
@@ -9,6 +11,8 @@ import { useTemplateRef, watch, shallowRef, type ShallowUnwrapRef } from 'vue'
 import type { useFacilitiesPage } from '../useFacilitiesPage'
 
 type View = ShallowUnwrapRef<ReturnType<typeof useFacilitiesPage>>
+
+const { can } = usePermission()
 
 const props = defineProps<{
   NODE_LABEL: View['NODE_LABEL']
@@ -112,7 +116,13 @@ watch(
         <div v-else-if="!tree.length" class="grid gap-2 px-1 py-6 text-center">
           <FactoryIcon class="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
           <p class="text-sm text-muted-foreground">还没有工厂，点击创建第一条。</p>
-          <NvButton size="sm" type="button" class="mx-auto" @click="openCreateRoot">
+          <NvButton
+            v-if="can(P.masterDataResourcesManage)"
+            size="sm"
+            type="button"
+            class="mx-auto"
+            @click="openCreateRoot"
+          >
             <PlusIcon aria-hidden="true" />
             新建工厂
           </NvButton>
@@ -194,6 +204,7 @@ watch(
           </div>
           <div class="flex items-center gap-2">
             <NvButton
+              v-if="can(P.masterDataResourcesManage)"
               v-for="childType in childTypesOfSelected"
               :key="childType"
               size="sm"
@@ -204,7 +215,7 @@ watch(
               新建{{ NODE_LABEL[childType] }}
             </NvButton>
             <MasterDataRowActions
-              v-if="selectedActions"
+              v-if="can(P.masterDataResourcesManage) && selectedActions"
               :row="selectedNode.item"
               :entity-label="NODE_LABEL[selectedNode.type]"
               :detail-fields="detailFields"
@@ -238,6 +249,7 @@ watch(
               该{{ NODE_LABEL[selectedNode.type] }}下还没有{{ NODE_LABEL[childType] }}。
             </p>
             <NvButton
+              v-if="can(P.masterDataResourcesManage)"
               size="sm"
               variant="outline"
               type="button"

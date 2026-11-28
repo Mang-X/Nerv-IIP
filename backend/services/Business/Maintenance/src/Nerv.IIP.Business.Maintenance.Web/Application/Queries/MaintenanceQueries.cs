@@ -409,7 +409,8 @@ public sealed record MaintenanceInspectionListItem(
     string Inspector,
     string Result,
     DateTimeOffset InspectedAtUtc,
-    IReadOnlyCollection<MaintenanceInspectionMeasurementListItem> Measurements);
+    IReadOnlyCollection<MaintenanceInspectionMeasurementListItem> Measurements,
+    string? PlanCode = null);
 
 public sealed record MaintenanceInspectionMeasurementListItem(
     string CharacteristicCode,
@@ -445,7 +446,12 @@ public sealed class ListMaintenanceInspectionsQueryHandler(ApplicationDbContext 
                 x.Measurements
                     .OrderBy(m => m.CharacteristicCode)
                     .Select(m => new MaintenanceInspectionMeasurementListItem(m.CharacteristicCode, m.MeasuredValue, m.UomCode, m.LowerSpecLimit, m.UpperSpecLimit, m.IsWithinSpec))
-                    .ToArray()))
+                    .ToArray(),
+                dbContext.MaintenancePlans
+                    .Where(plan => plan.Id == x.PlanId &&
+                        plan.OrganizationId == x.OrganizationId && plan.EnvironmentId == x.EnvironmentId)
+                    .Select(plan => plan.PlanCode)
+                    .FirstOrDefault()))
             .ToArrayAsync(cancellationToken);
         return new PagedMaintenanceListResponse<MaintenanceInspectionListItem>(items, skip, take, total);
     }

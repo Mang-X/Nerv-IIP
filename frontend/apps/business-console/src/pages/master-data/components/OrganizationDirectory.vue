@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
@@ -41,6 +43,8 @@ defineProps<{
   treePending: View['treePending']
   treeTruncated: View['treeTruncated']
 }>()
+
+const { can } = usePermission()
 
 const treeSearch = defineModel<View['treeSearch']>('treeSearch', { required: true })
 
@@ -91,7 +95,13 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
         <div v-else-if="!tree.length" class="grid gap-2 px-1 py-6 text-center">
           <UsersRoundIcon class="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
           <p class="text-sm text-muted-foreground">还没有部门，点击创建第一条。</p>
-          <NvButton size="sm" type="button" class="mx-auto" @click="openCreateRootDept">
+          <NvButton
+            v-if="can(P.masterDataResourcesManage)"
+            size="sm"
+            type="button"
+            class="mx-auto"
+            @click="openCreateRootDept"
+          >
             <PlusIcon aria-hidden="true" />
             新建部门
           </NvButton>
@@ -165,6 +175,7 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
           </div>
           <div class="flex items-center gap-2">
             <NvButton
+              v-if="can(P.masterDataResourcesManage)"
               size="sm"
               variant="outline"
               type="button"
@@ -174,6 +185,7 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
               新建子部门
             </NvButton>
             <MasterDataRowActions
+              :read-only="!can(P.masterDataResourcesManage)"
               :row="selectedNode.item"
               entity-label="部门"
               :detail-fields="detailFields"
@@ -195,7 +207,12 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
         <div class="border-t border-border/60 pt-3">
           <div class="mb-2 flex items-center justify-between gap-2">
             <h3 class="text-sm font-medium text-foreground">班组</h3>
-            <NvButton size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
+            <NvButton
+              v-if="can(P.masterDataResourcesManage)"
+              size="sm"
+              type="button"
+              @click="openCreateTeam(selectedNode.code)"
+            >
               <PlusIcon aria-hidden="true" />
               新建班组
             </NvButton>
@@ -239,9 +256,12 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
                   :disabled="!row.code"
                   @click="openMembers(row)"
                 >
-                  <UsersIcon aria-hidden="true" />管理成员
+                  <UsersIcon aria-hidden="true" />{{
+                    can(P.masterDataResourcesManage) ? '管理成员' : '查看成员'
+                  }}
                 </NvButton>
                 <MasterDataRowActions
+                  :read-only="!can(P.masterDataResourcesManage)"
                   :row="row"
                   entity-label="班组"
                   :detail-fields="[

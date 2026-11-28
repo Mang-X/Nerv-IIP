@@ -23,7 +23,8 @@ public sealed record UpdateQualityReasonCommand(
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition) : ICommand<QualityReasonItem>;
+    string? DefaultDisposition,
+    bool? Enabled = null) : ICommand<QualityReasonItem>;
 
 public sealed record ArchiveQualityReasonCommand(
     string OrganizationId,
@@ -146,7 +147,15 @@ public sealed class UpdateQualityReasonCommandHandler(ApplicationDbContext dbCon
     public async Task<QualityReasonItem> Handle(UpdateQualityReasonCommand request, CancellationToken cancellationToken)
     {
         var reason = await FindAsync(dbContext, request.OrganizationId, request.EnvironmentId, request.ReasonCode, cancellationToken);
+        if (request.Enabled is true)
+        {
+            reason.SetEnabled(true);
+        }
         reason.Update(request.ReasonName, request.GroupName, request.Severity, request.DefaultDisposition);
+        if (request.Enabled is false)
+        {
+            reason.SetEnabled(false);
+        }
         return QualityReasonMapper.ToItem(reason);
     }
 

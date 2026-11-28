@@ -649,7 +649,7 @@ public sealed class WalkthroughPdaAccountSeedTests
     }
 
     [Fact]
-    public async Task Default_seed_does_not_overwrite_existing_admin_authorization_configuration()
+    public async Task Default_seed_synchronizes_admin_permissions_and_preserves_data_scopes_and_memberships()
     {
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"iam-default-seed-preserve-{Guid.CreateVersion7():N}")
@@ -699,7 +699,8 @@ public sealed class WalkthroughPdaAccountSeedTests
             .Include(x => x.Permissions)
             .Include(x => x.DataScopes)
             .SingleAsync(x => x.Id.Id == "role-platform-admin");
-        Assert.Equal(["business.masterdata.resources.read"], preservedRole.Permissions.Select(x => x.PermissionCode));
+        Assert.Equal(NervIipSeedPermissions.All.Order(StringComparer.Ordinal),
+            preservedRole.Permissions.Select(x => x.PermissionCode).Order(StringComparer.Ordinal));
         Assert.Contains(preservedRole.DataScopes, x =>
             x.ScopeType == DataScopeBinding.Workshop
             && x.ScopeCode == "WS-ADMIN-RETAINED");

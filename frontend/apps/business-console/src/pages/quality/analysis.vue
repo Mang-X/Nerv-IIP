@@ -334,6 +334,15 @@ const spcCapabilityFacets = computed<NvMetricFacet[]>(() => [
   },
   { key: 'samples', label: '实测值', value: spc.capability.value?.sampleCount ?? 0 },
 ])
+const spcViolationStatus = computed(() => {
+  if (spcXbarSeries.value.length === 0) {
+    return { label: '暂无样本', tone: 'neutral' } as const
+  }
+
+  return spc.spcViolations.value.length > 0
+    ? ({ label: '过程失控', tone: 'danger' } as const)
+    : ({ label: '受控', tone: 'success' } as const)
+})
 const spcControlLimitHint = computed(() => {
   if (spc.spcWarmup.value) {
     return '实测值不足一个完整子组'
@@ -479,7 +488,7 @@ function spcViolationKey(row: QualitySpcViolation) {
       NCR 数据加载失败：{{ listErrorMessage }}
     </p>
 
-    <div v-else class="grid gap-4 lg:grid-cols-3">
+    <div v-else class="grid items-start gap-4 lg:grid-cols-3">
       <NvMetricRing
         label="不合格品处置构成"
         :value="summary.sampledNcrCount"
@@ -594,7 +603,16 @@ function spcViolationKey(row: QualitySpcViolation) {
         </template>
       </NvToolbar>
 
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <p
+        v-if="spc.filters.skuCode && !inspectionPlansPending && !planOptions.length"
+        class="text-sm text-muted-foreground"
+      >
+        当前方案目录未找到该物料的检验方案。
+        <RouterLink to="/quality/inspections" class="text-brand underline underline-offset-4">
+          配置检验方案
+        </RouterLink>
+      </p>
+      <div class="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <NvMetricCard
           variant="facets"
           label="分析范围"
@@ -625,11 +643,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           :value="spc.spcViolations.value.length"
           unit="处"
           :tone="spc.spcViolations.value.length > 0 ? 'danger' : 'neutral'"
-          :status="
-            spc.spcViolations.value.length > 0
-              ? { label: '过程失控', tone: 'danger' }
-              : { label: '受控', tone: 'success' }
-          "
+          :status="spcViolationStatus"
           foot-start="判异属于质量过程预警，不计入设备报警。"
         />
       </div>

@@ -20,12 +20,15 @@ public sealed class CreateMeasuringDeviceCommandHandler(ApplicationDbContext dbC
     }
 }
 
-public sealed record RecordMeasuringDeviceCalibrationCommand(MeasuringDeviceId MeasuringDeviceId, string CalibrationNo, DateTimeOffset CalibratedAtUtc, string CalibrationProvider, string? CertificateFileId) : ICommand;
+public sealed record RecordMeasuringDeviceCalibrationCommand(MeasuringDeviceId MeasuringDeviceId, string CalibrationNo, DateTimeOffset CalibratedAtUtc, string CalibrationProvider, string? CertificateFileId, string? OrganizationId = null, string? EnvironmentId = null) : ICommand;
 public sealed class RecordMeasuringDeviceCalibrationCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<RecordMeasuringDeviceCalibrationCommand>
 {
     public async Task Handle(RecordMeasuringDeviceCalibrationCommand request, CancellationToken cancellationToken)
     {
-        var device = await dbContext.MeasuringDevices.Include(x => x.CalibrationRecords).SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken)
+        var device = await dbContext.MeasuringDevices.Include(x => x.CalibrationRecords).SingleOrDefaultAsync(x =>
+            x.Id == request.MeasuringDeviceId &&
+            (request.OrganizationId == null || x.OrganizationId == request.OrganizationId) &&
+            (request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId), cancellationToken)
             ?? throw new KnownException($"找不到测量设备 {request.MeasuringDeviceId}，请在测量设备页确认设备已建档后重试。");
         device.RecordCalibration(request.CalibrationNo, request.CalibratedAtUtc, request.CalibrationProvider, request.CertificateFileId);
     }

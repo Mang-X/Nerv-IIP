@@ -47,6 +47,7 @@ const {
   controlCommandRowKey,
   controlCommands,
   controlCommandsErrorMessage,
+  refreshControlCommands,
   controlCommandsPending,
   controlCommandsTotal,
   controlPage,
@@ -347,6 +348,7 @@ const {
         :control-commands-error-message="controlCommandsErrorMessage"
         :control-commands-pending="controlCommandsPending"
         :control-commands-total="controlCommandsTotal"
+        @retry="refreshControlCommands"
       />
 
       <DeviceControlSheet

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpRequestsForQuotation } from '@/composables/erp/useBusinessErp'
@@ -48,6 +50,8 @@ import {
 } from '../shared'
 
 const { locale } = i18n.global
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -201,6 +205,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!can(P.erpProcurementManage)) return
   if (rfqs.createRequestForQuotationPending.value) return
   showErrors.value = true
   if (!canSubmit.value) return
@@ -247,7 +252,7 @@ async function submit() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog">
+        <NvButton v-if="can(P.erpProcurementManage)" size="sm" type="button" @click="openDialog">
           <PlusIcon aria-hidden="true" />
           新建 RFQ
         </NvButton>
@@ -290,7 +295,7 @@ async function submit() {
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpProcurementManage)" v-model:open="open">
       <NvDialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>新建 RFQ</NvDialogTitle>

@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
@@ -14,6 +15,21 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIntegrationEventTests
 {
+    [Theory]
+    [InlineData(50, 10, 300_000_000)]
+    [InlineData(1, 180, 333_333)]
+    public void Report_theoretical_rate_fits_the_persisted_six_decimal_scale(
+        int plannedQuantity, int durationMinutes, int expectedMillionths)
+    {
+        var task = OperationTask.Create(
+            "org-001", "env-dev", "WO-001", "OP-001", OperationTaskLifecycleStatus.Queued,
+            10, "WC-001", [], DateTimeOffset.UnixEpoch, TimeSpan.FromMinutes(durationMinutes), null, null,
+            "SKU-001", "EA", plannedQuantity: plannedQuantity);
+
+        Assert.Equal(expectedMillionths / 1_000_000m,
+            ProductionReportOeeProjectionFactory.Create(task).TheoreticalRatePerHour);
+    }
+
     // NERV-2118：还原 production 硬编码会使公司料各条库存事件失败。
     [Theory]
     [InlineData("company")]

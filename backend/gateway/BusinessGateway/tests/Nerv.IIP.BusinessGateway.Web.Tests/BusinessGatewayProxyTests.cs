@@ -1913,6 +1913,39 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_registration_writes_forward_authenticated_scope_and_calibration_route_id()
+    {
+        var quality = new RecordingQualityClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var calibratedAt = new DateTimeOffset(2026, 11, 27, 0, 0, 0, TimeSpan.Zero);
+        var ncr = new BusinessConsoleCreateQualityNcrRequest("org-001", "env-dev", "customer-return", "RMA-001", "SKU-001", 2m, "破损");
+        var device = new BusinessConsoleCreateMeasuringDeviceRequest("org-001", "env-dev", "GAGE-001", "卡尺", "0.01 mm", 365, calibratedAt);
+
+        var ncrResponse = await client.PostAsJsonAsync("/api/business-console/v1/quality/ncrs", ncr);
+        var deviceResponse = await client.PostAsJsonAsync("/api/business-console/v1/quality/measuring-devices", device);
+        var calibrationResponse = await client.PostAsJsonAsync(
+            "/api/business-console/v1/quality/measuring-devices/device-001/calibrations",
+            new BusinessConsoleRecordMeasuringDeviceCalibrationRequest("ignored", "org-001", "env-dev", "CAL-001", calibratedAt, "计量中心"));
+
+        Assert.Equal(HttpStatusCode.OK, ncrResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, deviceResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, calibrationResponse.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal(ncr, quality.LastCreateNcrRequest);
+        Assert.Equal(device, quality.LastCreateDeviceRequest);
+        Assert.Equal(new BusinessConsoleRecordMeasuringDeviceCalibrationRequest(
+            "device-001", "org-001", "env-dev", "CAL-001", calibratedAt, "计量中心"), quality.LastRecordCalibrationRequest);
+    }
+
+    [Fact]
     public async Task Quality_inspection_record_list_and_ncr_from_inspection_use_internal_service_token()
     {
         var quality = new RecordingQualityClient();
@@ -19446,6 +19479,34 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
                     null),
             ],
             1));
+    }
+
+    public BusinessConsoleCreateQualityNcrRequest? LastCreateNcrRequest { get; private set; }
+    public BusinessConsoleCreateMeasuringDeviceRequest? LastCreateDeviceRequest { get; private set; }
+    public BusinessConsoleRecordMeasuringDeviceCalibrationRequest? LastRecordCalibrationRequest { get; private set; }
+
+    public Task<BusinessConsoleCreateQualityNcrResponse> CreateNcrAsync(
+        string token, BusinessConsoleCreateQualityNcrRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = token;
+        LastCreateNcrRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateQualityNcrResponse("ncr-001", "NCR-001"));
+    }
+
+    public Task<BusinessConsoleCreateMeasuringDeviceResponse> CreateMeasuringDeviceAsync(
+        string token, BusinessConsoleCreateMeasuringDeviceRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = token;
+        LastCreateDeviceRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateMeasuringDeviceResponse("device-001"));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> RecordCalibrationAsync(
+        string token, BusinessConsoleRecordMeasuringDeviceCalibrationRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = token;
+        LastRecordCalibrationRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
     public Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(

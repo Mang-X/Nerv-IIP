@@ -232,7 +232,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 </script>
 
 <template>
-  <div :class="cn('nv-dt flex flex-col rounded-xl border bg-card shadow-sm', props.class)">
+  <div :class="cn('nv-dt flex min-w-0 flex-col rounded-xl border bg-card shadow-sm', props.class)">
     <!-- ░░ Toolbar (standalone NvDataTableToolbar, composed) ░░ -->
     <NvDataTableToolbar
       v-if="hasToolbar"
@@ -417,7 +417,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
               :key="col.key"
               :class="
                 cn(
-                  'nv-dt-th h-10 text-xs font-medium text-muted-foreground',
+                  'nv-dt-th h-10 overflow-hidden text-xs font-medium text-muted-foreground',
                   alignClass[col.align ?? 'start'],
                   widthClass(col.width),
                   !col.width && 'nv-dt-fill',
@@ -539,13 +539,25 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
               <TableCell
                 v-for="col in visibleColumns"
                 :key="col.key"
-                :class="cn(rowPad, cellText, alignClass[col.align ?? 'start'], col.cellClass)"
+                :class="
+                  cn(
+                    'overflow-hidden',
+                    rowPad,
+                    cellText,
+                    alignClass[col.align ?? 'start'],
+                    col.cellClass,
+                  )
+                "
               >
                 <!-- 兜底渲染统一走空值占位：空单元格此前渲染成完全空白的 <td>，
                      读者分不清「没有值」还是「界面坏了」。插槽拿到的 `value`
                      仍是原始值，调用点想自己处理空值不受影响。 -->
                 <slot :name="`cell-${col.key}`" :row="row" :value="valueOf(row, col)" :column="col">
                   <span
+                    class="block overflow-hidden text-ellipsis"
+                    :title="
+                      isEmptyValue(valueOf(row, col)) ? undefined : displayValue(valueOf(row, col))
+                    "
                     :class="isEmptyValue(valueOf(row, col)) ? 'text-muted-foreground' : undefined"
                     >{{ displayValue(valueOf(row, col)) }}</span
                   >
@@ -604,11 +616,6 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
    widened to fit its content; when the declarations leave spare room, the
    surplus is shared out across the columns.
 
-   `min-width: 100%` (on top of the primitive's `w-full`) is what keeps a narrow
-   window honest: the table can grow past the container and let the primitive's
-   `overflow-x-auto` wrapper scroll it, instead of squeezing the columns. Without
-   it, `fixed` would let the undeclared columns collapse toward 0px.
-
    `:deep()` is required, not decoration: `Table` primitive's root element is the
    scroll wrapper `<div>`, so Vue puts this component's scope id on that div —
    the inner `<table>` never carries it, and a bare `.nv-dt-table` selector here
@@ -620,11 +627,8 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     border-spacing: 0;
   }
 
-  /* Columns without an explicit `width` share the leftover space, so the table
-   fills its container instead of leaving dead space on the right. Under `fixed`
-   these resolve to the table's leftover width once the declared columns are
-   subtracted; give a column an explicit `width` to take it out of that share
-   (number / status columns that should stay compact). */
+  /* Let undeclared columns absorb spare space before the fixed layout widens
+     columns with explicit widths. */
   .nv-dt-fill {
     width: 100%;
   }

@@ -540,6 +540,7 @@ describe('engineering bom analysis page', () => {
       .findAll('button')
       .find((b) => b.text().trim() === '对比')!
       .trigger('click')
+    expect(wrapper.get('form button[type="submit"]').text()).toBe('执行对比')
     await wrapper.find('#bom-from-code').setValue('EBOM-FG')
     await wrapper.find('#bom-from-revision').setValue('A')
     await wrapper.find('#bom-to-code').setValue('EBOM-FG')

@@ -238,15 +238,17 @@ const metricCells = computed<NvMetricStripCell[]>(() => {
 })
 const failedCardStatus = computed(() => {
   if (!listReady.value) return { label: '取不到数据', tone: 'neutral' as const }
+  if (wcsTasks.value.length === 0) return { label: '暂无设备任务', tone: 'neutral' as const }
   return failedCount.value > 0
     ? { label: '需人工跟进', tone: 'danger' as const }
     : { label: '本页无失败', tone: 'success' as const }
 })
 const failedCardNote = computed(() => {
   if (!listReady.value) return '设备任务读不到，本页有没有失败任务无法判断，请重试。'
+  if (wcsTasks.value.length === 0) return '当前范围暂无设备任务。'
   return failedCount.value > 0
     ? '失败任务不会自动重试，需要在设备侧确认后重新下发。'
-    : '本页设备任务都在正常执行；其余分页请翻页或按状态筛选查看。'
+    : '本页暂无失败任务；其余分页请翻页或按状态筛选查看。'
 })
 
 type WcsRow = BusinessConsoleWmsWcsTaskItem

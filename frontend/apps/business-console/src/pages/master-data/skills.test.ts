@@ -1,5 +1,7 @@
+import { useAuthStore } from '@/stores/auth'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import SkillsPage from './skills.vue'
@@ -170,6 +172,13 @@ function resetMatrix() {
     },
   ]
 }
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({
+    principal: { permissionCodes: ['business.masterdata.resources.manage'] },
+  })
+})
 
 describe('master-data skills page (matrix)', () => {
   it('renders the matrix with worker name, skill 中文名 column header and level 中文 cell', async () => {

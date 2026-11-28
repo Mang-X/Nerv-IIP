@@ -80,6 +80,19 @@ describe('useBusinessTooling', () => {
     state.invalidations = 0
   })
 
+  it.each([
+    [0, '可用'],
+    ['0', '可用'],
+    [1, '保养中'],
+    ['Maintenance', '保养中'],
+    [2, '已退役'],
+    [42, '未知'],
+    ['other', '未知'],
+    [null, '未知'],
+  ])('将工装状态 %s 映射为字符串 %s', (value, label) => {
+    expect(toolingStatusLabel(value)).toBe(label)
+  })
+
   it('将工装状态和类型映射为中文，并对未知类型失败关闭', () => {
     expect(toolingStatusLabel('available')).toBe('可用')
     expect(toolingStatusLabel('maintenance')).toBe('保养中')

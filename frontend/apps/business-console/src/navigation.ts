@@ -1,3 +1,4 @@
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { NavLink, SideNav } from '@nerv-iip/app-shell'
 import { workbenchSideNav } from './navigation/workbench'
 import { masterDataSideNav } from './navigation/master-data'
@@ -62,13 +63,9 @@ export function permittedBy<T extends { requiredPermissions?: string[] }>(
   entries: T[],
   permissionCodes: string[] | undefined,
 ): T[] {
-  if (permissionCodes === undefined) {
-    return entries
-  }
-
-  const codes = permissionCodes
+  const codes = new Set(permissionCodes)
   return entries.filter(
-    (e) => !e.requiredPermissions?.length || e.requiredPermissions.some((p) => codes.includes(p)),
+    (e) => !e.requiredPermissions?.length || e.requiredPermissions.some((p) => codes.has(p)),
   )
 }
 
@@ -101,4 +98,18 @@ export function mesViewsForPath(path: string, permissionCodes: string[] | undefi
     [{ ...group.entry, title: group.entryViewLabel }, group.alternate],
     permissionCodes,
   )
+}
+
+const jobHomePages = [
+  [P.erpProcurementManage, P.erpProcurementRead, '/erp'],
+  [P.erpSalesManage, P.erpSalesRead, '/erp/sales'],
+  [P.erpFinanceManage, P.erpFinanceRead, '/erp/finance'],
+  ['business.planning.demands.manage', P.planningDemandsRead, '/planning'],
+  [P.mesDowntimeManage, P.mesDowntimeRead, '/mes/downtime'],
+  [P.maintenanceWorkOrdersManage, P.maintenanceWorkOrdersRead, '/maintenance/work-orders'],
+] as const
+
+export function jobHomePath(canAll: (codes: readonly string[]) => boolean) {
+  const homes = jobHomePages.filter(([manage, read]) => canAll([manage, read]))
+  return homes.length === 1 ? homes[0]![2] : '/'
 }

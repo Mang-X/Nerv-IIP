@@ -706,7 +706,7 @@ describe('ERP sales order and delivery pages', () => {
     expect(state.releaseDeliveryOrder).toHaveBeenCalledWith('SO-REL-001')
   })
 
-  it('hides the release action for orders that are not released yet', async () => {
+  it('disables the release action and explains why for orders that are not released yet', async () => {
     state.salesOrders = [
       {
         salesOrderNo: 'SO-HELD-002',
@@ -719,7 +719,9 @@ describe('ERP sales order and delivery pages', () => {
     const wrapper = mount(OrdersPage, { global: { stubs: { ...layoutStub } } })
     await flushPromises()
 
-    expect(wrapper.findAll('button').some((b) => b.text().includes('释放发货'))).toBe(false)
+    const release = wrapper.findAll('button').find((button) => button.text() === '释放发货')
+    expect(release?.attributes('disabled')).toBe('')
+    expect(release?.attributes('title')).toBe('仅已下达的销售订单可释放发货')
   })
 
   it('deliveries page no longer offers the per-row release action', async () => {

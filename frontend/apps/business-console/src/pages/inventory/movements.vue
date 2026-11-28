@@ -290,7 +290,9 @@ function isNonEmpty(value: string) {
     >
       <template #cell-sourceDocumentId="{ row }">
         <div class="grid gap-0.5">
-          <span>{{ sourceDocumentLabel(row) || '—' }}</span>
+          <span class="truncate" :title="sourceDocumentLabel(row)">{{
+            sourceDocumentLabel(row) || '—'
+          }}</span>
           <span class="whitespace-normal break-all text-xs text-muted-foreground">
             {{ row.sourceDocumentLineId?.trim() || '未记录来源行' }}
           </span>

@@ -1,3 +1,4 @@
+using System.Net;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints;
@@ -21,12 +22,21 @@ internal static class MesOperatorDisplayNames
             .Select(id => id!).Distinct(StringComparer.Ordinal).ToArray();
         foreach (var batch in references.Chunk(BatchSize))
         {
-            var accounts = await iamAccounts.ListMemberAccountsAsync(
-                internalBearerToken,
-                new BusinessIamMemberAccountListRequest(
-                    organizationId, environmentId, UserIds: batch, IncludeDisabled: true,
-                    PageIndex: 1, PageSize: batch.Length),
-                cancellationToken);
+            BusinessIamMemberAccountPage accounts;
+            try
+            {
+                accounts = await iamAccounts.ListMemberAccountsAsync(
+                    internalBearerToken,
+                    new BusinessIamMemberAccountListRequest(
+                        organizationId, environmentId, UserIds: batch, IncludeDisabled: true,
+                        PageIndex: 1, PageSize: batch.Length),
+                    cancellationToken);
+            }
+            catch (BusinessServiceProxyException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                // Directory access is optional for the MES read, which has its own authorization.
+                break;
+            }
             foreach (var account in accounts.Items)
             {
                 if (batch.Contains(account.UserId, StringComparer.Ordinal) && !string.IsNullOrWhiteSpace(account.DisplayName))

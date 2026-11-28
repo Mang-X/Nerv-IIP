@@ -19,6 +19,7 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('当前范围暂无设备任务')
+    expect(wrapper.text()).not.toContain('正常执行')
     expect(wrapper.text()).toContain('上架任务')
     expect(wrapper.text()).toContain('拣货任务')
   })

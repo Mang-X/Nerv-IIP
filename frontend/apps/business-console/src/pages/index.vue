@@ -382,7 +382,7 @@ function sourceLabel(source: string | null | undefined) {
     BusinessMES: '制造执行',
     BusinessQuality: '质量管理',
     IndustrialTelemetry: '设备预警',
-    Notification: '消息通知',
+    Notification: '通知复核',
   }
 
   const key = normalize(source)
@@ -431,6 +431,15 @@ function resourceLabel(resourceType: string | null | undefined) {
 
   return labels[normalize(resourceType).toLowerCase()] ?? ''
 }
+
+const hasNotificationTodos = computed(() =>
+  todoItems.value.some((item) => item.source === 'Notification'),
+)
+const showApprovalLink = computed(
+  () =>
+    !hasNotificationTodos.value ||
+    todoItems.value.some((item) => item.source === 'BusinessApproval'),
+)
 
 function todoLabel(item: BusinessConsoleWorkbenchTodoItem) {
   const code = readableCode(item.referenceId)
@@ -731,7 +740,11 @@ function formatDateTime(value: string) {
     <section class="grid flex-1 gap-4 lg:grid-cols-3">
       <WorkbenchFocusCard
         title="待办"
-        description="先清掉到期的审批与任务，别让单据停在你这一环。"
+        :description="
+          hasNotificationTodos
+            ? '待办包含审批和通知复核，条目下方标明来源。'
+            : '查看待处理的审批与任务。'
+        "
         :icon="ListChecksIcon"
         tone="warning"
         :count="todoTotal"
@@ -742,9 +755,9 @@ function formatDateTime(value: string) {
         :unavailable="todoCardState.unavailable"
         :unavailable-hint="todoCardState.unavailableHint"
         empty-title="待办已清空"
-        empty-hint="新的审批与任务到达后会自动出现在这里。"
-        to="/approval"
-        action-label="去审批中心"
+        empty-hint="新的审批或通知复核任务会出现在这里。"
+        :to="showApprovalLink ? '/approval' : undefined"
+        action-label="查看审批待办"
         @retry="refreshWorkbenchSummary"
       />
 

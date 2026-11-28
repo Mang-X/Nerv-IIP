@@ -1,5 +1,7 @@
+import { useAuthStore } from '@/stores/auth'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import OrganizationPage from './organization.vue'
@@ -219,6 +221,13 @@ function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
 }
 
 const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } }
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({
+    principal: { permissionCodes: ['business.masterdata.resources.manage'] },
+  })
+})
 
 describe('master-data organization (department tree) page', () => {
   it('renders title, hint and department tree nodes', async () => {

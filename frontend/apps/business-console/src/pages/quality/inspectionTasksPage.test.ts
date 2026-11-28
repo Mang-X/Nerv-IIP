@@ -193,7 +193,15 @@ vi.mock('@/composables/shared/usePagedList', () => ({
 }))
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ principal: { principalId: 'qa-user-001' } }),
+  useAuthStore: () => ({
+    principal: {
+      principalId: 'qa-user-001',
+      permissionCodes: [
+        'business.quality.inspection-records.create',
+        'business.quality.inspection-plans.manage',
+      ],
+    },
+  }),
 }))
 
 vi.mock('vue-router', () => ({

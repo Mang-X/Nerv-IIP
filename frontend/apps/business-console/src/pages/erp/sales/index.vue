@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpOpportunityItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpOpportunities } from '@/composables/erp/useBusinessErp'
@@ -33,6 +35,8 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { erpReadState, formatDateTime, pickerInvalidClass, readCount } from '../shared'
+
+const { can } = usePermission()
 
 definePage({
   meta: { requiresAuth: true, title: '销售机会', requiredPermissions: ['business.erp.sales.read'] },
@@ -151,6 +155,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!can(P.erpSalesManage)) return
   showErrors.value = true
   if (!canSubmit.value) return
   try {
@@ -188,7 +193,7 @@ async function submit() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog">
+        <NvButton v-if="can(P.erpSalesManage)" size="sm" type="button" @click="openDialog">
           <PlusIcon aria-hidden="true" />
           开立机会
         </NvButton>
@@ -234,7 +239,7 @@ async function submit() {
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>开立销售机会</NvDialogTitle>

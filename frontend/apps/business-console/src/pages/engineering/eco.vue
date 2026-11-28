@@ -34,6 +34,7 @@ import {
   NvDataTable,
   NvDatePicker,
   NvDialog,
+  NvDialogBody,
   NvDialogContent,
   NvDialogDescription,
   NvDialogFooter,
@@ -301,7 +302,7 @@ const columns: NvDataTableColumn<BusinessConsoleEngineeringChangeItem>[] = [
 ]
 const impactColumns: NvDataTableColumn<BusinessConsoleEngineeringChangeImpactNode>[] = [
   { key: 'nodeType', header: '对象', width: 'w-36' },
-  { key: 'displayName', header: '影响节点', cellClass: 'font-medium' },
+  { key: 'displayName', header: '影响节点', width: 'w-48', cellClass: 'font-medium' },
   { key: 'impactLevel', header: '级别', width: 'w-28' },
   { key: 'skuCode', header: 'SKU', width: 'w-32' },
   { key: 'route', header: '跳转', align: 'end', width: 'w-24' },
@@ -645,7 +646,7 @@ function riskTone(severity?: string | null): StatusTone {
               发布变更
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-2xl">
+          <NvDialogContent scrollable class="sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布工程变更</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -653,239 +654,239 @@ function riskTone(severity?: string | null): StatusTone {
                 填写变更原因、审批链、生效日与受影响版本。
               </NvDialogDescription>
             </NvDialogHeader>
-            <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本。
-              </p>
-              <p
-                v-if="showErrors && !changeNumberValid"
-                class="text-sm text-destructive"
-                role="alert"
-              >
-                请先填写变更号，审批链必须绑定到同一个 ECO 单据。
-              </p>
-
-              <FormSectionTitle>变更信息</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3">
-                <NvField :data-invalid="showErrors && !changeNumberValid">
-                  <NvFieldLabel for="eco-change-number"
-                    >变更号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="eco-change-number"
-                    v-model="form.changeNumber"
-                    placeholder="例如 ECO-20260801-000001"
-                  />
-                  <p class="text-xs text-muted-foreground">
-                    先确定本次 ECO 号，审批链会以此单号绑定；审批通过后再发布变更。
-                  </p>
-                </NvField>
-                <NvField :data-invalid="showErrors && !reasonValid">
-                  <NvFieldLabel for="eco-reason"
-                    >变更原因 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="eco-reason"
-                    v-model="form.reason"
-                    placeholder="说明本次变更的内容与原因"
-                  />
-                </NvField>
-                <BusinessDocumentApprovalPanel
-                  v-model="form.approvalReferenceId"
-                  title="变更审批链"
-                  source-service="product-engineering"
-                  :document-type="ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE"
-                  :document-id="form.changeNumber || undefined"
-                  :preferred-template-code="ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE"
-                  :allow-start="true"
-                />
+            <form @submit.prevent="submitForm">
+              <NvDialogBody class="grid gap-5">
+                <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+                  请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本。
+                </p>
                 <p
-                  v-if="showErrors && !approvalValid"
+                  v-if="showErrors && !changeNumberValid"
                   class="text-sm text-destructive"
                   role="alert"
                 >
-                  请先关联一条真实审批链，再发布工程变更。
+                  请先填写变更号，审批链必须绑定到同一个 ECO 单据。
                 </p>
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <NvField :data-invalid="showErrors && !effectiveValid">
-                    <NvFieldLabel for="eco-effective-date">
-                      生效日 <span class="text-destructive">*</span>
-                    </NvFieldLabel>
-                    <NvDatePicker
-                      id="eco-effective-date"
-                      v-model="form.effectiveDate"
-                      aria-describedby="eco-effective-date-help"
-                      placeholder="选择生效日"
-                      class="w-full"
-                    />
-                    <NvFieldDescription id="eco-effective-date-help">
-                      选择未来日期，提交后进入「计划生效」。此次变更在生效前不会更新下游版本。
-                    </NvFieldDescription>
-                  </NvField>
-                </div>
-              </NvFieldGroup>
 
-              <div class="flex items-center justify-between">
-                <FormSectionTitle>受影响版本</FormSectionTitle>
-                <NvButton type="button" variant="outline" size="sm" @click="addAffected">
-                  <PlusIcon aria-hidden="true" />
-                  增加一条
-                </NvButton>
-              </div>
-              <div class="grid gap-2">
-                <div
-                  v-for="(row, index) in form.affectedVersions"
-                  :key="index"
-                  class="grid grid-cols-[12rem_1fr_auto] items-end gap-2 rounded-md border p-2"
-                >
-                  <NvField :data-invalid="showErrors && !row.versionKind.trim()">
-                    <NvFieldLabel :for="`eco-kind-${index}`"
-                      >对象种类 <span class="text-destructive">*</span></NvFieldLabel
+                <FormSectionTitle>变更信息</FormSectionTitle>
+                <NvFieldGroup class="grid gap-3">
+                  <NvField :data-invalid="showErrors && !changeNumberValid">
+                    <NvFieldLabel for="eco-change-number"
+                      >变更号 <span class="text-destructive">*</span></NvFieldLabel
                     >
-                    <NvSelect
-                      :model-value="row.versionKind"
-                      @update:model-value="selectVersionKind(row, $event)"
-                    >
-                      <NvSelectTrigger :id="`eco-kind-${index}`"
-                        ><NvSelectValue placeholder="选择对象"
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem
-                          v-for="o in VERSION_KIND_OPTIONS"
-                          :key="o.value"
-                          :value="o.value"
-                          >{{ o.label }}</NvSelectItem
-                        >
-                      </NvSelectContent>
-                    </NvSelect>
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !row.versionId.trim()">
-                    <NvFieldLabel :for="`eco-vid-${index}`"
-                      >受影响版本 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvEntityPicker
-                      :id="`eco-vid-${index}`"
-                      :model-value="row.versionId.trim()"
-                      :options="affectedVersionOptions(row)"
-                      @update:model-value="row.versionId = String($event ?? '')"
-                      title="选择受影响版本"
-                      :placeholder="row.versionKind ? '选择受影响版本' : '请先选择对象类型'"
-                      :empty-text="
-                        versionCatalog(row.versionKind)?.error.value
-                          ? '版本目录加载失败'
-                          : '暂无可选版本'
-                      "
-                      no-match-text="没有匹配的版本"
-                      :disabled="!row.versionKind"
-                      :loading="versionCatalog(row.versionKind)?.pending.value"
-                      :invalid="showErrors && !affectedValid(row)"
-                      aria-label="受影响版本"
-                      clearable
-                      :show-code="false"
+                    <NvInput
+                      id="eco-change-number"
+                      v-model="form.changeNumber"
+                      placeholder="例如 ECO-20260801-000001"
                     />
-                    <details v-if="row.versionKind" class="text-sm">
-                      <summary class="cursor-pointer text-muted-foreground">直接输入版本</summary>
-                      <NvInput
-                        v-model="row.versionId"
-                        :aria-label="
-                          row.versionKind === 'ProductionVersion' ? '生产版本 ID' : '编号:修订'
-                        "
-                        :placeholder="
-                          row.versionKind === 'ProductionVersion'
-                            ? '输入生产版本 ID'
-                            : '输入编号:修订'
-                        "
-                        :aria-invalid="showErrors && !affectedValid(row)"
+                    <p class="text-xs text-muted-foreground">
+                      先确定本次 ECO 号，审批链会以此单号绑定；审批通过后再发布变更。
+                    </p>
+                  </NvField>
+                  <NvField :data-invalid="showErrors && !reasonValid">
+                    <NvFieldLabel for="eco-reason"
+                      >变更原因 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvInput
+                      id="eco-reason"
+                      v-model="form.reason"
+                      placeholder="说明本次变更的内容与原因"
+                    />
+                  </NvField>
+                  <BusinessDocumentApprovalPanel
+                    v-model="form.approvalReferenceId"
+                    title="变更审批链"
+                    source-service="product-engineering"
+                    :document-type="ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE"
+                    :document-id="form.changeNumber || undefined"
+                    :preferred-template-code="ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE"
+                    :allow-start="true"
+                  />
+                  <p
+                    v-if="showErrors && !approvalValid"
+                    class="text-sm text-destructive"
+                    role="alert"
+                  >
+                    请先关联一条真实审批链，再发布工程变更。
+                  </p>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <NvField :data-invalid="showErrors && !effectiveValid">
+                      <NvFieldLabel for="eco-effective-date">
+                        生效日 <span class="text-destructive">*</span>
+                      </NvFieldLabel>
+                      <NvDatePicker
+                        id="eco-effective-date"
+                        v-model="form.effectiveDate"
+                        aria-describedby="eco-effective-date-help"
+                        placeholder="选择生效日"
+                        class="w-full"
                       />
-                    </details>
+                      <NvFieldDescription id="eco-effective-date-help">
+                        选择未来日期，提交后进入「计划生效」。此次变更在生效前不会更新下游版本。
+                      </NvFieldDescription>
+                    </NvField>
+                  </div>
+                </NvFieldGroup>
+
+                <div class="flex items-center justify-between">
+                  <FormSectionTitle>受影响版本</FormSectionTitle>
+                  <NvButton type="button" variant="outline" size="sm" @click="addAffected">
+                    <PlusIcon aria-hidden="true" />
+                    增加一条
+                  </NvButton>
+                </div>
+                <div class="grid gap-2">
+                  <div
+                    v-for="(row, index) in form.affectedVersions"
+                    :key="index"
+                    class="grid sm:grid-cols-[12rem_minmax(0,1fr)_auto] items-end gap-2 rounded-md border p-2"
+                  >
+                    <NvField :data-invalid="showErrors && !row.versionKind.trim()">
+                      <NvFieldLabel :for="`eco-kind-${index}`"
+                        >对象种类 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvSelect
+                        :model-value="row.versionKind"
+                        @update:model-value="selectVersionKind(row, $event)"
+                      >
+                        <NvSelectTrigger :id="`eco-kind-${index}`" class="min-w-0"
+                          ><NvSelectValue placeholder="选择对象"
+                        /></NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem
+                            v-for="o in VERSION_KIND_OPTIONS"
+                            :key="o.value"
+                            :value="o.value"
+                            >{{ o.label }}</NvSelectItem
+                          >
+                        </NvSelectContent>
+                      </NvSelect>
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !row.versionId.trim()">
+                      <NvFieldLabel :for="`eco-vid-${index}`"
+                        >受影响版本 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvEntityPicker
+                        :id="`eco-vid-${index}`"
+                        :model-value="row.versionId.trim()"
+                        :options="affectedVersionOptions(row)"
+                        @update:model-value="row.versionId = String($event ?? '')"
+                        title="选择受影响版本"
+                        :placeholder="row.versionKind ? '选择受影响版本' : '请先选择对象类型'"
+                        :empty-text="
+                          versionCatalog(row.versionKind)?.error.value
+                            ? '版本目录加载失败'
+                            : '暂无可选版本'
+                        "
+                        no-match-text="没有匹配的版本"
+                        :disabled="!row.versionKind"
+                        :loading="versionCatalog(row.versionKind)?.pending.value"
+                        :invalid="showErrors && !affectedValid(row)"
+                        aria-label="受影响版本"
+                        clearable
+                        :show-code="false"
+                      />
+                      <details v-if="row.versionKind" class="text-sm">
+                        <summary class="cursor-pointer text-muted-foreground">直接输入版本</summary>
+                        <NvInput
+                          v-model="row.versionId"
+                          :aria-label="
+                            row.versionKind === 'ProductionVersion' ? '生产版本 ID' : '编号:修订'
+                          "
+                          :placeholder="
+                            row.versionKind === 'ProductionVersion'
+                              ? '输入生产版本 ID'
+                              : '输入编号:修订'
+                          "
+                          :aria-invalid="showErrors && !affectedValid(row)"
+                        />
+                      </details>
+                      <NvButton
+                        v-if="versionCatalog(row.versionKind)?.error.value"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        @click="versionCatalog(row.versionKind)?.refresh()"
+                      >
+                        重试加载版本
+                      </NvButton>
+                    </NvField>
                     <NvButton
-                      v-if="versionCatalog(row.versionKind)?.error.value"
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="删除该受影响版本"
+                      :disabled="form.affectedVersions.length <= 1"
+                      @click="removeAffected(index)"
+                    >
+                      <Trash2Icon aria-hidden="true" />
+                    </NvButton>
+                  </div>
+                </div>
+
+                <div class="grid gap-3 rounded-md border bg-muted/20 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <FormSectionTitle>发布前影响预览</FormSectionTitle>
+                    <NvButton
                       type="button"
                       variant="outline"
-                      size="sm"
-                      @click="versionCatalog(row.versionKind)?.refresh()"
+                      :disabled="previewPending"
+                      @click="previewFormImpact"
                     >
-                      重试加载版本
+                      <NvSpinner v-if="previewPending" aria-hidden="true" />
+                      <NetworkIcon v-else aria-hidden="true" />
+                      预览影响
                     </NvButton>
-                  </NvField>
-                  <NvButton
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="删除该受影响版本"
-                    :disabled="form.affectedVersions.length <= 1"
-                    @click="removeAffected(index)"
+                  </div>
+
+                  <NvDataTable
+                    :columns="impactColumns"
+                    :rows="impactNodes"
+                    :row-key="
+                      (row) => `${row.nodeType}:${row.versionId}:${row.relatedVersionId ?? ''}`
+                    "
+                    :loading="previewPending"
+                    :searchable="false"
+                    :column-settings="false"
+                    empty-message="填写受影响版本后可预览影响链。"
                   >
-                    <Trash2Icon aria-hidden="true" />
-                  </NvButton>
-                </div>
-              </div>
+                    <template #cell-nodeType="{ row }">{{
+                      impactNodeTypeLabel(row.nodeType)
+                    }}</template>
+                    <template #cell-impactLevel="{ row }">
+                      <NvStatusBadge
+                        :label="impactLevelLabel(row.impactLevel)"
+                        :tone="impactLevelTone(row.impactLevel)"
+                      />
+                    </template>
+                    <template #cell-route="{ row }">
+                      <RouterLink
+                        v-if="row.consoleRoute"
+                        class="text-primary underline-offset-4 hover:underline"
+                        :to="row.consoleRoute"
+                        >打开</RouterLink
+                      >
+                      <span v-else class="text-muted-foreground">暂无入口</span>
+                    </template>
+                  </NvDataTable>
 
-              <div class="grid gap-3 rounded-md border bg-muted/20 p-3">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <FormSectionTitle>发布前影响预览</FormSectionTitle>
-                  <NvButton
-                    type="button"
-                    variant="outline"
-                    :disabled="previewPending"
-                    @click="previewFormImpact"
+                  <NvDataTable
+                    v-if="impactRisks.length"
+                    :columns="riskColumns"
+                    :rows="impactRisks"
+                    :row-key="(row) => `${row.code}:${row.relatedVersionId ?? ''}`"
+                    :searchable="false"
+                    :column-settings="false"
+                    empty-message="没有风险提示。"
                   >
-                    <NvSpinner v-if="previewPending" aria-hidden="true" />
-                    <NetworkIcon v-else aria-hidden="true" />
-                    预览影响
-                  </NvButton>
+                    <template #cell-severity="{ row }">
+                      <NvStatusBadge
+                        :label="riskSeverityLabel(row.severity)"
+                        :tone="riskTone(row.severity)"
+                      />
+                    </template>
+                  </NvDataTable>
                 </div>
-
-                <NvDataTable
-                  :columns="impactColumns"
-                  :rows="impactNodes"
-                  :row-key="
-                    (row) => `${row.nodeType}:${row.versionId}:${row.relatedVersionId ?? ''}`
-                  "
-                  :loading="previewPending"
-                  :searchable="false"
-                  :column-settings="false"
-                  empty-message="填写受影响版本后可预览影响链。"
-                >
-                  <template #cell-nodeType="{ row }">{{
-                    impactNodeTypeLabel(row.nodeType)
-                  }}</template>
-                  <template #cell-impactLevel="{ row }">
-                    <NvStatusBadge
-                      :label="impactLevelLabel(row.impactLevel)"
-                      :tone="impactLevelTone(row.impactLevel)"
-                    />
-                  </template>
-                  <template #cell-skuCode="{ row }">{{ row.skuCode || '—' }}</template>
-                  <template #cell-route="{ row }">
-                    <RouterLink
-                      v-if="row.consoleRoute"
-                      class="text-primary underline-offset-4 hover:underline"
-                      :to="row.consoleRoute"
-                      >打开</RouterLink
-                    >
-                    <span v-else class="text-muted-foreground">暂无入口</span>
-                  </template>
-                </NvDataTable>
-
-                <NvDataTable
-                  v-if="impactRisks.length"
-                  :columns="riskColumns"
-                  :rows="impactRisks"
-                  :row-key="(row) => `${row.code}:${row.relatedVersionId ?? ''}`"
-                  :searchable="false"
-                  :column-settings="false"
-                  empty-message="没有风险提示。"
-                >
-                  <template #cell-severity="{ row }">
-                    <NvStatusBadge
-                      :label="riskSeverityLabel(row.severity)"
-                      :tone="riskTone(row.severity)"
-                    />
-                  </template>
-                </NvDataTable>
-              </div>
-
+              </NvDialogBody>
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">

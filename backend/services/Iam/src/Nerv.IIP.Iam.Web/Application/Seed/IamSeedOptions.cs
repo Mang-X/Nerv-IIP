@@ -15,7 +15,7 @@ public sealed class IamSeedOptions
     public string AdminPassword { get; init; } = string.Empty;
 
     /// <summary>
-    /// 领导演示 PDA 工人账号的统一登录口令。为空 = 不开通（默认）；只允许来自当前进程
+    /// 开发演示 PDA 和 PC 岗位账号的统一登录口令。为空 = 不开通（默认）；只允许来自当前进程
     /// 环境变量注入（<c>Iam__Seed__DemoWorkerPassword</c>），禁止写入仓库或配置文件。
     /// </summary>
     public string DemoWorkerPassword { get; init; } = string.Empty;

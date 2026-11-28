@@ -1,3 +1,4 @@
+using System.Net;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -425,15 +426,32 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
         int pageOffset,
         CancellationToken cancellationToken)
     {
-        var response = await iamAccounts.ListMemberAccountsAsync(
-            tokenProvider.BearerToken,
-            new BusinessIamMemberAccountListRequest(
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.Keyword,
-                PageIndex: request.PageIndex,
-                PageSize: request.PageSize),
-            cancellationToken);
+        BusinessIamMemberAccountPage response;
+        try
+        {
+            response = await iamAccounts.ListMemberAccountsAsync(
+                tokenProvider.BearerToken,
+                new BusinessIamMemberAccountListRequest(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.Keyword,
+                    PageIndex: request.PageIndex,
+                    PageSize: request.PageSize),
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            return BusinessConsoleSearchableDirectoryResponse.FromItems(
+                request.DirectoryType,
+                [],
+                0,
+                "iam",
+                authorityConfigured: false,
+                rankingMode: request.RankingMode) with
+            {
+                ReasonCode = "login-account-directory-unavailable",
+            };
+        }
         ValidateLoginAccounts(response, request, pageOffset);
         return BusinessConsoleSearchableDirectoryResponse.FromItems(
             request.DirectoryType,

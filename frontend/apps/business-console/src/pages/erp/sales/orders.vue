@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/erp/useBusinessErp'
@@ -54,6 +56,8 @@ import {
   pickerInvalidClass,
   readCount,
 } from '../shared'
+
+const { can } = usePermission()
 
 definePage({
   meta: { requiresAuth: true, title: '销售订单', requiredPermissions: ['business.erp.sales.read'] },
@@ -112,34 +116,43 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   {
     key: 'salesOrderNo',
     header: '销售单号',
+    width: 'w-40',
     cellClass: 'font-medium',
     accessor: (r) => r.salesOrderNo ?? '-',
   },
   {
     key: 'customerCode',
     header: '客户',
+    width: 'w-40',
     accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
   },
-  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'status', header: '状态', width: 'w-24' },
   // 交期是销售员看订单的第一眼信息，此前整列缺失（GH#1292 第 1 项）。
   // 销售订单读面本身不带交期，但紧急度读面（本页已在取）带 timeCriticality.dueUtc，
   // 正是这张订单的承诺交期——直接用它，不新增契约。
   {
     key: 'dueUtc',
     header: '交期',
-    width: 'w-32',
+    width: 'w-28',
     accessor: (r) => dueUtcOf(r),
   },
-  { key: 'urgency', header: '紧急度', width: 'w-28' },
+  { key: 'urgency', header: '紧急度', width: 'w-24' },
   {
     key: 'totalAmount',
     header: '金额',
     align: 'end',
-    width: 'w-32',
+    width: 'w-24',
     accessor: (r) => r.totalAmount ?? 0,
   },
-  { key: 'lineQuantities', header: '分配与发运', width: 'w-60', cellClass: 'align-top' },
-  { key: 'fulfillment', header: '履约', align: 'end', width: 'w-28' },
+  { key: 'lineQuantities', header: '分配与发运', width: 'w-52', cellClass: 'align-top' },
+  {
+    key: 'fulfillment',
+    header: '操作',
+    align: 'end',
+    width: 'w-28',
+    headerClass: 'sticky end-0 z-20 border-l bg-card',
+    cellClass: 'sticky end-0 z-10 border-l bg-card',
+  },
 ]
 
 const releasedCount = computed(
@@ -302,6 +315,7 @@ function openCreditHoldDialog(row: BusinessConsoleErpSalesOrderItem) {
 }
 
 async function submitCreditHoldRelease() {
+  if (!can(P.erpSalesManage)) return
   const salesOrderNo = creditHoldOrder.value?.salesOrderNo
   if (!salesOrderNo) return
   try {
@@ -329,6 +343,7 @@ function openReleaseDeliveryDialog(row: BusinessConsoleErpSalesOrderItem) {
 }
 
 async function submitReleaseDelivery() {
+  if (!can(P.erpSalesManage)) return
   const salesOrderNo = releaseDeliveryOrder.value?.salesOrderNo
   if (!salesOrderNo) return
   try {
@@ -357,7 +372,7 @@ function openDialog() {
 watch(
   () => firstQueryParam(route.query.quotationNo),
   (quotationNo) => {
-    if (!quotationNo) return
+    if (!quotationNo || !can(P.erpSalesManage)) return
     openDialog()
     form.quotationNo = quotationNo
   },
@@ -365,6 +380,7 @@ watch(
 )
 
 async function submit() {
+  if (!can(P.erpSalesManage)) return
   if (orders.createSalesOrderPending.value) return
   showErrors.value = true
   if (!canSubmit.value) return
@@ -412,7 +428,7 @@ async function submit() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog">
+        <NvButton v-if="can(P.erpSalesManage)" size="sm" type="button" @click="openDialog">
           <PlusIcon aria-hidden="true" />
           新建订单
         </NvButton>
@@ -456,7 +472,11 @@ async function submit() {
       @update:page-size="(v) => (pageSize = String(v))"
     >
       <template #cell-customerCode="{ row }">
-        <PartnerNameCell :code="row.customerCode" />
+        <PartnerNameCell
+          :code="row.customerCode"
+          class="whitespace-normal wrap-anywhere"
+          :title="resolvePartner(row.customerCode) ?? row.customerCode"
+        />
       </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
       <template #cell-dueUtc="{ row }">
@@ -484,7 +504,7 @@ async function submit() {
       <template #cell-fulfillment="{ row }">
         <div class="flex flex-wrap items-center justify-end gap-1">
           <NvButton
-            v-if="isCreditHeld(row)"
+            v-if="can(P.erpSalesManage) && isCreditHeld(row)"
             size="sm"
             variant="ghost"
             type="button"
@@ -495,11 +515,13 @@ async function submit() {
             解冻复核
           </NvButton>
           <NvButton
-            v-if="isDeliverable(row)"
+            v-if="can(P.erpSalesManage)"
             size="sm"
             variant="ghost"
             type="button"
-            :disabled="orders.releaseDeliveryOrderPending.value"
+            :disabled="!isDeliverable(row) || orders.releaseDeliveryOrderPending.value"
+            class="disabled:pointer-events-auto"
+            :title="isDeliverable(row) ? undefined : '仅已下达的销售订单可释放发货'"
             @click="openReleaseDeliveryDialog(row)"
           >
             <TruckIcon aria-hidden="true" />
@@ -525,7 +547,7 @@ async function submit() {
       @refresh-order="orders.refreshSalesOrders"
     />
 
-    <NvDialog v-model:open="creditHoldOpen">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="creditHoldOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>提交信用解冻复核</NvDialogTitle>
@@ -556,7 +578,7 @@ async function submit() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="releaseDeliveryOpen">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="releaseDeliveryOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>释放发货</NvDialogTitle>
@@ -589,7 +611,7 @@ async function submit() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建销售订单</NvDialogTitle>

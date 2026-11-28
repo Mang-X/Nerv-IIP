@@ -218,6 +218,11 @@ describe('business workbench page', () => {
     await flushPromises()
 
     const text = wrapper.text()
+    const todo = wrapper.get('[data-focus="待办"]')
+    expect(todo.get('[title="盘点结果待复核"]').text()).toBe('盘点结果待复核')
+    expect(todo.text()).toContain('通知复核')
+    expect(todo.text()).toContain('查看审批待办')
+
     // 英雄区：facade KPI + 待办 / 设备预警的权威总量
     expect(text).toContain('已下达工单')
     expect(text).toContain('7')
@@ -238,6 +243,27 @@ describe('business workbench page', () => {
     expect(text).not.toContain('Sensitive receivables amount')
     expect(text).not.toContain('business.inventory.ledger.read')
     expect(text).not.toContain('global-inventory-workbench-summary-not-connected')
+  })
+
+  it('通知复核待办保留完整标题并隐藏审批跳转', async () => {
+    const title = 'Connector Host unreachable: 仓库设备接入服务'
+    coladaState.queryData = {
+      success: true,
+      data: {
+        todos: {
+          status: 'available',
+          total: 1,
+          items: [{ source: 'Notification', itemId: 'task-1', notificationTitle: title }],
+        },
+      },
+    }
+    const wrapper = mountWorkbench(['business.notification.tasks.read'])
+    await flushPromises()
+
+    const card = wrapper.get('[data-focus="待办"]')
+    expect(card.get('[title]').attributes('title')).toBe(title)
+    expect(card.text()).toContain('通知复核')
+    expect(card.find('a[href="/approval"]').exists()).toBe(false)
   })
 
   // Owner 裁决（覆盖 MAN-153 的 dashboard-01 渐变条款）：工作台各卡一律纯色平面。

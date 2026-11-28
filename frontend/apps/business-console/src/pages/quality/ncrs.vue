@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleNcrCloseRequest,
   BusinessConsoleNcrDispositionRequest,
   BusinessConsoleQualityNcrItem,
   BusinessConsoleQualityNcrDetailResponse,
 } from '@nerv-iip/api-client'
+import { qualitySourceTypeLabels } from '@nerv-iip/business-core'
 import type { FileUploadCompletedFile, NvDataTableColumn } from '@nerv-iip/ui'
 import {
+  createBusinessConsoleQualityNcr,
   downloadBusinessConsoleQualityEvidenceContent,
   getBusinessConsoleQualityNcrQueryOptions,
 } from '@nerv-iip/api-client'
@@ -51,6 +54,12 @@ import {
   NvButton,
   NvCheckbox,
   NvDataTable,
+  NvDialogTitle,
+  NvDialogHeader,
+  NvDialogFooter,
+  NvDialogDescription,
+  NvDialogContent,
+  NvDialog,
   NvDropdownMenuItem,
   NvField,
   NvFieldGroup,
@@ -87,6 +96,7 @@ definePage({
 
 const route = useRoute()
 const auth = useAuthStore()
+const { can } = usePermission()
 const initialNcrKeyword = firstQuery(route.query.ncrId)
 const {
   closeNcr,
@@ -164,11 +174,8 @@ const locatedTargetId = shallowRef('')
 
 const listErrorMessage = computed(() => inlineErrorMessage(ncrsError.value))
 const selectedNcrId = computed(() => selectedNcr.value?.id ?? '')
-const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
-const canManageNcr = computed(() => permissionCodes.value.includes('business.quality.ncr.manage'))
-const canReadMesWorkOrders = computed(() =>
-  permissionCodes.value.includes('business.mes.work-orders.read'),
-)
+const canManageNcr = computed(() => can('business.quality.ncr.manage'))
+const canReadMesWorkOrders = computed(() => can('business.mes.work-orders.read'))
 const reworkWorkOrderLink = computed(() => {
   const ncr = selectedNcr.value
   return canReadMesWorkOrders.value &&
@@ -565,6 +572,70 @@ watch(
   },
   { immediate: true },
 )
+const registrationOpen = shallowRef(false)
+const registering = shallowRef(false)
+const registration = reactive({
+  sourceType: 'receiving',
+  sourceDocumentId: '',
+  skuCode: '',
+  defectQuantity: '',
+  defectReason: '',
+})
+function openRegistration() {
+  Object.assign(registration, {
+    sourceType: 'receiving',
+    sourceDocumentId: '',
+    skuCode: '',
+    defectQuantity: '',
+    defectReason: '',
+  })
+  registrationOpen.value = true
+}
+async function registerNcr() {
+  if (registering.value || !canManageNcr.value || !hasBusinessContext(filters)) return
+  const defectQuantity = Number(registration.defectQuantity)
+  const sourceDocumentId = registration.sourceDocumentId.trim()
+  const skuCode = registration.skuCode.trim()
+  const defectReason = registration.defectReason.trim()
+  if (
+    !sourceDocumentId ||
+    !skuCode ||
+    !defectReason ||
+    !Number.isFinite(defectQuantity) ||
+    defectQuantity <= 0
+  ) {
+    notifyWarning('请填写来源单据、物料、不合格原因和大于 0 的数量。')
+    return
+  }
+  registering.value = true
+  try {
+    const { data } = await createBusinessConsoleQualityNcr({
+      body: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        sourceType: registration.sourceType,
+        sourceDocumentId,
+        skuCode,
+        defectQuantity,
+        defectReason,
+      },
+      throwOnError: true,
+    })
+    if (!data.success || !data.data?.ncrId) throw new Error(data.message || '登记不合格品失败。')
+    registrationOpen.value = false
+    notifySuccess(`不合格报告 ${data.data.ncrCode ?? ''} 已登记。`)
+    await openNcr({
+      id: data.data.ncrId,
+      code: data.data.ncrCode,
+      reworkWorkOrderCreationStatus: 'not-requested',
+    })
+    await refreshNcrs()
+  } catch (error) {
+    notifyOperationFailure('登记不合格品失败', error, '登记不合格品失败，请稍后重试。')
+  } finally {
+    registering.value = false
+  }
+}
 </script>
 
 <template>
@@ -575,6 +646,9 @@ watch(
       :count="`${ncrsTotal} 条 NCR`"
     >
       <template #actions>
+        <NvButton v-if="canManageNcr" size="sm" type="button" @click="openRegistration">
+          登记不合格品
+        </NvButton>
         <NvButton
           v-if="contextWorkOrderId && canReadMesWorkOrders"
           size="sm"
@@ -894,5 +968,70 @@ watch(
         </div>
       </NvSheetContent>
     </NvSheet>
+    <NvDialog v-model:open="registrationOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>登记不合格品</NvDialogTitle>
+          <NvDialogDescription
+            >已有不合格检验记录时，可从该记录详情开立关联报告。</NvDialogDescription
+          >
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="registerNcr">
+          <NvField>
+            <NvFieldLabel>来源类型</NvFieldLabel>
+            <NvSelect v-model="registration.sourceType">
+              <NvSelectTrigger aria-label="来源类型"><NvSelectValue /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem
+                  v-for="(label, value) in qualitySourceTypeLabels"
+                  :key="value"
+                  :value="value"
+                >
+                  {{ label }}
+                </NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="ncr-sourceDocumentId">来源单据</NvFieldLabel>
+            <NvInput
+              id="ncr-sourceDocumentId"
+              v-model="registration.sourceDocumentId"
+              type="text"
+              required
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="ncr-skuCode">物料编码</NvFieldLabel>
+            <NvInput id="ncr-skuCode" v-model="registration.skuCode" type="text" required />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="ncr-defectQuantity">不合格数量</NvFieldLabel>
+            <NvInput
+              id="ncr-defectQuantity"
+              v-model="registration.defectQuantity"
+              type="number"
+              step="any"
+              required
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="ncr-defectReason">不合格原因</NvFieldLabel>
+            <NvInput
+              id="ncr-defectReason"
+              v-model="registration.defectReason"
+              type="text"
+              required
+            />
+          </NvField>
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="registrationOpen = false"
+              >取消</NvButton
+            >
+            <NvButton type="submit" :disabled="registering">登记</NvButton>
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

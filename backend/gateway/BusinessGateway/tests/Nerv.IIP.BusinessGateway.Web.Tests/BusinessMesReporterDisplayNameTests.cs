@@ -119,6 +119,26 @@ public sealed class BusinessMesReporterDisplayNameTests
         Assert.Equal(ids.Select(id => $"姓名-{id}"), reports.Select(report => report.GetProperty("reportedByDisplayName").GetString()));
     }
 
+    [Fact]
+    public async Task Authorized_report_list_remains_available_when_Iam_rejects_directory_credentials()
+    {
+        var iam = new IamHandler(rejectCredentials: true);
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesReportingRead);
+        await using var lease = Lease(auth, new MesHandler(false), iam);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(Url(false));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var reports = document.RootElement.GetProperty("data").GetProperty("items");
+        Assert.Equal(2, reports.GetArrayLength());
+        Assert.All(reports.EnumerateArray(), report =>
+            Assert.Equal(JsonValueKind.Null, report.GetProperty("reportedByDisplayName").ValueKind));
+        Assert.Single(iam.Queries);
+    }
+
     private static string Url(bool detail) => "/api/business-console/v1/mes/production-reports" +
         (detail ? "/PRPT-000001" : "") + "?organizationId=org-001&environmentId=env-dev";
 
@@ -156,7 +176,7 @@ public sealed class BusinessMesReporterDisplayNameTests
         }
     }
 
-    private sealed class IamHandler(string? displayName = "王建国", bool memberExists = true, bool namesForRequestedIds = false) : HttpMessageHandler
+    private sealed class IamHandler(string? displayName = "王建国", bool memberExists = true, bool namesForRequestedIds = false, bool rejectCredentials = false) : HttpMessageHandler
     {
         public List<string> Queries { get; } = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -164,6 +184,11 @@ public sealed class BusinessMesReporterDisplayNameTests
             Assert.Equal("/internal/iam/v1/member-accounts", request.RequestUri!.AbsolutePath);
             Assert.Equal("internal-token", request.Headers.Authorization?.Parameter);
             Queries.Add(Uri.UnescapeDataString(request.RequestUri.Query));
+            if (rejectCredentials)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            }
+
             if (namesForRequestedIds)
             {
                 var ids = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri.Query)["userIds"].ToArray();

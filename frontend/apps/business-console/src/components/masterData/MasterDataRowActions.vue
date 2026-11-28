@@ -28,6 +28,7 @@ const props = defineProps<{
   entityLabel: string
   /** 详情弹窗展示的字段（业务中文 label + 取自行的值）。 */
   detailFields: DetailField[]
+  readOnly?: boolean
 }>()
 
 /**
@@ -52,11 +53,11 @@ const actionLabel = computed(() => (isActive.value ? '停用' : '启用'))
       <EyeIcon aria-hidden="true" />
       查看详情
     </NvDropdownMenuItem>
-    <NvDropdownMenuItem :disabled="!row.code" @click="emit('edit', row)">
+    <NvDropdownMenuItem v-if="!readOnly" :disabled="!row.code" @click="emit('edit', row)">
       <PencilIcon aria-hidden="true" />
       编辑
     </NvDropdownMenuItem>
-    <NvDropdownMenuItem :disabled="!row.code" @click="emit('toggle', row)">
+    <NvDropdownMenuItem v-if="!readOnly" :disabled="!row.code" @click="emit('toggle', row)">
       <CircleSlashIcon v-if="isActive" aria-hidden="true" />
       <PlayIcon v-else aria-hidden="true" />
       {{ actionLabel }}

@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/auth'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -239,7 +240,12 @@ const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...routerL
 
 describe('master-data facilities tree page', () => {
   // 新建弹窗从业务上下文取组织 / 环境。
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useAuthStore().$patch({
+      principal: { permissionCodes: ['business.masterdata.resources.manage'] },
+    })
+  })
 
   it('renders title and tree nodes for all four levels', async () => {
     const wrapper = mount(FacilitiesPage, mountOpts)

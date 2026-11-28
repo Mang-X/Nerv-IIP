@@ -74,7 +74,7 @@ const rangeSeries: LineSeries[] = [
 
     <div
       v-if="pending"
-      class="flex min-h-48 items-center justify-center gap-2 rounded-xl border bg-card text-sm text-muted-foreground"
+      class="flex min-h-24 items-center justify-center gap-2 rounded-xl border bg-card text-sm text-muted-foreground"
       role="status"
     >
       <LoaderCircleIcon class="size-4 animate-spin" aria-hidden="true" />
@@ -82,27 +82,27 @@ const rangeSeries: LineSeries[] = [
     </div>
     <div
       v-else-if="errorMessage"
-      class="flex min-h-48 items-center justify-center rounded-xl border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive"
+      class="flex min-h-24 items-center justify-center rounded-xl border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive"
       role="alert"
     >
       {{ errorMessage }}
     </div>
     <div
       v-else-if="warmup"
-      class="flex min-h-48 items-center justify-center gap-2 rounded-xl border bg-card p-6 text-sm text-muted-foreground"
+      class="flex min-h-24 items-center justify-center gap-2 rounded-xl border bg-card p-6 text-sm text-muted-foreground"
     >
       <ChartNoAxesCombinedIcon class="size-5" aria-hidden="true" />
       至少形成一个完整子组后显示控制图。
     </div>
     <div
       v-else-if="!hasSubgroups"
-      class="flex min-h-48 items-center justify-center rounded-xl border bg-card p-6 text-sm text-muted-foreground"
+      class="flex min-h-24 items-center justify-center rounded-xl border bg-card p-6 text-sm text-muted-foreground"
     >
       当前范围没有完整子组。
     </div>
     <div
       v-else-if="!hasControlLimits"
-      class="flex min-h-48 items-center justify-center rounded-xl border bg-card p-6 text-sm text-muted-foreground"
+      class="flex min-h-24 items-center justify-center rounded-xl border bg-card p-6 text-sm text-muted-foreground"
     >
       当前范围尚无完整控制限，暂不绘制可能误导的控制图。
     </div>
@@ -140,7 +140,7 @@ const rangeSeries: LineSeries[] = [
             </div>
           </div>
         </div>
-        <div v-else class="flex min-h-52 items-center justify-center text-sm text-muted-foreground">
+        <div v-else class="flex min-h-24 items-center justify-center text-sm text-muted-foreground">
           完整子组缺少可绘制的 Xbar 值。
         </div>
         <div
@@ -175,7 +175,7 @@ const rangeSeries: LineSeries[] = [
           :series="rangeSeries"
           :height="210"
         />
-        <div v-else class="flex min-h-52 items-center justify-center text-sm text-muted-foreground">
+        <div v-else class="flex min-h-24 items-center justify-center text-sm text-muted-foreground">
           完整子组缺少可绘制的 Range 值。
         </div>
       </article>

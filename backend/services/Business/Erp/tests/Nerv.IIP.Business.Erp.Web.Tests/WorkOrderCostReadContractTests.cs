@@ -693,6 +693,40 @@ public sealed class WorkOrderCostReadContractTests
     }
 
     [Fact]
+    public async Task Cost_variance_accepts_normalized_theoretical_rate_and_sub_hour_labor()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        const long laborTicks = 4_939_790_400L;
+        var settlement = OperationLaborSettlement.Create(
+            "org-rate", "env-rate", "WO-RATE", "OP-RATE", "WC-RATE", 1,
+            CompletedAtUtc, laborTicks, new WorkCenterCostRateId(Guid.CreateVersion7()),
+            1, "CNY", 120m, "evt-labor", "hash-labor");
+        var state = OperationLaborSettlementState.Open("org-rate", "env-rate", "OP-RATE");
+        state.ApplySettlement(1);
+        var cost = WorkOrderCost.Open("org-rate", "env-rate", "WO-RATE", "FG-RATE");
+        cost.RecordActualLabor(settlement);
+        cost.Complete(50m, 50, 0, CompletedAtUtc.AddMinutes(1));
+        db.AddRange(cost, settlement, state,
+            OperationLaborCoveredReport.Create(
+                "org-rate", "env-rate", "WO-RATE", "OP-RATE", 1, "RPT-RATE"),
+            OperationLaborReportSnapshot.Create(
+                "org-rate", "env-rate", "WO-RATE", "OP-RATE", "WC-RATE", "RPT-RATE",
+                50m, 0m, 0m, "ea", 300.000000m, CompletedAtUtc.AddMinutes(-1), false, null, "evt-report"));
+        await db.SaveChangesAsync();
+
+        var response = await new GetWorkOrderCostVarianceQueryHandler(db).Handle(
+            new GetWorkOrderCostVarianceQuery("org-rate", "env-rate", "WO-RATE"),
+            CancellationToken.None);
+
+        Assert.Null(response.UnavailableReason);
+        Assert.Equal(0.137216m, response.ActualLaborHours);
+        Assert.Equal(16.465968m, response.ActualLaborCost);
+        Assert.Equal(0.166667m, response.StandardLaborHours);
+    }
+
+    [Fact]
     public async Task Snapshot_numeric_scale_beyond_six_digits_fails_closed()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();

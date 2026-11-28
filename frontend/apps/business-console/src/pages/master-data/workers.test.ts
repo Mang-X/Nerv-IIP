@@ -1,5 +1,7 @@
+import { useAuthStore } from '@/stores/auth'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import WorkersPage from './workers.vue'
@@ -144,6 +146,13 @@ const selectStubs = {
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({
+    principal: { permissionCodes: ['business.masterdata.resources.manage'] },
+  })
+})
 
 describe('master-data workers page', () => {
   it('renders employee number, name, department, teams, skills and duty status', async () => {

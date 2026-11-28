@@ -76,6 +76,19 @@ public static class NervIipSeedRoles
             "notifications.tasks.read",
         ]);
 
+    public static readonly SeedRoleDefinition MaintenanceTechnician = new(
+        "role-maintenance-technician",
+        "维保技师",
+        [
+            "business.maintenance.work-orders.read",
+            "business.maintenance.work-orders.manage",
+            "business.maintenance.plans.read",
+            "business.maintenance.plans.manage",
+            "business.maintenance.downtime-reasons.read",
+            "business.masterdata.resources.read",
+            "business.masterdata.products.read",
+        ]);
+
     public static readonly SeedRoleDefinition[] ErpJobRoles =
     [
         new(
@@ -159,6 +172,7 @@ public static class NervIipSeedPermissions
         "business.quality.inspection-records.create",
         "business.quality.inspection-records.read",
         "business.quality.ncr.read",
+        "business.quality.measuring-devices.manage",
         "business.quality.ncr.manage",
         "business.inventory.locations.manage",
         "business.inventory.movements.create",

@@ -40,12 +40,7 @@ export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilte
     ),
   )
 
-  const createMutation = useMutation({
-    ...createBusinessConsoleMaintenancePlanMutationOptions(),
-    onSuccess() {
-      void refetchWithBusinessContext(filters, plansQuery)
-    },
-  })
+  const createMutation = useMutation(createBusinessConsoleMaintenancePlanMutationOptions())
   const updateMutation = useMutation(updateBusinessConsoleMaintenancePlanMutationOptions())
   const generateDueMutation = useMutation({
     ...generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions(),

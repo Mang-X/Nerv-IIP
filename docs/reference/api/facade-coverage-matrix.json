@@ -4866,16 +4866,26 @@
       "method": "POST",
       "route": "/api/business/v1/quality/measuring-devices",
       "operationId": "createBusinessQualityMeasuringDevice",
-      "classification": "deferred",
-      "followUp": "BusinessGateway measuring-device management facade follows the Quality calibration workbench menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleQualityMeasuringDevice"
+      ]
     },
     {
       "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/measuring-devices/{measuringDeviceId}/calibrations",
       "operationId": "recordBusinessQualityMeasuringDeviceCalibration",
-      "classification": "deferred",
-      "followUp": "BusinessGateway calibration-record facade follows the Quality calibration workbench menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleQualityMeasuringDeviceCalibration"
+      ]
     },
     {
       "service": "Quality",
@@ -4911,8 +4921,13 @@
       "method": "POST",
       "route": "/api/business/v1/quality/ncrs",
       "operationId": "createBusinessQualityNcr",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; generic NCR create follows the Quality NCR menu phase (only NCR-from-inspection is exposed today via openBusinessConsoleQualityNcrFromInspection)."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleQualityNcr"
+      ]
     },
     {
       "service": "Quality",

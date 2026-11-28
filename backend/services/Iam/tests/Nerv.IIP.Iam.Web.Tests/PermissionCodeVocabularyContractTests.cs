@@ -143,6 +143,7 @@ public sealed class PermissionCodeVocabularyContractTests
             ["QualityInspectionPlansManage"] = "business.quality.inspection-plans.manage",
             ["QualityInspectionRecordsCreate"] = "business.quality.inspection-records.create",
             ["QualityInspectionRecordsRead"] = "business.quality.inspection-records.read",
+            ["QualityMeasuringDevicesManage"] = "business.quality.measuring-devices.manage",
             ["QualityNcrManage"] = "business.quality.ncr.manage",
             ["QualityNcrRead"] = "business.quality.ncr.read",
             ["SchedulingPlansManage"] = "business.scheduling.plans.manage",

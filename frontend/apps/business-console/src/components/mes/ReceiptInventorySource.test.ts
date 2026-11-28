@@ -68,6 +68,7 @@ describe('FGR 库存来源事实', () => {
           quantity: 8,
           uomCode: 'pcs',
           locationCode: 'FG-A',
+          postedAtUtc: '2026-11-27T23:16:50.532379Z',
         },
       ],
       balances: [
@@ -108,6 +109,9 @@ describe('FGR 库存来源事实', () => {
       )!
     expect(movementRow).toBeDefined()
     expect(movementRow.findAll('td')[movementHeaders.indexOf('移动数量')].text()).toBe('8')
+    expect(movementRow.findAll('td')[movementHeaders.indexOf('过账时间')].text()).toMatch(
+      /^2026-11-(27|28) \d{2}:\d{2}$/,
+    )
 
     const balanceTable = tables.find((table) =>
       table.findAll('th').some((header) => header.text() === '在库数量'),

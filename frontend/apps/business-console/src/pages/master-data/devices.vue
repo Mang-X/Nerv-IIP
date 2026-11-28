@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
@@ -19,6 +21,8 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { inlineErrorMessage } from '@/utils/notify'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -86,50 +90,59 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   {
     key: 'code',
     header: '设备编码',
+    width: 'w-24',
     cellClass: 'font-medium whitespace-normal break-all',
     accessor: (r) => r.code ?? '无',
   },
   {
     key: 'displayName',
     header: '设备名称',
+    width: 'w-36',
     cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.displayName ?? '无',
   },
   {
     key: 'siteCode',
     header: '工厂',
-    width: 'w-28',
+    width: 'w-24',
     cellClass: 'whitespace-normal break-all',
     accessor: (r) => siteName(r.siteCode),
   },
   {
     key: 'workshopCode',
     header: '车间',
-    width: 'w-28',
+    width: 'w-24',
     accessor: (r) => workshopName(r.workshopCode),
   },
-  { key: 'lineCode', header: '所属产线', width: 'w-32', accessor: (r) => lineName(r.lineCode) },
-  { key: 'stationCode', header: '工位', width: 'w-28', accessor: (r) => r.stationCode ?? '无' },
+  { key: 'lineCode', header: '所属产线', width: 'w-28', accessor: (r) => lineName(r.lineCode) },
+  { key: 'stationCode', header: '工位', width: 'w-20', accessor: (r) => r.stationCode ?? '无' },
   {
     key: 'warrantyExpiresOn',
     header: '保修到期',
-    width: 'w-28',
+    width: 'w-24',
     accessor: (r) => formatDate(r.warrantyExpiresOn),
   },
   {
     key: 'supplierPartnerCode',
     header: '供应商',
-    width: 'w-28',
+    width: 'w-24',
     accessor: (r) => supplierName(r.supplierPartnerCode),
   },
-  { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'active', header: '状态', width: 'w-20' },
   {
     key: 'snapshotVersion',
     header: '更新时间',
-    width: 'w-40',
+    width: 'w-36',
     accessor: (r) => formatDateTime(r.snapshotVersion),
   },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
+  {
+    key: 'actions',
+    header: '操作',
+    align: 'end',
+    width: 'w-16',
+    headerClass: 'sticky end-0 z-20 border-l bg-card',
+    cellClass: 'sticky end-0 z-10 border-l bg-card',
+  },
 ]
 
 function deviceDetailFields(row: BusinessConsoleResourceItem) {
@@ -218,7 +231,12 @@ function openEdit(row: BusinessConsoleResourceItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openForm()">
+        <NvButton
+          v-if="can(P.masterDataResourcesManage)"
+          size="sm"
+          type="button"
+          @click="openForm()"
+        >
           <PlusIcon aria-hidden="true" />
           新建设备
         </NvButton>
@@ -260,6 +278,7 @@ function openEdit(row: BusinessConsoleResourceItem) {
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions
+          :read-only="!can(P.masterDataResourcesManage)"
           :row="row"
           entity-label="设备"
           :detail-fields="deviceDetailFields(row)"

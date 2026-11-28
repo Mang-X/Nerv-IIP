@@ -38,7 +38,7 @@ vi.mock('@nerv-iip/api-client', () => {
     instanceName: 'demo-api-1',
     reportedStatus: 'running',
     healthStatus: 'unhealthy',
-    lastHeartbeatAtUtc: '2026-05-16T00:00:00Z',
+    lastHeartbeatAtUtc: '2026-05-16T00:00:00.123456Z',
     lastStateObservedAtUtc: '2026-05-16T00:00:00Z',
   }
 
@@ -180,6 +180,15 @@ describe('Console index page', () => {
         pageSize: 20,
       },
     })
+  })
+
+  it('shows instance timestamps in local time without fractional seconds', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const heartbeat = '2026-05-16T00:00:00.123456Z'
+    expect(wrapper.text()).toContain(new Date(heartbeat).toLocaleString('zh-CN'))
+    expect(wrapper.text()).not.toContain(heartbeat)
   })
 
   it('renders destructive status states', async () => {

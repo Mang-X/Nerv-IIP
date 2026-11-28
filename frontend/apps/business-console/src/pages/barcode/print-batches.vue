@@ -215,12 +215,12 @@ const templateHasLotNo = computed(() =>
 )
 
 const batchColumns: NvDataTableColumn<BusinessConsoleBarcodePrintBatchItem>[] = [
-  // 列宽显式给定、长文本列允许换行：单号与条码值较长，自动列宽会让相邻两列文字叠在一起。
+  // 来源单号保留在同一行，过长时可悬停查看完整编号。
   {
     key: 'sourceDocumentId',
     header: '来源单据',
-    width: 'w-44',
-    cellClass: 'font-medium whitespace-normal break-all',
+    width: 'w-48',
+    cellClass: 'font-medium',
     accessor: (r) => r.sourceDocumentId ?? '未关联单据',
   },
   { key: 'source', header: '业务来源', width: 'w-20', cellClass: 'whitespace-normal' },
@@ -258,7 +258,7 @@ const itemColumns: NvDataTableColumn<BusinessConsoleBarcodePrintItemDetail>[] = 
   {
     key: 'fileId',
     header: '标签文件',
-    width: 'w-20',
+    width: 'w-28',
     accessor: (r) => (r.fileId ? '已生成' : '无文件可下载'),
   },
 ]
@@ -726,12 +726,15 @@ function firstQuery(value: unknown) {
         <template #cell-sourceDocumentId="{ row }">
           <RouterLink
             v-if="barcodeSourceDocumentRoute(row.sourceDocumentType, row.sourceDocumentId)"
-            class="underline underline-offset-2"
+            class="block truncate underline underline-offset-2"
+            :title="row.sourceDocumentId ?? undefined"
             :to="barcodeSourceDocumentRoute(row.sourceDocumentType, row.sourceDocumentId)!"
           >
             {{ row.sourceDocumentId }}
           </RouterLink>
-          <span v-else>{{ row.sourceDocumentId ?? '未关联单据' }}</span>
+          <span v-else class="block truncate" :title="row.sourceDocumentId ?? undefined">{{
+            row.sourceDocumentId ?? '未关联单据'
+          }}</span>
         </template>
         <template #cell-source="{ row }">
           {{ sourceLabel(row.sourceDocumentType) }}

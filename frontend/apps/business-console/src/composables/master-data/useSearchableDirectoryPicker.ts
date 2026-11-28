@@ -142,6 +142,9 @@ export function useSearchableDirectoryPicker(
      * 选择器据此说「无权查看」或「加载失败」，不能把失败说成「没有匹配」。
      */
     failure: computed(() => {
+      if (pages.value.at(-1)?.data?.reasonCode === 'login-account-directory-unavailable') {
+        return 'failed' as const
+      }
       if (!query.error.value) return undefined
       return isForbiddenError(query.error.value) ? ('forbidden' as const) : ('failed' as const)
     }),

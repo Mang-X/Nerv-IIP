@@ -31,9 +31,8 @@ export interface NvDataTableColumn<T = Record<string, unknown>> {
    * width declaration here: columns are laid out with `table-layout: fixed`,
    * which sizes columns from `width` alone, so a `min-width` is ignored.
    * Columns are never squeezed narrower to fit their content, and never widened
-   * by it. When the declared widths leave spare room, that surplus is shared out
-   * — size a column to the content it holds, and leave room for the undeclared
-   * columns.
+   * by it. Columns without a declaration start at `w-32`. When the column
+   * widths leave spare room, that surplus is shared out.
    */
   width?: string
   headerClass?: string

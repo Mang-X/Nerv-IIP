@@ -1082,6 +1082,24 @@ public sealed class ListBusinessConsoleQualityInspectionPlanCharacteristicsEndpo
 }
 
 [Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/ncrs")]
+[BusinessGatewayOperationId("createBusinessConsoleQualityNcr")]
+public sealed class CreateBusinessConsoleQualityNcrEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateQualityNcrRequest, BusinessConsoleCreateQualityNcrResponse>(
+        auth, BusinessGatewayPermissions.QualityNcrManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateQualityNcrRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleCreateQualityNcrRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleCreateQualityNcrRequest request) => "ncr";
+
+    protected override Task<BusinessConsoleCreateQualityNcrResponse> ForwardAsync(
+        BusinessConsoleCreateQualityNcrRequest request, string bearerToken, CancellationToken cancellationToken) =>
+        quality.CreateNcrAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
 [HttpGet("/api/business-console/v1/quality/ncrs")]
 [BusinessGatewayOperationId("listBusinessConsoleQualityNcrs")]
 public sealed class ListBusinessConsoleQualityNcrsEndpoint(
@@ -1250,6 +1268,54 @@ public sealed class ListBusinessConsoleQualityMeasuringDevicesEndpoint(
 }
 
 [Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/measuring-devices")]
+[BusinessGatewayOperationId("createBusinessConsoleQualityMeasuringDevice")]
+public sealed class CreateMeasuringDeviceBusinessConsoleEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMeasuringDeviceRequest, BusinessConsoleCreateMeasuringDeviceResponse>(
+        auth, BusinessGatewayPermissions.QualityMeasuringDevicesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateMeasuringDeviceRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleCreateMeasuringDeviceRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleCreateMeasuringDeviceRequest request) => "measuring-device";
+
+    protected override Task<BusinessConsoleCreateMeasuringDeviceResponse> ForwardAsync(
+        BusinessConsoleCreateMeasuringDeviceRequest request, string bearerToken, CancellationToken cancellationToken) =>
+        quality.CreateMeasuringDeviceAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleCreateMeasuringDeviceRequestValidator
+    : Validator<BusinessConsoleCreateMeasuringDeviceRequest>
+{
+    public BusinessConsoleCreateMeasuringDeviceRequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+[HttpPost("/api/business-console/v1/quality/measuring-devices/{measuringDeviceId}/calibrations")]
+[BusinessGatewayOperationId("recordBusinessConsoleQualityMeasuringDeviceCalibration")]
+public sealed class RecordMeasuringDeviceCalibrationBusinessConsoleEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordMeasuringDeviceCalibrationRequest, BusinessConsoleAcceptedResponse>(
+        auth, BusinessGatewayPermissions.QualityMeasuringDevicesManage)
+{
+    protected override string OrganizationId(BusinessConsoleRecordMeasuringDeviceCalibrationRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleRecordMeasuringDeviceCalibrationRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleRecordMeasuringDeviceCalibrationRequest request) => "measuring-device";
+
+    protected override string? ResourceId(BusinessConsoleRecordMeasuringDeviceCalibrationRequest request) => Route<string>("measuringDeviceId") ?? request.MeasuringDeviceId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleRecordMeasuringDeviceCalibrationRequest request, string bearerToken, CancellationToken cancellationToken) =>
+        quality.RecordCalibrationAsync(tokenProvider.BearerToken,
+            request with { MeasuringDeviceId = ResourceId(request)! }, cancellationToken);
+}
+
 [HttpGet("/api/business-console/v1/quality/calibration-records")]
 [BusinessGatewayOperationId("listBusinessConsoleQualityCalibrationRecords")]
 public sealed class ListBusinessConsoleQualityCalibrationRecordsEndpoint(

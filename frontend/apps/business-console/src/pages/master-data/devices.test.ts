@@ -1,5 +1,7 @@
+import { useAuthStore } from '@/stores/auth'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
@@ -319,6 +321,13 @@ async function fillValid(wrapper: ReturnType<typeof mount>) {
 }
 
 // DomainInvariant：#4386 / #3905 spec r1，真实日期组件交互后仍提交 ISO 或 undefined。
+beforeEach(() => {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({
+    principal: { permissionCodes: ['business.masterdata.resources.manage'] },
+  })
+})
+
 describe('设备编辑日期', () => {
   it('编辑三项日期时响应式本地化，选择和清空保持更新载荷', async () => {
     actionStub.update.mockClear()

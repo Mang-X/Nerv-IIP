@@ -79,11 +79,16 @@ watch(
   { immediate: true },
 )
 // 会计期间编码默认取本月（如 2026-09），与财务开立期间的惯例一致；可改为其它期间。
-rates.accountingPeriodCode.value = queryText(route.query, 'periodCode') || today().slice(0, 7)
-const periodDraft = shallowRef(rates.accountingPeriodCode.value)
+const periodDraft = shallowRef(queryText(route.query, 'periodCode') || today().slice(0, 7))
+const periodError = shallowRef('')
 function commitPeriod() {
-  rates.accountingPeriodCode.value = periodDraft.value.trim()
+  const period = periodDraft.value.trim()
+  const invalidMonth = /^\d{4}-\d{1,2}$/.test(period) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)
+  periodError.value = !period ? '请输入会计期间编码。' : ''
+  if (invalidMonth) periodError.value = '月份需在 01-12 之间。'
+  rates.accountingPeriodCode.value = periodError.value ? '' : period
 }
+commitPeriod()
 
 const items = computed(() => rates.rates.value?.items ?? [])
 const current = computed(() =>
@@ -146,7 +151,12 @@ const columns: NvDataTableColumn<RateRow>[] = [
   { key: 'basis', header: '预算与正常产能' },
   { key: 'status', header: '状态', width: 'w-36' },
   { key: 'reason', header: '修订原因', accessor: (row) => row.reason },
-  { key: 'changedAtUtc', header: '修订时间', accessor: (row) => formatDateTime(row.changedAtUtc) },
+  {
+    key: 'changedAtUtc',
+    header: '修订时间',
+    width: 'w-44',
+    accessor: (row) => formatDateTime(row.changedAtUtc),
+  },
 ]
 
 const open = shallowRef(false)
@@ -204,7 +214,7 @@ async function submit() {
   if (rates.addRevisionPending.value) return
   missingPeriod.value = ''
   showErrors.value = true
-  if (!canSubmit.value) return
+  if (!canSubmit.value || !rates.accountingPeriodCode.value) return
   // 不适用时预算与产能按零提交。
   const amount = (value: string) => (isApplicable.value ? Number(value || 0) : 0)
   const periodCode = rates.accountingPeriodCode.value
@@ -244,7 +254,11 @@ async function submit() {
   <BusinessLayout>
     <NvPageHeader title="机器制造费用率" :breadcrumbs="[{ label: '经营管理' }, { label: '财务' }]">
       <template v-if="canManage" #actions>
-        <NvButton size="sm" type="button" :disabled="!rates.rates.value" @click="openSheet"
+        <NvButton
+          size="sm"
+          type="button"
+          :disabled="!rates.accountingPeriodCode.value || !rates.rates.value"
+          @click="openSheet"
           ><PlusIcon aria-hidden="true" />新增修订</NvButton
         >
       </template>
@@ -264,13 +278,24 @@ async function submit() {
           :loading="workCentersPending"
           aria-label="工作中心"
         />
-        <NvInput
-          v-model="periodDraft"
-          class="w-40"
-          aria-label="会计期间"
-          placeholder="会计期间，如 2026-09"
-          @change="commitPeriod"
-        />
+        <div>
+          <NvInput
+            v-model="periodDraft"
+            class="w-40"
+            aria-label="会计期间"
+            :aria-invalid="Boolean(periodError)"
+            :aria-describedby="periodError ? 'machine-rate-period-error' : undefined"
+            placeholder="会计期间，如 2026-09"
+            @change="commitPeriod"
+          />
+          <p
+            v-if="periodError"
+            id="machine-rate-period-error"
+            class="mt-1 text-xs text-destructive"
+          >
+            {{ periodError }}
+          </p>
+        </div>
       </template>
     </NvToolbar>
 
@@ -280,6 +305,7 @@ async function submit() {
     />
 
     <NvDataTable
+      v-if="!periodError"
       :columns="columns"
       :rows="items"
       :row-key="(row: RateRow) => row.workCenterMachineOverheadRateId"

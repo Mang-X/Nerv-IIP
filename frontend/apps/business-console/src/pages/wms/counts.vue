@@ -150,27 +150,44 @@ function hasVariance(row: BusinessConsoleWmsCountExecutionItem) {
 // 口径：这两个只能按**当前页**的行算，标签一律带「本页」，不与服务端总数混在一起。
 const pendingCount = computed(() => countExecutions.value.filter(isOpen).length)
 const varianceCount = computed(() => countExecutions.value.filter(hasVariance).length)
+const countedRows = computed(
+  () => countExecutions.value.filter((row) => typeof row.varianceQuantity === 'number').length,
+)
 
 /**
  * 「账实不符」告警卡不许在读不到数时下结论：上下文未就绪 / 读取中 / 读失败时
  * `varianceCount` 恒为 0，直接渲染就会告诉仓管「账实一致」——把故障说成绿灯。
- * 非就绪一律值显 `—`、状态说取不到、脚注说清无法判断。
+ * 未查询、读取中和读取失败均不展示差异数。
  */
 const contextReady = computed(() => hasBusinessContext(filters) && countScopeReady.value)
 const varianceCardReady = computed(
-  () => contextReady.value && !countExecutionsError.value && !countExecutionsPending.value,
+  () =>
+    contextReady.value &&
+    !countExecutionsError.value &&
+    !countExecutionsPending.value &&
+    countedRows.value > 0,
 )
 const varianceCardStatus = computed(() => {
-  if (!varianceCardReady.value) return { label: '取不到数据', tone: 'neutral' as const }
-  return varianceCount.value > 0
-    ? { label: '有差异', tone: 'danger' as const }
-    : { label: '本页账实一致', tone: 'success' as const }
+  if (!contextReady.value) return { label: '尚未查询', tone: 'neutral' as const }
+  if (countExecutionsPending.value) return { label: '加载中', tone: 'neutral' as const }
+  if (countExecutionsError.value) return { label: '读取失败', tone: 'neutral' as const }
+  if (countExecutions.value.length === 0) return { label: '暂无盘点单', tone: 'neutral' as const }
+  if (varianceCount.value > 0) return { label: '有差异', tone: 'danger' as const }
+  if (countedRows.value === 0) return { label: '待实盘', tone: 'neutral' as const }
+  return {
+    label:
+      countedRows.value === countExecutions.value.length ? '本页账实一致' : '已实盘部分账实一致',
+    tone: 'success' as const,
+  }
 })
 const varianceCardNote = computed(() => {
-  if (!varianceCardReady.value) return '盘点单读不到，账实是否一致无法判断，请重试。'
-  return varianceCount.value > 0
-    ? '请按盘点单状态跟进审批、过账或复盘。'
-    : '本页盘点单账面与实盘一致。'
+  if (!contextReady.value) return '选择业务范围后查看盘点差异。'
+  if (countExecutionsPending.value) return '正在读取盘点单。'
+  if (countExecutionsError.value) return '盘点单读取失败，请重试。'
+  if (countExecutions.value.length === 0) return '当前范围暂无盘点单。'
+  if (varianceCount.value > 0) return '请按盘点单状态跟进审批、过账或复盘。'
+  if (countedRows.value === 0) return '实盘录入后可查看账实差异。'
+  return '本页已实盘单据的账面与实盘一致。'
 })
 
 const createOpen = shallowRef(false)
@@ -551,9 +568,9 @@ function refreshAll() {
           {
             key: 'variance',
             label: '本页账实不符',
-            value: varianceCount,
-            unit: '张',
-            valueTone: varianceCount > 0 ? 'danger' : undefined,
+            value: varianceCardReady ? varianceCount : '—',
+            unit: varianceCardReady ? '张' : undefined,
+            valueTone: varianceCardReady && varianceCount > 0 ? 'danger' : undefined,
           },
         ]"
       />
@@ -618,10 +635,10 @@ function refreshAll() {
       :columns="columns"
       :rows="countExecutions"
       :row-key="rowKey"
-      :loading="countExecutionsPending"
+      :loading="contextReady && countExecutionsPending"
       :searchable="false"
       :column-settings="false"
-      :error="countExecutionsError"
+      :error="contextReady && !countExecutionsPending && countExecutionsError"
       :error-message="listErrorMessage"
       :awaiting-scope="!contextReady"
       :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看盘点单。'"

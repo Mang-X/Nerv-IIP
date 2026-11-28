@@ -25,7 +25,7 @@ internal sealed partial class AppHostComposition
     private readonly IResourceBuilder<ParameterResource> redisPassword;
     private readonly IResourceBuilder<ParameterResource> iamSeedAdminPassword;
     private readonly IResourceBuilder<ParameterResource> iamSeedConnectorHostSecret;
-    private readonly string iamSeedDemoWorkerPassword;
+    private readonly string? iamSeedDemoWorkerPassword;
     private readonly bool wmsWorkPoolSeedEnabled;
     private readonly IResourceBuilder<ParameterResource> connectorIngestionTokenSigningKey;
     private readonly string messagingProvider;
@@ -102,8 +102,8 @@ internal sealed partial class AppHostComposition
         redisPassword = builder.AddParameter("redis-password", secret: true);
         iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
         iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
-        // 可选：PDA 演示工人统一口令（缺省为空 = 不开通演示工人账号），不建为必填 Parameter 以免阻塞常规启动。
-        iamSeedDemoWorkerPassword = builder.Configuration["Parameters:iam-seed-demo-worker-password"] ?? string.Empty;
+        iamSeedDemoWorkerPassword = builder.Configuration["Iam:Seed:DemoWorkerPassword"]
+            ?? builder.Configuration["Parameters:iam-seed-demo-worker-password"];
         // 仅向 WMS 下发非敏感的显式种子开关；工人口令仍只提供给 IAM。
         wmsWorkPoolSeedEnabled = builder.Configuration.GetValue(
             "Wms:WorkPoolSeed:Enabled",

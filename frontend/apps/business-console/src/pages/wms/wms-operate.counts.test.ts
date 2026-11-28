@@ -2,11 +2,42 @@ import { wms, routeGuardState, layoutStub, setInput, resetFixture } from './wms-
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { BusinessOperationPendingError } from '@nerv-iip/api-client'
-import { NvDialog, toast } from '@nerv-iip/ui'
+import { NvDialog, NvMetricCard, toast } from '@nerv-iip/ui'
 import CountsPage from './counts.vue'
 
 describe('WMS operate actions', () => {
   beforeEach(resetFixture)
+
+  it('空列表不作账实一致的判断', async () => {
+    wms.countRows = []
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('暂无盘点单')
+    expect(wrapper.text()).not.toContain('本页账实一致')
+    expect(wrapper.text()).not.toContain('取不到数据')
+  })
+
+  it.each([
+    { results: [null], label: '待实盘', tone: 'neutral', value: '—' },
+    { results: [0], label: '本页账实一致', tone: 'success', value: 0 },
+    { results: [null, 0], label: '已实盘部分账实一致', tone: 'success', value: 0 },
+    { results: [null, -2], label: '有差异', tone: 'danger', value: 1 },
+  ])('盘点差异结果 $results 显示「$label」', async ({ results, label, tone, value }) => {
+    wms.countRows = results.map((varianceQuantity, index) => ({
+      countExecutionId: `count-${index}`,
+      countNo: `CNT-${index}`,
+      status: varianceQuantity === null ? 'open' : 'completed',
+      varianceQuantity,
+    }))
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const card = wrapper.getComponent(NvMetricCard)
+    expect(card.props('status')).toEqual({ label, tone })
+    expect(card.props('value')).toBe(value)
+    wrapper.unmount()
+  })
 
   // 合同：#3943 已批准范围，断言请求身份而非页面内部状态。
   it.each([

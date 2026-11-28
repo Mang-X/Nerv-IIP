@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
   BusinessConsoleErpRequestForQuotationItem,
   BusinessConsoleErpSupplierQuotationItem,
@@ -54,6 +56,8 @@ import {
 
 const { locale } = i18n.global
 
+const { can } = usePermission()
+
 definePage({
   meta: {
     requiresAuth: true,
@@ -73,21 +77,36 @@ const columns: NvDataTableColumn<BusinessConsoleErpSupplierQuotationItem>[] = [
   {
     key: 'quotationNo',
     header: '报价单号',
-    cellClass: 'font-medium',
+    width: 'w-36',
+    cellClass: 'font-medium whitespace-normal wrap-anywhere',
     accessor: (r) => r.quotationNo ?? '-',
   },
-  { key: 'rfqNo', header: '关联询价单', accessor: (r) => r.rfqNo ?? '-' },
+  {
+    key: 'rfqNo',
+    header: '关联询价单',
+    width: 'w-36',
+    cellClass: 'whitespace-normal wrap-anywhere',
+    accessor: (r) => r.rfqNo ?? '-',
+  },
   {
     key: 'supplierCode',
     header: '供应商',
+    width: 'w-36',
+    cellClass: 'whitespace-normal wrap-anywhere',
     accessor: (r) => resolvePartnerLabel(r.supplierCode ?? '', '') || '-',
   },
-  { key: 'skuCode', header: '物料', accessor: (r) => r.lines?.[0]?.skuCode ?? '-' },
+  {
+    key: 'skuCode',
+    header: '物料',
+    width: 'w-36',
+    cellClass: 'whitespace-normal wrap-anywhere',
+    accessor: (r) => r.lines?.[0]?.skuCode ?? '-',
+  },
   {
     key: 'quantity',
     header: '报价数量',
     align: 'end',
-    width: 'w-28',
+    width: 'w-20',
     accessor: (r) => {
       const line = r.lines?.[0]
       if (!line || line.quantity === null || line.quantity === undefined) return '-'
@@ -98,26 +117,27 @@ const columns: NvDataTableColumn<BusinessConsoleErpSupplierQuotationItem>[] = [
     key: 'unitPrice',
     header: '单价（元）',
     align: 'end',
-    width: 'w-28',
+    width: 'w-24',
     accessor: (r) => formatAmount(r.lines?.[0]?.unitPrice),
   },
   {
     key: 'totalAmount',
     header: '报价金额（元）',
     align: 'end',
-    width: 'w-32',
+    width: 'w-28',
     accessor: (r) => formatAmount(r.totalAmount),
   },
   {
     key: 'promisedDate',
     header: '承诺交期',
-    width: 'w-28',
+    width: 'w-24',
     accessor: (r) => formatDate(r.lines?.[0]?.promisedDate),
   },
   {
     key: 'receivedAtUtc',
     header: '收到时间',
-    width: 'w-40',
+    width: 'w-32',
+    cellClass: 'whitespace-normal wrap-anywhere',
     accessor: (r) => formatDateTime(r.receivedAtUtc),
   },
 ]
@@ -183,7 +203,7 @@ const form = reactive({
   rfqLineNo: '',
   supplierCode: '',
   quotationNo: '',
-  unitPrice: '0',
+  unitPrice: '',
   promisedDate: '',
 })
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
@@ -243,7 +263,7 @@ const invalid = computed(() => ({
     !(Number(quotedLine.value?.quantity) > 0),
   supplierCode: !supplierOptions.value.includes(form.supplierCode),
   promisedDate: !form.promisedDate,
-  unitPrice: !(Number(form.unitPrice) >= 0),
+  unitPrice: !Number.isFinite(Number(form.unitPrice)) || Number(form.unitPrice) <= 0,
 }))
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
@@ -252,13 +272,14 @@ function openDialog() {
   form.rfqLineNo = ''
   form.supplierCode = ''
   form.quotationNo = ''
-  form.unitPrice = '0'
+  form.unitPrice = ''
   form.promisedDate = ''
   showErrors.value = false
   open.value = true
 }
 
 async function submit() {
+  if (!can(P.erpProcurementManage)) return
   const row = quoteRow.value
   const line = quotedLine.value
   showErrors.value = true
@@ -318,7 +339,13 @@ async function submit() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" :disabled="!rfqs.items.value.length" @click="openDialog">
+        <NvButton
+          v-if="can(P.erpProcurementManage)"
+          size="sm"
+          type="button"
+          :disabled="!rfqs.items.value.length"
+          @click="openDialog"
+        >
           录入报价
         </NvButton>
       </template>
@@ -359,7 +386,7 @@ async function submit() {
     />
 
     <!-- 「带出式录入」：先选回价对象（询价单），物料 / 单位 / 数量随之只读带出，不做输入位。 -->
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpProcurementManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>录入供应商报价</NvDialogTitle>
@@ -434,7 +461,17 @@ async function submit() {
                 min="0"
                 step="0.01"
                 :data-invalid="showErrors && invalid.unitPrice ? '' : undefined"
+                :aria-describedby="
+                  showErrors && invalid.unitPrice ? 'erp-sq-price-error' : undefined
+                "
               />
+              <p
+                v-if="showErrors && invalid.unitPrice"
+                id="erp-sq-price-error"
+                class="text-sm text-destructive"
+              >
+                单价必须大于 0。
+              </p>
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-sq-date">
@@ -455,7 +492,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请选择询价单、带有物料与单位的询价明细及回价供应商，并填写非负单价与承诺交期。
+            请选择询价单、带有物料与单位的询价明细及回价供应商，并填写大于 0 的单价与承诺交期。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

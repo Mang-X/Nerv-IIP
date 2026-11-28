@@ -45,7 +45,8 @@ public sealed record UpdateQualityReasonRequest(
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition);
+    string? DefaultDisposition,
+    bool? Enabled = null);
 
 public sealed record ArchiveQualityReasonRequest(
     string OrganizationId,
@@ -151,7 +152,8 @@ public sealed class UpdateQualityReasonEndpoint(ISender sender)
             req.ReasonName,
             req.GroupName,
             req.Severity,
-            req.DefaultDisposition), ct);
+            req.DefaultDisposition,
+            req.Enabled), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

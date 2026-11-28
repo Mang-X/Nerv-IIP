@@ -1,3 +1,5 @@
+import { useAuthStore } from '@/stores/auth'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -77,6 +79,8 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({ principal: { permissionCodes: ['business.masterdata.products.manage'] } })
   stub.archiveCategory.mockClear()
   stub.toastSuccess.mockClear()
   stub.toastError.mockClear()

@@ -136,7 +136,9 @@ if (usesPostgreSql && autoMigrate)
     if (app.Environment.IsDevelopment() &&
         !string.IsNullOrWhiteSpace(builder.Configuration["Iam:Seed:DemoWorkerPassword"]))
     {
-        await scope.ServiceProvider.GetRequiredService<WalkthroughPdaAccountSeedService>().SeedAsync();
+        var walkthroughSeed = scope.ServiceProvider.GetRequiredService<WalkthroughPdaAccountSeedService>();
+        await walkthroughSeed.SeedAsync();
+        await walkthroughSeed.SeedPcAccountsAsync();
     }
 }
 

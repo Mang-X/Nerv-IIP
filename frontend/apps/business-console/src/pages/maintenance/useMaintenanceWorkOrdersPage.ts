@@ -1,3 +1,4 @@
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleAuthorizedWorkScope,
   BusinessConsoleMaintenanceSparePartInput,
@@ -99,11 +100,10 @@ export function useMaintenanceWorkOrdersPage() {
   const { resolvePartner } = useBusinessPartnerNames()
   // 当前登录用户（开单人默认当前用户，可改选他人，不自由输入）。
   const auth = useAuthStore()
+  const { can } = usePermission()
   const { principal } = storeToRefs(auth)
   const currentUserId = computed(() => principal.value?.principalId ?? '')
-  const canManageWorkOrders = computed(() =>
-    (principal.value?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
-  )
+  const canManageWorkOrders = computed(() => can(P.maintenanceWorkOrdersManage))
   const workerOptions = computed(() =>
     workers.value
       .map((w) => ({
@@ -335,49 +335,67 @@ export function useMaintenanceWorkOrdersPage() {
     {
       key: 'deviceAssetId',
       header: '设备',
+      width: 'w-32',
       cellClass: 'truncate',
       accessor: (r) =>
         r.deviceAssetId && deviceNameByCode.value.has(r.deviceAssetId)
           ? `${deviceLabel(r.deviceAssetId)} ${r.deviceAssetId}`
           : (r.deviceAssetId ?? '—'),
     },
-    { key: 'warrantyStatus', header: '保修', width: 'w-24' },
+    { key: 'warrantyStatus', header: '保修', width: 'w-20' },
     {
       key: 'warrantyExpiresOn',
       header: '保修到期',
-      width: 'w-28',
+      width: 'w-24',
       accessor: (r) => formatDate(r.warrantyExpiresOn),
     },
     {
       key: 'supplierPartnerCode',
       header: '供应商',
-      width: 'w-32',
+      width: 'w-24',
       accessor: (r) =>
         r.supplierPartnerCode
           ? (resolvePartner(r.supplierPartnerCode) ?? r.supplierPartnerCode)
           : '—',
     },
-    { key: 'priority', header: '优先级', width: 'w-20' },
-    { key: 'status', header: '状态', width: 'w-24' },
+    { key: 'priority', header: '优先级', width: 'w-16' },
+    { key: 'status', header: '状态', width: 'w-20' },
     {
       key: 'inventoryPostingFailureReason',
       header: '备件过账',
+      width: 'w-24',
       accessor: (row) =>
         row.inventoryPostingFailureReason ? `过账失败：${row.inventoryPostingFailureReason}` : '—',
     },
     {
       key: 'assignedTechnicianUserId',
       header: '技师',
+      width: 'w-20',
       accessor: (r) => technicianLabel(r.assignedTechnicianUserId),
     },
     {
       key: 'expectedRestoreAtUtc',
       header: '预计恢复',
+      width: 'w-32',
       accessor: (r) => formatDateTime(r.expectedRestoreAtUtc),
     },
-    { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatOpenedAt(r.openedAtUtc) },
+    {
+      key: 'openedAtUtc',
+      header: '开单时间',
+      width: 'w-32',
+      accessor: (r) => formatOpenedAt(r.openedAtUtc),
+    },
     ...(canManageWorkOrders.value
-      ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
+      ? [
+          {
+            key: 'actions',
+            header: '操作',
+            width: 'w-16',
+            headerClass: 'sticky end-0 z-20 border-l bg-card',
+            cellClass: 'sticky end-0 z-10 border-l bg-card',
+            align: 'end' as const,
+          },
+        ]
       : []),
   ])
 

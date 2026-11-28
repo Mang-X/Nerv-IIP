@@ -49,6 +49,7 @@ export interface QualityListFilters extends BusinessContextFields {
 
 export interface FirstArticleRecordFilters extends QualityListFilters {
   skuCode?: string
+  sourceType?: string
   result?: string
 }
 
@@ -203,13 +204,21 @@ export function useQualityInspectionPlans(initialFilters: Partial<QualityListFil
     enabled: hasBusinessContext(filters),
   }))
 
+  const queryCache = useQueryCache()
   const createRecordMutation = useMutation(
     createBusinessConsoleQualityInspectionRecordMutationOptions(),
   )
 
   return {
-    createInspectionRecord: (body: BusinessConsoleCreateInspectionRecordRequest) =>
-      createRecordMutation.mutateAsync({ body }),
+    createInspectionRecord: async (body: BusinessConsoleCreateInspectionRecordRequest) => {
+      const result = await createRecordMutation.mutateAsync({ body })
+      await queryCache
+        .invalidateQueries({
+          predicate: isBusinessQuery('listBusinessConsoleQualityInspectionRecords'),
+        })
+        .catch(() => undefined)
+      return result
+    },
     createInspectionRecordError: createRecordMutation.error,
     createInspectionRecordPending: createRecordMutation.isLoading,
     filters,
@@ -222,7 +231,7 @@ export function useQualityInspectionPlans(initialFilters: Partial<QualityListFil
 }
 
 /**
- * 首件检验页的数据边界：方案写入固定 first-article 分类，记录读面固定 first-article 来源。
+ * 首件检验页的数据边界：检验记录支持按来源、物料和结果筛选。
  * 创建与启用是两个独立事实；启用失败时把草稿 id 返回给页面，允许用户明确恢复。
  */
 export function useQualityFirstArticleInspections(
@@ -234,7 +243,7 @@ export function useQualityFirstArticleInspections(
       query: {
         organizationId: recordFilters.organizationId,
         environmentId: recordFilters.environmentId,
-        sourceType: 'first-article',
+        ...optionalQuery('sourceType', recordFilters.sourceType),
         // Gateway 公共查询沿用通用 status / keyword；下游再分别映射为 result / skuCode。
         ...optionalQuery('keyword', recordFilters.skuCode),
         ...optionalQuery('status', recordFilters.result),

@@ -9578,9 +9578,51 @@
       }
     },
     "/api/business-console/v1/quality/ncrs": {
-      "get": {
+      "post": {
         "tags": [
           "Business Console Quality",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleQualityNcr",
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateQualityNcrRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateQualityNcrResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
           "Api"
         ],
         "operationId": "listBusinessConsoleQualityNcrs",
@@ -10227,12 +10269,118 @@
             "JWTBearerAuth": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "Business Console Quality",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleQualityMeasuringDevice",
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateMeasuringDeviceRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMeasuringDeviceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/quality/measuring-devices/{measuringDeviceId}/calibrations": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "recordBusinessConsoleQualityMeasuringDeviceCalibration",
+        "parameters": [
+          {
+            "name": "measuringDeviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleRecordMeasuringDeviceCalibrationRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordMeasuringDeviceCalibrationRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
       }
     },
     "/api/business-console/v1/quality/calibration-records": {
       "get": {
         "tags": [
-          "Business Console Quality",
           "Api"
         ],
         "operationId": "listBusinessConsoleQualityCalibrationRecords",
@@ -47986,6 +48134,75 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateQualityNcrResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ncrId": {
+            "type": "string"
+          },
+          "ncrCode": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityNcrRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "defectQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "defectReason": {
+            "type": "string"
+          },
+          "batchNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse": {
         "allOf": [
           {
@@ -48798,6 +49015,98 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMeasuringDeviceResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "measuringDeviceId": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMeasuringDeviceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "deviceCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceType": {
+            "type": "string"
+          },
+          "accuracy": {
+            "type": "string"
+          },
+          "calibrationIntervalDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "calibratedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordMeasuringDeviceCalibrationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "calibrationNo": {
+            "type": "string"
+          },
+          "calibratedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "calibrationProvider": {
+            "type": "string"
+          },
+          "certificateFileId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityCalibrationRecordListResponse": {
         "allOf": [
           {
@@ -49289,6 +49598,10 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean",
             "nullable": true
           }
         }
@@ -65262,6 +65575,10 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementItem"
             }
+          },
+          "planCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

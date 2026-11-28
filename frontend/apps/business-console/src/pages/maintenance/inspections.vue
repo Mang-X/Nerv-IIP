@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleMaintenanceInspectionItem,
   BusinessConsoleMaintenanceInspectionMeasurementItem,
@@ -84,11 +85,10 @@ const { page, pageSize } = usePagedList(filters)
 // 人员目录 + 当前登录用户（点检人默认当前用户，可改选他人，不自由输入）。
 const { workers } = useBusinessWorkers()
 const auth = useAuthStore()
+const { can } = usePermission()
 const { principal } = storeToRefs(auth)
 const currentUserId = computed(() => principal.value?.principalId ?? '')
-const canRecordInspections = computed(() =>
-  (principal.value?.permissionCodes ?? []).includes(P.maintenancePlansManage),
-)
+const canRecordInspections = computed(() => can(P.maintenancePlansManage))
 const workerOptions = computed(() =>
   workers.value
     .map((w) => ({
@@ -177,9 +177,11 @@ const columns: NvDataTableColumn<InspectionRow>[] = [
     cellClass: 'font-medium',
     accessor: (r) => formatDateTime(r.inspectedAtUtc),
   },
-  // planId / workOrderId 都只有 GUID（读面缺 planCode / workOrderNo）——GUID 不上屏，
-  // 先如实留白，跳转由「操作」列承载；已登记为后端缺口。
-  { key: 'planId', header: '保养计划', accessor: (r) => (r.planId ? '—' : '未关联') },
+  {
+    key: 'planId',
+    header: '保养计划',
+    accessor: (r) => (r.planId ? (r.planCode ?? '已关联') : '未关联'),
+  },
   { key: 'workOrderId', header: '维修工单', accessor: (r) => (r.workOrderId ? '—' : '未关联') },
   { key: 'inspector', header: '点检人', accessor: (r) => r.inspector ?? '未记录' },
   { key: 'result', header: '结果', width: 'w-24' },

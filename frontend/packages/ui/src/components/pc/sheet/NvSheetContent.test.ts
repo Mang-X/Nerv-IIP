@@ -52,11 +52,23 @@ describe('NvSheetContent 版式契约', () => {
    * 而 21 个调用点没有一个自己写 `px-*`——也就是说所有抽屉都两侧贴死。
    */
   it('正文子元素带水平内边距，头尾排除在外（否则双重内边距且背景缩进）', async () => {
-    await mountSheet()
-    const classes = contentClasses()
-    expect(classes).toContain(
+    const wrapper = await mountSheet()
+    const scroll = document.querySelector('[data-slot="nv-sheet-scroll"]')!
+    expect(scroll.getAttribute('class')).toContain(
       '[&>*:not([data-slot=nv-sheet-header]):not([data-slot=nv-sheet-footer])]:px-4',
     )
+    wrapper.unmount()
+  })
+
+  it('关闭按钮在滚动区外并位于粘性标题之上', async () => {
+    const wrapper = await mountSheet()
+    const content = document.querySelector('[data-slot="nv-sheet-content"]')!
+    const close = content.querySelector('button[aria-label="关闭"]')
+    const scroll = content.querySelector('[data-slot="nv-sheet-scroll"]')!
+    expect(scroll.querySelector('[data-testid="body"]')).not.toBeNull()
+    expect(close?.parentElement).toBe(content)
+    expect(close?.classList.contains('z-30')).toBe(true)
+    wrapper.unmount()
   })
 
   /**
@@ -65,9 +77,12 @@ describe('NvSheetContent 版式契约', () => {
    * 当时只解决了前者，所以这里一并钉住，避免下次又只修一半。
    */
   it('直接子元素钉住 min-w-0，超宽内容各自横向滚动而不顶破面板', async () => {
-    await mountSheet()
+    const wrapper = await mountSheet()
     const classes = contentClasses()
-    expect(classes).toContain('[&>*]:min-w-0')
+    const scroll = document.querySelector('[data-slot="nv-sheet-scroll"]')!
+    expect(scroll.getAttribute('class')).toContain('[&>*]:min-w-0')
+    expect(scroll.classList.contains('[overflow:inherit]')).toBe(true)
     expect(classes).toContain('overflow-y-auto')
+    wrapper.unmount()
   })
 })

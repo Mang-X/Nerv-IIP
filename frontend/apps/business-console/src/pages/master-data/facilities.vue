@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvMetricStrip, NvPageHeader } from '@nerv-iip/ui'
@@ -6,6 +8,8 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import FacilityDirectory from './components/FacilityDirectory.vue'
 import FacilityEditDialog from './components/FacilityEditDialog.vue'
 import { useFacilitiesPage } from './useFacilitiesPage'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -95,7 +99,12 @@ const {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreateRoot">
+        <NvButton
+          v-if="can(P.masterDataResourcesManage)"
+          size="sm"
+          type="button"
+          @click="openCreateRoot"
+        >
           <PlusIcon aria-hidden="true" />
           新建工厂
         </NvButton>

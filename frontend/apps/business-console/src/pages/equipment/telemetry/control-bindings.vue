@@ -327,9 +327,15 @@ function formatDateTime(value?: string | null) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <div v-if="errorMessage" class="flex items-center gap-3">
+      <p class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+      <NvButton size="sm" variant="outline" :disabled="bindingsPending" @click="refreshBindings">
+        重试
+      </NvButton>
+    </div>
 
     <NvDataTable
+      v-else
       manual
       :page="page"
       :page-size="pageSize"

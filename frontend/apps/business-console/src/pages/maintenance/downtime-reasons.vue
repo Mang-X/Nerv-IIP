@@ -4,6 +4,7 @@
  * 这里补齐新增、编辑、删除入口。新增与编辑走侧滑抽屉，不离开本页。
  * 被维修工单引用过的原因不能删除（服务端拒绝），可改名称或分类。
  */
+import { usePermission } from '@/composables/usePermission'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DowntimeReasonFormSheet from '@/components/maintenance/DowntimeReasonFormSheet.vue'
 import {
@@ -17,7 +18,6 @@ import {
 } from '@/data/downtimeReasonReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvAlertDialog,
@@ -50,10 +50,8 @@ const directory = useMaintenanceDowntimeReasonDirectory(businessContext)
 const { keyword, reasons, state, message, total } = directory
 const { deleteReason, deleting } = useMaintenanceDowntimeReasonMutations()
 
-const auth = useAuthStore()
-const canManage = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
-)
+const { can } = usePermission()
+const canManage = computed(() => can(P.maintenanceWorkOrdersManage))
 
 const columns = computed<NvDataTableColumn<MaintenanceDowntimeReasonRow>[]>(() => [
   { key: 'reasonCode', header: '原因编码', width: 'w-40' },

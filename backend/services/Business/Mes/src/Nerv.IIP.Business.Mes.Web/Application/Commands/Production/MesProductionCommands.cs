@@ -719,7 +719,7 @@ internal static class ProductionReportOeeProjectionFactory
         ArgumentNullException.ThrowIfNull(operationTask);
         var durationHours = decimal.Divide(operationTask.DurationTicks, TimeSpan.TicksPerHour);
         decimal? theoreticalRatePerHour = operationTask.PlannedQuantity > 0m && durationHours > 0m
-            ? decimal.Divide(operationTask.PlannedQuantity, durationHours)
+            ? decimal.Round(operationTask.PlannedQuantity / durationHours, 6, MidpointRounding.AwayFromZero)
             : null;
         return new ProductionReportOeeProjection(
             operationTask.WorkCenterId,

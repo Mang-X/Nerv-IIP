@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { DOMAIN_SIDE_NAV, permittedBy, resolveDomainId } from './navigation'
+import {
+  BUSINESS_DOMAINS,
+  DOMAIN_SIDE_NAV,
+  jobHomePath,
+  permittedBy,
+  resolveDomainId,
+  sideNavForDomain,
+} from './navigation'
 import { BUSINESS_PERMISSION_CODES as P } from './permissions'
 
 describe('business console quality navigation', () => {
@@ -216,3 +223,27 @@ describe('business console dead-letter ops navigation', () => {
 function pathOf(to: unknown) {
   return typeof to === 'object' && to !== null && 'path' in to ? String(to.path) : ''
 }
+
+it('hides protected navigation while permissions are loading', () => {
+  expect(permittedBy(BUSINESS_DOMAINS, undefined)).toEqual([])
+  expect(sideNavForDomain('erp', undefined)).toEqual([])
+  expect(
+    sideNavForDomain('erp', [P.erpSalesRead]).flatMap(({ items }) => items.map(({ to }) => to)),
+  ).toEqual(
+    ['/erp/sales', '/erp/sales/quotations', '/erp/sales/orders', '/erp/sales/deliveries'].map(
+      (path) => ({ path }),
+    ),
+  )
+})
+
+it.each([
+  [P.erpProcurementRead, P.erpProcurementManage, '/erp'],
+  [P.erpSalesRead, P.erpSalesManage, '/erp/sales'],
+  [P.erpFinanceRead, P.erpFinanceManage, '/erp/finance'],
+  [P.planningDemandsRead, 'business.planning.demands.manage', '/planning'],
+  [P.mesDowntimeRead, P.mesDowntimeManage, '/mes/downtime'],
+  [P.maintenanceWorkOrdersRead, P.maintenanceWorkOrdersManage, '/maintenance/work-orders'],
+])('selects a job home for %s and %s', (read, manage, path) => {
+  const codes = new Set([read, manage, P.masterDataResourcesRead, P.erpProcurementRead])
+  expect(jobHomePath((required) => required.every((code) => codes.has(code)))).toBe(path)
+})

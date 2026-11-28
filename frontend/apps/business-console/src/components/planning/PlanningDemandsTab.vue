@@ -117,13 +117,17 @@ const demandCancelTarget = defineModel<View['demandCancelTarget']>('demandCancel
           type="button"
           size="sm"
           variant="ghost"
+          class="max-w-full"
+          :title="row.sourceReference"
           :aria-label="`查看销售订单 ${row.sourceReference}`"
           @click="openSalesOrderDemand(row)"
         >
-          {{ row.sourceReference }}
+          <span class="min-w-0 truncate">{{ row.sourceReference }}</span>
           <ExternalLinkIcon aria-hidden="true" />
         </NvButton>
-        <span v-else>{{ row.sourceReference }}</span>
+        <span v-else class="block truncate" :title="row.sourceReference">{{
+          row.sourceReference
+        }}</span>
       </template>
       <template #cell-demandType="{ row }">{{ demandTypeLabel(row.demandType) }}</template>
       <template #cell-sourceStatus="{ row }">
@@ -148,13 +152,15 @@ const demandCancelTarget = defineModel<View['demandCancelTarget']>('demandCancel
       </template>
       <template #cell-skuCode="{ row }">
         <div class="flex flex-col gap-0.5">
-          <span>{{ skuLabel(row.skuCode) }}</span>
+          <span class="truncate" :title="skuLabel(row.skuCode)">{{ skuLabel(row.skuCode) }}</span>
           <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
         </div>
       </template>
       <template #cell-siteCode="{ row }">
         <div class="flex flex-col gap-0.5">
-          <span>{{ siteLabel(row.siteCode) }}</span>
+          <span class="truncate" :title="siteLabel(row.siteCode)">{{
+            siteLabel(row.siteCode)
+          }}</span>
           <span v-if="row.siteCode" class="text-xs text-muted-foreground">{{ row.siteCode }}</span>
         </div>
       </template>

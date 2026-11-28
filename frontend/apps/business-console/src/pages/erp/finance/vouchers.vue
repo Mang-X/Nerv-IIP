@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpJournalVoucherItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpJournalVouchers } from '@/composables/erp/useBusinessErp'
@@ -39,6 +41,8 @@ import {
 } from '../shared'
 
 const { locale } = i18n.global
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -127,6 +131,36 @@ const voucherCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
+type VoucherLine = NonNullable<BusinessConsoleErpJournalVoucherItem['lines']>[number] & {
+  lineNo: number
+}
+const lineColumns: NvDataTableColumn<VoucherLine>[] = [
+  { key: 'accountCode', header: '科目' },
+  {
+    key: 'debitAmount',
+    header: '借方',
+    align: 'end',
+    accessor: (row) => formatAmount(row.debitAmount),
+  },
+  {
+    key: 'creditAmount',
+    header: '贷方',
+    align: 'end',
+    accessor: (row) => formatAmount(row.creditAmount),
+  },
+  { key: 'memo', header: '摘要' },
+]
+const selectedVoucher = shallowRef<BusinessConsoleErpJournalVoucherItem>()
+const linesOpen = shallowRef(false)
+const voucherLines = computed(() =>
+  (selectedVoucher.value?.lines ?? []).map((line, index) => ({ ...line, lineNo: index + 1 })),
+)
+
+function openLines(voucher: BusinessConsoleErpJournalVoucherItem) {
+  selectedVoucher.value = voucher
+  linesOpen.value = true
+}
+
 const open = shallowRef(false)
 const form = reactive({
   postingDate: '',
@@ -163,6 +197,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!can(P.erpFinanceManage)) return
   showErrors.value = true
   if (!canSubmit.value) return
   const amount = Number(form.amount)
@@ -212,7 +247,7 @@ async function submit() {
           @click="vouchers.refresh"
           ><RefreshCwIcon aria-hidden="true" />刷新</NvButton
         >
-        <NvButton size="sm" type="button" @click="openDialog"
+        <NvButton v-if="can(P.erpFinanceManage)" size="sm" type="button" @click="openDialog"
           ><PlusIcon aria-hidden="true" />过账凭证</NvButton
         >
       </template>
@@ -256,10 +291,40 @@ async function submit() {
       <template #cell-totalCreditAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalCreditAmount) }}</span></template
       >
+      <template #cell-voucherNo="{ row }">
+        <NvButton
+          variant="link"
+          class="h-auto p-0"
+          type="button"
+          :aria-label="`查看分录 ${row.voucherNo ?? ''}`"
+          @click="openLines(row)"
+        >
+          {{ row.voucherNo ?? '-' }}
+        </NvButton>
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-model:open="linesOpen">
+      <NvDialogContent class="sm:max-w-3xl">
+        <NvDialogHeader>
+          <NvDialogTitle>凭证分录 {{ selectedVoucher?.voucherNo }}</NvDialogTitle>
+          <NvDialogDescription
+            >过账日期 {{ formatDate(selectedVoucher?.postingDate) }}</NvDialogDescription
+          >
+        </NvDialogHeader>
+        <NvDataTable
+          :rows="voucherLines"
+          row-key="lineNo"
+          :columns="lineColumns"
+          :searchable="false"
+          :column-settings="false"
+          empty-message="凭证没有返回分录。"
+        />
+      </NvDialogContent>
+    </NvDialog>
+
+    <NvDialog v-if="can(P.erpFinanceManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>过账会计凭证</NvDialogTitle

@@ -166,6 +166,11 @@ public class User : Entity<UserId>, IAggregateRoot
         PermissionVersion++;
     }
 
+    public void IncrementPermissionVersion()
+    {
+        PermissionVersion++;
+    }
+
     public void UpdatePasswordHash(
         string passwordHash,
         DateTimeOffset changedAtUtc,

@@ -51,6 +51,7 @@ vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
 })
 
 const siteStockState = vi.hoisted(() => ({
+  noTrackedLines: false,
   scanMore: vi.fn(),
   refresh: vi.fn(),
   hasMore: undefined as { value: boolean } | undefined,
@@ -388,11 +389,13 @@ vi.mock('@/composables/inventory/useInventorySiteStock', async () => {
       siteStockFailedCount: computed(() => 0),
       siteStockHasMore: hasMore,
       siteStockRows: computed(() => rows.value),
-      siteStockScannedCount: computed(() => 24),
+      siteStockScannedCount: computed(() => (hasMore.value ? 24 : 48)),
       siteStockScanning: scanning,
       siteStockTotalSkuCount: computed(() => 48),
       siteStockLines: computed(() => trackedLines.value),
-      siteStockTrackedLines: computed(() => trackedLines.value),
+      siteStockTrackedLines: computed(() =>
+        siteStockState.noTrackedLines ? [] : trackedLines.value,
+      ),
     }),
   }
 })
@@ -555,6 +558,7 @@ const resetFixture = () => {
   inventoryState.countAdjustmentRows = []
   inventoryState.movementRows = []
   inventoryState.partnerResolved = true
+  siteStockState.noTrackedLines = false
   siteStockState.scanMore.mockReset()
   siteStockState.refresh.mockReset()
   if (siteStockState.hasMore) siteStockState.hasMore.value = true

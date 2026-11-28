@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -9,6 +11,8 @@ import DepartmentCreateDialog from './components/DepartmentCreateDialog.vue'
 import DepartmentEditDialog from './components/DepartmentEditDialog.vue'
 import TeamFormDialog from './components/TeamFormDialog.vue'
 import { useOrganizationPage } from './useOrganizationPage'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -104,7 +108,12 @@ const {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreateRootDept">
+        <NvButton
+          v-if="can(P.masterDataResourcesManage)"
+          size="sm"
+          type="button"
+          @click="openCreateRootDept"
+        >
           <PlusIcon aria-hidden="true" />
           新建部门
         </NvButton>
@@ -212,6 +221,7 @@ const {
       v-model:open="membersOpen"
       :team-code="membersTeam.code"
       :team-name="membersTeam.name"
+      :read-only="!can(P.masterDataResourcesManage)"
     />
     <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>

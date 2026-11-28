@@ -42,6 +42,7 @@ using InventoryDbContext = Nerv.IIP.Business.Inventory.Infrastructure.Applicatio
 using MasterDataDbContext = Nerv.IIP.Business.MasterData.Infrastructure.ApplicationDbContext;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 using ProductEngineeringDbContext = Nerv.IIP.Business.ProductEngineering.Infrastructure.ApplicationDbContext;
+using QualityDbContext = Nerv.IIP.Business.Quality.Infrastructure.ApplicationDbContext;
 using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
@@ -998,6 +999,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleCreateMaintenancePlanRequest)] = [Command<CreateMaintenancePlanCommand>()],
 
         // ---- Quality ----
+        [typeof(BusinessConsoleCreateMeasuringDeviceRequest)] =
+            [Column<CodeIdempotencyKey>(QualityModel, nameof(CodeIdempotencyKey.IdempotencyKey), "Quality")],
         [typeof(BusinessConsoleCreateQualityReasonRequest)] = [Command<CreateQualityReasonCommand>()],
         [typeof(BusinessConsoleAssignQualityInspectionTaskRequest)] = [Command<AssignInspectionTaskCommand>()],
         [typeof(BusinessConsoleClaimQualityInspectionTaskRequest)] = [Command<ClaimInspectionTaskCommand>()],
@@ -1307,6 +1310,9 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
 
     private static DbContext InventoryModel() => ModelOnly<InventoryDbContext>(
         options => new InventoryDbContext(options, NullMediator.Instance));
+
+    private static DbContext QualityModel() => ModelOnly<QualityDbContext>(
+        options => new QualityDbContext(options, NullMediator.Instance));
 
     private static DbContext WmsModel() => ModelOnly<WmsDbContext>(
         options => new WmsDbContext(options, NullMediator.Instance));
