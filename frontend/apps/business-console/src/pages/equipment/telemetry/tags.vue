@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryTagItem } from '@nerv-iip/api-client'
 import DeviceTelemetryPointsSheet from '@/components/equipment/DeviceTelemetryPointsSheet.vue'
-import { formatTelemetryDateTime } from '@/components/equipment/telemetryHistoryPresentation'
+import { formatCompactTelemetryDateTime } from '@/components/equipment/telemetryHistoryPresentation'
 import { useAuthStore } from '@/stores/auth'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import {
   formatSamplingPolicy,
-  formatTelemetryUnit,
+  formatCompactTelemetryUnit,
   formatTelemetryValueType,
 } from '@/data/businessLabels'
 import { useBusinessTelemetryTags } from '@/composables/equipment/useBusinessTelemetry'
@@ -99,8 +99,8 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
   {
     key: 'unitCode',
     header: '单位',
-    width: 'w-32',
-    accessor: (r) => formatTelemetryUnit(r.unitCode),
+    width: 'w-16',
+    accessor: (r) => formatCompactTelemetryUnit(r.unitCode, '无'),
   },
   // 采集周期是配置串（sample-2s / bucket=30s;raw=7d），翻成「每 2 秒采样」。
   {
@@ -111,15 +111,17 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
   {
     key: 'latestValue',
     header: '当前实时值',
+    width: 'w-32',
     accessor: (row) =>
       row.latestValue == null
         ? '—'
-        : `${row.latestValue.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${formatTelemetryUnit(row.unitCode, '')}`,
+        : `${row.latestValue.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${formatCompactTelemetryUnit(row.unitCode)}`,
   },
   {
     key: 'latestSampledAtUtc',
     header: '最后采样时间',
-    accessor: (row) => formatTelemetryDateTime(row.latestSampledAtUtc),
+    width: 'w-40',
+    accessor: (row) => formatCompactTelemetryDateTime(row.latestSampledAtUtc),
   },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]

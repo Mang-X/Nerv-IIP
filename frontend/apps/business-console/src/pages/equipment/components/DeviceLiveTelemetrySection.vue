@@ -16,6 +16,7 @@ import {
   telemetryReferenceLines,
 } from '@/components/equipment/telemetryThresholds'
 
+const windowMinutes = 15
 const props = defineProps<{ deviceAssetId: string }>()
 const points = useBusinessTelemetryTags(
   { deviceAssetId: props.deviceAssetId, take: 500 },
@@ -29,7 +30,7 @@ const rules = useBusinessTelemetryAlarmRules(
 const { filters, historyError, historyPending, visibleHistoryItems } = useBusinessTelemetryHistory(
   { deviceAssetId: props.deviceAssetId },
   3_000,
-  15,
+  windowMinutes,
 )
 watch(
   () => props.deviceAssetId,
@@ -50,7 +51,7 @@ watch(
   },
   { immediate: true },
 )
-const projection = computed(() => projectTelemetryHistory(visibleHistoryItems.value))
+const projection = computed(() => projectTelemetryHistory(visibleHistoryItems.value, windowMinutes))
 const referenceLines = computed(() =>
   telemetryReferenceLines(rules.alarmRules.value, filters.tagKey),
 )

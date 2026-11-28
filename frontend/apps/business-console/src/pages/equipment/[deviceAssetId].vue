@@ -81,6 +81,7 @@ const {
   historyFilters,
   inspectionResultLabel,
   intervalLabel,
+  liveTelemetryDeviceAssetId,
   maintenanceAvailabilityWindows,
   maintenanceErrorMessage,
   maintenanceEventSegments,
@@ -273,7 +274,8 @@ const {
       />
 
       <DeviceLiveTelemetrySection
-        :device-asset-id="currentState?.deviceAssetId || filters.deviceAssetId"
+        v-if="liveTelemetryDeviceAssetId"
+        :device-asset-id="liveTelemetryDeviceAssetId"
       />
 
       <DeviceStateAndAvailability

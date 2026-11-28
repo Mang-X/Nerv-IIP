@@ -53,6 +53,7 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
         readFaceState.catalogResolved
           ? '五轴加工中心'
           : undefined,
+      resolveDeviceAssetId: () => undefined,
       resolveDeviceCode: () => undefined,
       resolveLocation: () => undefined,
       resolveWorkCenter: (code?: string | null) =>

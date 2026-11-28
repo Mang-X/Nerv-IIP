@@ -82,6 +82,7 @@ const tooltipTemplate = (d: Row) => {
         :value="line.value"
         :label-text="line.label"
         :color="line.color ?? 'var(--destructive)'"
+        label-color="var(--foreground)"
         :line-style="[5, 3]"
         :y="() => line.value"
       />

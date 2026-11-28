@@ -44,7 +44,7 @@ const rows = computed(() => {
       health: healthById.get(config.connectorId),
     })),
     ...connectors.value
-      .filter((health) => !configuredIds.has(health.connectorId))
+      .filter((health) => !configuredIds.has(health.connectorId) && health.status !== 'stale')
       .map((health) => ({
         id: health.connectorId ?? '',
         config: undefined,

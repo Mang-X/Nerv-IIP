@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useBusinessTelemetryTags } from '@/composables/equipment/useBusinessTelemetry'
-import { formatTelemetryUnit } from '@/data/businessLabels'
+import { formatCompactTelemetryUnit } from '@/data/businessLabels'
 import DeviceQuickViewSheet from '@/components/equipment/DeviceQuickViewSheet.vue'
 import {
   describeAvailabilityWindowReference,
@@ -205,7 +205,7 @@ const columns: NvDataTableColumn<Device>[] = [
   },
   { key: 'currentState', header: '状态', width: 'w-24' },
   { key: 'isSourceFresh', header: '实时数据', width: 'w-24' },
-  { key: 'indicators', header: '关键实时指标' },
+  { key: 'indicators', header: '关键实时指标', width: 'w-72', cellClass: 'whitespace-normal' },
   { key: 'activeAlarmCount', header: '报警', align: 'end', width: 'w-16' },
   { key: 'activeBlockCount', header: '阻塞', align: 'end', width: 'w-16' },
   {
@@ -438,13 +438,13 @@ function formatDateTime(value?: string | null) {
               resolveDeviceCode(row.deviceAssetId) ?? row.deviceAssetId ?? '',
             )"
             :key="point.tagKey"
-            class="text-xs"
+            class="text-xs [overflow-wrap:anywhere]"
           >
             {{ point.displayName || point.tagKey }}
-            <strong
-              >{{ point.latestValue?.toLocaleString(undefined, { maximumFractionDigits: 3 }) }}
-              {{ formatTelemetryUnit(point.unitCode, '') }}</strong
-            >
+            <strong class="whitespace-nowrap tabular-nums">
+              {{ point.latestValue?.toLocaleString(undefined, { maximumFractionDigits: 2 }) }}
+              {{ formatCompactTelemetryUnit(point.unitCode) }}
+            </strong>
           </div>
           <span
             v-if="

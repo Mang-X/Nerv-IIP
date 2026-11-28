@@ -218,8 +218,9 @@ public sealed class IndustrialTelemetryEndpointContractTests
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
         var seed = new DevelopmentTelemetrySeedService(db, new DemoDeviceReferences(),
-            scope.ServiceProvider.GetRequiredService<ISender>(), new ConfigurationBuilder().Build());
+            sender, new ConfigurationBuilder().Build());
 
         await seed.SeedAsync(CancellationToken.None);
         var revisions = await db.TelemetryConnectorConfigs.OrderBy(x => x.ConnectorId).Select(x => x.Revision).ToArrayAsync();
@@ -231,8 +232,24 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(9, tags.Length);
         Assert.DoesNotContain(tags, tag => tag.DeviceAssetId is "device-DEV-CTG-01" or "device-DEV-TST-01");
         Assert.Equal(3, await db.AlarmRules.CountAsync());
-        Assert.Equal(30, await db.DeviceStateSnapshots.CountAsync());
-        Assert.Equal(12, await db.OeeProductionFacts.CountAsync());
+        Assert.Equal(80, await db.DeviceStateSnapshots.CountAsync());
+        Assert.Equal(32, await db.OeeProductionFacts.CountAsync());
+
+        var siteOffset = TimeSpan.FromHours(8);
+        var today = new DateTimeOffset(DateTimeOffset.UtcNow.ToOffset(siteOffset).Date, siteOffset);
+        Assert.Equal(4, await db.OeeProductionFacts.CountAsync(
+            fact => fact.BusinessDate == DateOnly.FromDateTime(today.Date)));
+        foreach (var (dimension, expectedGroups) in new[]
+        {
+            (OeeAggregateDimension.Line, 4),
+            (OeeAggregateDimension.Workshop, 3),
+        })
+        {
+            var response = await sender.Send(new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", dimension, today.AddDays(-6).ToUniversalTime(), today.AddDays(1).ToUniversalTime()));
+            Assert.Equal(expectedGroups, response.Buckets.Count);
+            Assert.All(response.Buckets, bucket => Assert.True(bucket.OeeRate > 0m));
+        }
     }
 
     private sealed class DemoDeviceReferences : ITelemetryDeviceReferences

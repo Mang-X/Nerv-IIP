@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { LineSeries, NvMetricStripCell } from '@nerv-iip/ui'
 import type { TelemetryHistoryProjection } from './telemetryHistoryPresentation'
-import { formatTelemetryDateTime } from './telemetryHistoryPresentation'
+import { formatCompactTelemetryDateTime } from './telemetryHistoryPresentation'
 import { NvLineChart, NvMetricStrip } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
@@ -61,7 +61,11 @@ const statisticCells = computed<NvMetricStripCell[]>(() => {
     { key: 'minimum', label: labels.minimum, value: metricValue(stats.minimum) },
     { key: 'maximum', label: labels.maximum, value: metricValue(stats.maximum) },
     { key: 'count', label: labels.count, value: stats.count },
-    { key: 'last', label: labels.last, value: formatTelemetryDateTime(stats.lastSampleAtUtc) },
+    {
+      key: 'last',
+      label: labels.last,
+      value: formatCompactTelemetryDateTime(stats.lastSampleAtUtc),
+    },
   ]
 })
 </script>
@@ -89,7 +93,10 @@ const statisticCells = computed<NvMetricStripCell[]>(() => {
       当前采集标签没有可绘制的数值样本。状态和报警请在事件上下文中查看，原始值保留在明细表中。
     </div>
     <template v-else>
-      <NvMetricStrip :cells="statisticCells" />
+      <NvMetricStrip
+        :cells="statisticCells"
+        class="[&>div:last-child>p:nth-child(2)]:whitespace-normal [&>div:last-child>p:nth-child(2)]:text-base"
+      />
 
       <p
         v-if="projection.nonNumericMeasurementCount"

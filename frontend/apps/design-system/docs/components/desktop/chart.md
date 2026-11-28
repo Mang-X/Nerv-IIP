@@ -81,7 +81,7 @@ const outputSeries = [
 
 ## 折线图 NvLineChart
 
-折线图可通过 `referenceLines` 传入水平参考线。每项提供 `value`、`label` 和可选的 `color`，可标注报警阈值。
+折线图可通过 `referenceLines` 传入水平参考线。每项提供 `value`、`label` 和可选的 `color`，可标注报警阈值。参考线标签跟随主题的前景色。
 
 多系列对比，例如计划与实际产量。
 

@@ -355,6 +355,11 @@ function normalizeUnitCode(code?: string | null): string {
     .replace(/[/\\·*\s_]+/g, '-')
 }
 
+export function formatCompactTelemetryUnit(code?: string | null, fallback = ''): string {
+  const unit = code?.trim()
+  return normalizeUnitCode(unit) === 'degc' ? '°C' : unit || fallback
+}
+
 /** 工程单位展示串：「摄氏度 (degC)」；名录里没有就只显技术单位。 */
 export function formatTelemetryUnit(code?: string | null, fallback = '无'): string {
   if (!code) return fallback

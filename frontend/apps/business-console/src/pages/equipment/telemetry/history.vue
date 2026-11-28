@@ -141,7 +141,12 @@ const errorMessage = computed(() =>
     : '',
 )
 const hasDeviceScope = computed(() => filters.deviceAssetId.trim().length > 0)
-const projection = computed(() => projectTelemetryHistory(visibleHistoryItems.value))
+const projection = computed(() =>
+  projectTelemetryHistory(
+    visibleHistoryItems.value,
+    (Date.parse(filters.windowEndUtc) - Date.parse(filters.windowStartUtc)) / 60_000,
+  ),
+)
 /**
  * 时间范围用与可靠性指标同一套 NvUI 日期区间控件（原生 datetime-local 在各浏览器
  * 长相不一，也无法给"近 7 天"这种整段选择）。控件说本地日历日，查询要 ISO 瞬时：

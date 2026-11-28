@@ -465,13 +465,19 @@ export function useDeviceDetailPage() {
   )
 
   // 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-  const { resolveDevice, resolveDeviceCode, resolveWorkCenter, resolveUom, resolveUser } =
-    useMasterDataDisplayNames({
-      devices: true,
-      workCenters: true,
-      uoms: true,
-      users: true,
-    })
+  const {
+    resolveDevice,
+    resolveDeviceAssetId,
+    resolveDeviceCode,
+    resolveWorkCenter,
+    resolveUom,
+    resolveUser,
+  } = useMasterDataDisplayNames({
+    devices: true,
+    workCenters: true,
+    uoms: true,
+    users: true,
+  })
   // 本页这台设备。路由里的设备引用可能是编码，也可能是设备公开 ID（从维保可用窗口进来时），
   // 名称和编码都从主数据按引用解析，不依赖设备有没有运行数据。
   const deviceName = computed(() => resolveDevice(filters.deviceAssetId))
@@ -672,6 +678,9 @@ export function useDeviceDetailPage() {
     currentDeviceSpareParts,
     currentDeviceWorkOrders,
     currentState,
+    liveTelemetryDeviceAssetId: computed(
+      () => resolveDeviceAssetId(filters.deviceAssetId) || currentState.value?.deviceAssetId,
+    ),
     deviceCode,
     deviceName,
     devicePending,

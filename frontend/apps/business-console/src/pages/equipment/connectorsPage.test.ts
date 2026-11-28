@@ -322,7 +322,9 @@ const stubs = {
 describe('equipment telemetry connectors page', () => {
   beforeEach(() => {
     configMocks.manage = false
-    configMocks.rows = []
+    configMocks.rows = connectorMocks.connectors
+      .filter((row) => row.status === 'stale')
+      .map((row) => ({ connectorId: row.connectorId, displayName: row.connectorName }))
     configMocks.saveConfig.mockReset()
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-13T01:10:00.000Z'))
@@ -485,6 +487,15 @@ describe('equipment telemetry connectors page', () => {
     })
   })
 
+  it('omits unconfigured stale health from cards and the connector count', () => {
+    configMocks.rows = []
+    const text = mount(ConnectorsPage, { global: { stubs } }).text()
+
+    expect(text).not.toContain('Modbus Main')
+    expect(text).toContain('OPC UA Main')
+    expect(text).toContain('5 个连接器')
+  })
+
   it('shows a not-configured connector as 待采集, not as online/collecting', () => {
     const text = mount(ConnectorsPage, { global: { stubs } }).text()
 
@@ -534,6 +545,7 @@ describe('equipment telemetry connectors page', () => {
   })
 
   it('renders load failure as a persistent error block with retry, never as an empty state', async () => {
+    configMocks.rows = []
     hideConnectors()
     setError(new Error('boom'))
     const wrapper = mount(ConnectorsPage, { global: { stubs } })
@@ -561,6 +573,7 @@ describe('equipment telemetry connectors page', () => {
   })
 
   it('separates not-yet-queried and loading from a genuine zero-connector site', async () => {
+    configMocks.rows = []
     hideConnectors()
     contextMock.organizationId = ''
     const idle = mount(ConnectorsPage, { global: { stubs } })

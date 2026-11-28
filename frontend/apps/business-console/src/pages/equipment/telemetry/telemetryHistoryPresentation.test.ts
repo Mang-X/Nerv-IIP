@@ -46,6 +46,16 @@ const items = [
 ] satisfies BusinessConsoleTelemetryHistoryItem[]
 
 describe('telemetry history presentation', () => {
+  it('shows distinct seconds for samples in the same minute in a short window', () => {
+    const samples = [
+      { ...items[0]!, occurredAtUtc: sampleOccurredAt },
+      { ...items[0]!, occurredAtUtc: '2026-07-02T07:30:12.000Z' },
+    ]
+    const result = projectTelemetryHistory(samples, 120)
+    const minute = sampleLocalTime.hour + ':' + sampleLocalTime.minute
+
+    expect(result.chartData.map((point) => point.time)).toEqual([minute + ':00', minute + ':12'])
+  })
   it('uses raw samples without mixing overlapping hourly rollups into the chart or statistics', () => {
     const result = projectTelemetryHistory(items)
 

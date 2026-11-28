@@ -53,7 +53,8 @@ public sealed class DevelopmentTelemetrySeedService(
         ];
         foreach (var (id, center, line, workshop, quantity) in devices)
         {
-            for (var daysAgo = 3; daysAgo >= 1; daysAgo--)
+            // The seven-day OEE window includes today and needs a state before its opening boundary.
+            for (var daysAgo = 7; daysAgo >= 0; daysAgo--)
             {
                 var date = localToday.AddDays(-daysAgo);
                 var start = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
