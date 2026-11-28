@@ -47,10 +47,25 @@ function isToolingQuery(entry: UseQueryEntry) {
   )
 }
 
-export function toolingStatusLabel(value: string | null | undefined) {
-  return (
-    { available: '可用', maintenance: '保养中', retired: '已退役' }[value ?? ''] ?? value ?? '未知'
-  )
+const toolingStatuses = ['available', 'maintenance', 'retired'] as const
+
+function normalizeToolingStatus(value: string | number | null | undefined) {
+  const status = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  switch (status) {
+    case '0':
+    case '1':
+    case '2':
+      return toolingStatuses[Number(status)]
+    default:
+      return toolingStatuses.find((candidate) => candidate === status)
+  }
+}
+
+export function toolingStatusLabel(value: string | number | null | undefined): string {
+  const status = normalizeToolingStatus(value)
+  return status ? { available: '可用', maintenance: '保养中', retired: '已退役' }[status] : '未知'
 }
 
 export function toolingTypeLabel(value: string | null | undefined) {
@@ -112,7 +127,12 @@ export function useBusinessTooling() {
 
   return {
     filters,
-    toolingAssets: computed<BusinessConsoleToolingAssetItem[]>(() => response.value?.items ?? []),
+    toolingAssets: computed<BusinessConsoleToolingAssetItem[]>(() =>
+      (response.value?.items ?? []).map((item) => ({
+        ...item,
+        status: normalizeToolingStatus(item.status),
+      })),
+    ),
     toolingTotal: computed(() => response.value?.total ?? 0),
     toolingPending: toolingQuery.isLoading,
     toolingError: toolingQuery.error,

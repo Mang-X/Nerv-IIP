@@ -505,6 +505,8 @@ const columns: NvDataTableColumn<PickingRow>[] = [
     key: 'actions',
     header: '操作',
     width: 'w-56',
+    headerClass: 'sticky right-0 z-20 border-l bg-background',
+    cellClass: 'sticky right-0 z-10 border-l bg-card',
     // 不可操作时这一列要说「为什么」，导出/排序取阻断原因而不是空串。
     accessor: (r) => (taskActions(r).length > 0 ? '可执行' : blockReasonText(r) || '不可操作'),
   },
@@ -688,6 +690,7 @@ function firstQuery(value: unknown) {
       <template #cell-inventoryContext="{ row }">
         <WmsInventoryContextPanel
           compact
+          class="min-w-0 whitespace-normal wrap-anywhere"
           :sku-code="row.skuCode"
           :uom-code="row.uomCode"
           :site-code="row.siteCode"

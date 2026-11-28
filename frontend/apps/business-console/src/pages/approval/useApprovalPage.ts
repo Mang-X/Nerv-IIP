@@ -185,13 +185,20 @@ export function useApprovalPage() {
     { key: 'documentId', header: '单据', cellClass: 'font-medium', accessor: documentLabel },
     { key: 'status', header: '状态', width: 'w-24' },
     { key: 'templateCode', header: '模板', accessor: (row) => row.templateCode ?? '—' },
-    { key: 'startedBy', header: '发起人', accessor: (row) => row.startedBy ?? '—' },
+    { key: 'startedBy', header: '发起人', accessor: (row) => initiatorLabel(row.startedBy) },
     {
       key: 'startedAtUtc',
       header: '发起时间',
       accessor: (row) => formatDateTime(row.startedAtUtc),
     },
-    { key: 'actions', header: '步骤', align: 'end', width: 'w-12' },
+    {
+      key: 'actions',
+      header: '步骤',
+      align: 'end',
+      width: 'w-24',
+      headerClass: 'sticky right-0 z-20 border-l bg-background',
+      cellClass: 'sticky right-0 z-10 border-l bg-card',
+    },
   ]
 
   const decisionColumns: NvDataTableColumn<BusinessConsoleApprovalDecisionListItem>[] = [
@@ -258,11 +265,15 @@ export function useApprovalPage() {
   )
   const pendingTasks = computed(() => approval.tasks.value.length)
   const activeTab = shallowRef('tasks')
-  const runningChains = computed(
-    () =>
-      approval.chains.value.filter((item) =>
-        ['running', 'pending', 'open'].includes((item.status ?? '').toLowerCase()),
-      ).length,
+  const runningChains = approval.runningChainsTotal
+  const runningChainsState = computed(() =>
+    approvalReadState(
+      '进行中审批',
+      approval.runningChainsPending.value,
+      approval.runningChainsError.value,
+      runningChains.value,
+      '',
+    ),
   )
 
   /**
@@ -349,7 +360,7 @@ export function useApprovalPage() {
       approval.chainsPending.value,
       approval.chainsError.value,
       approval.chainsTotal.value,
-      '没有正在审批中的单据。发起审批后会在这里跟踪流转。',
+      '当前范围内还没有审批单据。',
     ),
   )
   const decisionsState = computed(() =>
@@ -397,6 +408,13 @@ export function useApprovalPage() {
     team: '班组',
     position: '岗位',
   }
+  function initiatorLabel(value?: string | null) {
+    const userId = value?.trim()
+    if (!userId) return '—'
+    const worker = workers.value.find((item) => item.userId === userId)
+    return worker?.displayName?.trim() || (userId === 'user-admin' ? '系统管理员' : userId)
+  }
+
   function approverLabel(approverType?: string | null, approverRef?: string | null) {
     const type = (approverType ?? '').trim().toLowerCase()
     const label = type ? (APPROVER_TYPE_LABELS[type] ?? approverType) : '处理人'
@@ -706,6 +724,7 @@ export function useApprovalPage() {
     revokeDelegation,
     rowKey,
     runningChains,
+    runningChainsState,
     submitDelegation,
     submitTaskDecision,
     submitTemplate,

@@ -69,6 +69,7 @@ const {
   revokeDelegation,
   rowKey,
   runningChains,
+  runningChainsState,
   submitDelegation,
   submitTaskDecision,
   submitTemplate,
@@ -142,9 +143,9 @@ const {
             {
               key: 'running',
               label: '进行中审批',
-              value: chainsState.trustworthy ? runningChains : '—',
-              unit: chainsState.trustworthy ? '单' : '',
-              meta: chainsState.trustworthy ? undefined : chainsState.emptyMessage,
+              value: runningChainsState.trustworthy ? runningChains : '—',
+              unit: runningChainsState.trustworthy ? '单' : '',
+              meta: runningChainsState.trustworthy ? undefined : runningChainsState.emptyMessage,
             },
             {
               key: 'delegation',
@@ -171,7 +172,7 @@ const {
         <NvTabsList>
           <!-- 每个页签的数字各自独立：某一路取不到就显 `—` / 「取不到」，不显 0 -->
           <NvTabsTrigger value="tasks">我的任务 ({{ tasksState.tabCount }})</NvTabsTrigger>
-          <NvTabsTrigger value="chains">审批中的单据 ({{ chainsState.tabCount }})</NvTabsTrigger>
+          <NvTabsTrigger value="chains">全部审批单据 ({{ chainsState.tabCount }})</NvTabsTrigger>
           <NvTabsTrigger value="decisions">决策记录 ({{ decisionsState.tabCount }})</NvTabsTrigger>
           <NvTabsTrigger value="delegations"
             >委托设置 ({{ delegationsState.tabCount }})</NvTabsTrigger

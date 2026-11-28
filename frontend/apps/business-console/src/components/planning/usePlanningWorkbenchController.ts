@@ -489,11 +489,11 @@ export function usePlanningWorkbenchController() {
   ]
 
   const demandColumns: NvDataTableColumn<BusinessConsoleDemandSourceItem>[] = [
-    { key: 'sourceReference', header: '来源', cellClass: 'font-medium' },
+    { key: 'sourceReference', header: '来源', width: 'w-48', cellClass: 'font-medium' },
     { key: 'demandType', header: '类型', width: 'w-24' },
     { key: 'sourceStatus', header: '状态', width: 'w-24' },
-    { key: 'skuCode', header: 'SKU' },
-    { key: 'siteCode', header: '工厂' },
+    { key: 'skuCode', header: 'SKU', width: 'w-44' },
+    { key: 'siteCode', header: '工厂', width: 'w-36' },
     { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
     { key: 'dueDate', header: '需求日', width: 'w-32' },
     { key: 'urgency', header: '紧迫度', width: 'w-28' },
@@ -511,7 +511,7 @@ export function usePlanningWorkbenchController() {
   ]
   const runColumns: NvDataTableColumn<BusinessConsoleMrpRunItem>[] = [
     // runId 是 GUID，不显裸 GUID；以「计划范围」(horizon) 作人读锚点，追溯按钮内部用 runId。
-    { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
+    { key: 'horizon', header: '计划范围', width: 'w-52', cellClass: 'font-medium' },
     { key: 'status', header: '状态', width: 'w-24' },
     { key: 'inputSources', header: '输入来源', width: 'w-52' },
     { key: 'inputCoverage', header: '输入覆盖', width: 'w-40' },

@@ -214,6 +214,19 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
     enabled: hasBusinessContext(businessContext),
   }))
 
+  const runningChainQuery = useQuery(() => ({
+    ...listBusinessConsoleApprovalChainsQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+        status: 'pending',
+        skip: 0,
+        take: 1,
+      },
+    }),
+    enabled: hasBusinessContext(businessContext),
+  }))
+
   const taskQuery = useQuery(() => ({
     ...listBusinessConsoleApprovalTasksQueryOptions({
       query: {
@@ -329,6 +342,13 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
     chainsTotal: computed(() =>
       unwrapTotal(chainQuery.data.value as BusinessConsoleApprovalChainListEnvelope | undefined),
     ),
+    runningChainsTotal: computed(() =>
+      unwrapTotal(
+        runningChainQuery.data.value as BusinessConsoleApprovalChainListEnvelope | undefined,
+      ),
+    ),
+    runningChainsPending: runningChainQuery.isLoading,
+    runningChainsError: runningChainQuery.error,
     createDelegation: (payload: ApprovalDelegationPayload) =>
       createDelegationMutation.mutateAsync({
         body: {
@@ -381,6 +401,7 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
       await Promise.all([
         templateQuery.refetch(),
         chainQuery.refetch(),
+        runningChainQuery.refetch(),
         taskQuery.refetch(),
         decisionQuery.refetch(),
         delegationQuery.refetch(),

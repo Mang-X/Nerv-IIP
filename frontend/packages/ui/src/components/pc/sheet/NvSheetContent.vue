@@ -75,7 +75,7 @@ const sizeClass = computed(
           //
           // 头/尾自带 `p-4` 且是 sticky、要整幅 `bg-card` 背景，必须排除：否则双重内边距，
           // 且背景跟着缩进后会在两侧露出底色。
-          '[&>*:not([data-slot=nv-sheet-header]):not([data-slot=nv-sheet-footer])]:px-4',
+          '[&>*:not([data-slot=nv-sheet-header]):not([data-slot=nv-sheet-footer]):not([data-slot=nv-sheet-close])]:px-4',
           props.class,
         )
       "
@@ -86,7 +86,7 @@ const sizeClass = computed(
       <DialogClose
         v-if="showCloseButton"
         data-slot="nv-sheet-close"
-        class="absolute top-4 right-4 flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-70 transition-[color,opacity,background] hover:bg-muted hover:text-foreground hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        class="absolute top-4 right-4 z-30 flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-70 transition-[color,opacity,background] hover:bg-muted hover:text-foreground hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         aria-label="关闭"
       >
         <XIcon class="size-4" aria-hidden="true" />

@@ -78,6 +78,30 @@ public sealed class BusinessMesTraceabilityDisplayNameTests
         Assert.Empty(iam.Queries);
     }
 
+    [Theory]
+    [InlineData("work-orders/WO-1")]
+    [InlineData("batches/SN-1")]
+    [InlineData("material-lots/LOT-1")]
+    public async Task Authorized_graph_remains_available_when_Iam_rejects_directory_credentials(string route)
+    {
+        var iam = new IamHandler(rejectCredentials: true);
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesTraceabilityRead);
+        await using var lease = Lease(auth, new MesHandler(), iam);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(Url(route));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var nodes = document.RootElement.GetProperty("data").GetProperty("nodes").EnumerateArray().ToArray();
+        Assert.DoesNotContain(nodes, node => node.GetProperty("nodeType").GetString() == "InspectionResult");
+        var operators = nodes.Where(node => node.GetProperty("nodeType").GetString() == "Operator").ToArray();
+        Assert.Equal(4, operators.Length);
+        Assert.All(operators, node => Assert.Equal("姓名不可用", node.GetProperty("displayName").GetString()));
+        Assert.Single(iam.Queries);
+    }
+
     private static string Url(string route) => $"/api/business-console/v1/mes/traceability/{route}?organizationId=org-001&environmentId=env-dev";
 
     private static BusinessGatewayTestHostLease Lease(IBusinessGatewayAuthorizationClient auth, MesHandler mes, IamHandler iam) =>
@@ -114,7 +138,7 @@ public sealed class BusinessMesTraceabilityDisplayNameTests
         }
     }
 
-    private sealed class IamHandler : HttpMessageHandler
+    private sealed class IamHandler(bool rejectCredentials = false) : HttpMessageHandler
     {
         public List<string> Queries { get; } = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -122,6 +146,11 @@ public sealed class BusinessMesTraceabilityDisplayNameTests
             Assert.Equal("/internal/iam/v1/member-accounts", request.RequestUri!.AbsolutePath);
             Assert.Equal("internal-token", request.Headers.Authorization?.Parameter);
             Queries.Add(Uri.UnescapeDataString(request.RequestUri.Query));
+            if (rejectCredentials)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            }
+
             return Task.FromResult(Json(new
             {
                 pageIndex = 1, pageSize = 3, totalCount = 2,

@@ -156,6 +156,23 @@ describe('business approval composable', () => {
         take: 10,
       },
     })
+    expect(listBusinessConsoleApprovalChainsQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        organizationId: 'org-approval',
+        environmentId: 'plant-a',
+        status: undefined,
+        take: 10,
+      }),
+    })
+    expect(listBusinessConsoleApprovalChainsQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-approval',
+        environmentId: 'plant-a',
+        status: 'pending',
+        skip: 0,
+        take: 1,
+      },
+    })
     expect(listBusinessConsoleApprovalTasksQueryOptions).toHaveBeenCalledWith({
       query: {
         organizationId: 'org-approval',

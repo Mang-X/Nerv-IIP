@@ -280,8 +280,9 @@ describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
     expect(declared.classes()).toContain('w-48')
     expect(declared.attributes('style')).toBeUndefined()
     // 未声明宽度的列继续走均分，且不得挂上别人的宽度类。
-    expect(heads[1].classes()).toContain('nv-dt-fill')
+    expect(heads[1].attributes('style')).toBeUndefined()
     expect(heads[1].classes()).not.toContain('w-48')
+    expect(wrapper.get('tbody td:nth-child(2) [title="a"]').text()).toBe('a')
     wrapper.unmount()
   })
 
@@ -300,7 +301,6 @@ describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
     expect(head.attributes('style')).toContain('width: 160px')
     // 两种写法互斥：CSS 尺寸是 inline style，不再同时挂一个宽度类。
     expect(head.classes().some((c) => c.startsWith('w-'))).toBe(false)
-    expect(head.classes()).not.toContain('nv-dt-fill')
     wrapper.unmount()
   })
 
@@ -323,7 +323,6 @@ describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
     expect(head.classes()).toContain('w-[22rem]')
     expect(head.attributes('style')).toBeUndefined()
     // 声明了宽度就不该再进均分池（否则 `width: 100%` 会盖掉声明值）。
-    expect(head.classes()).not.toContain('nv-dt-fill')
     wrapper.unmount()
   })
 })

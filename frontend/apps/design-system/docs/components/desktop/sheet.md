@@ -24,6 +24,8 @@ const sheetOpen = ref(false)
 
 从屏幕边缘滑入的侧边面板，承载详情查看、高级筛选等不打断主流程的次级操作。`NvSheet` 默认从右侧滑入，由头部、标题、说明与底部操作区组合内容。
 
+抽屉的关闭按钮显示在粘性标题栏上方。
+
 ## 基础用法
 
 通过 `NvSheetTrigger` 触发，`v-model:open` 双向绑定开关状态。`NvSheetContent` 的 `side` 控制滑入方向，默认 `right`。

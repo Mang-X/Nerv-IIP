@@ -146,7 +146,12 @@ const columns: NvDataTableColumn<RateRow>[] = [
   { key: 'basis', header: '预算与正常产能' },
   { key: 'status', header: '状态', width: 'w-36' },
   { key: 'reason', header: '修订原因', accessor: (row) => row.reason },
-  { key: 'changedAtUtc', header: '修订时间', accessor: (row) => formatDateTime(row.changedAtUtc) },
+  {
+    key: 'changedAtUtc',
+    header: '修订时间',
+    width: 'w-44',
+    accessor: (row) => formatDateTime(row.changedAtUtc),
+  },
 ]
 
 const open = shallowRef(false)

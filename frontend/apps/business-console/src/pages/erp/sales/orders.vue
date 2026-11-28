@@ -112,6 +112,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   {
     key: 'salesOrderNo',
     header: '销售单号',
+    width: 'w-44',
     cellClass: 'font-medium',
     accessor: (r) => r.salesOrderNo ?? '-',
   },
@@ -456,7 +457,11 @@ async function submit() {
       @update:page-size="(v) => (pageSize = String(v))"
     >
       <template #cell-customerCode="{ row }">
-        <PartnerNameCell :code="row.customerCode" />
+        <PartnerNameCell
+          :code="row.customerCode"
+          class="whitespace-normal wrap-anywhere"
+          :title="resolvePartner(row.customerCode) ?? row.customerCode"
+        />
       </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
       <template #cell-dueUtc="{ row }">

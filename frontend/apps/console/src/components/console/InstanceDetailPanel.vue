@@ -28,6 +28,12 @@ function capabilityKey(capability: Capability, index: number) {
     ? `capability:${code}:${version}`
     : `capability:${code}:${version}:${index}`
 }
+
+function formatInstanceTime(value?: string | null) {
+  if (!value) return '未上报'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '时间不可用' : date.toLocaleString('zh-CN')
+}
 </script>
 
 <template>
@@ -84,13 +90,13 @@ function capabilityKey(capability: Capability, index: number) {
             <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               最近心跳
             </dt>
-            <dd class="text-sm">{{ instance.lastHeartbeatAtUtc ?? '未上报' }}</dd>
+            <dd class="text-sm">{{ formatInstanceTime(instance.lastHeartbeatAtUtc) }}</dd>
           </div>
           <div class="grid gap-0.5">
             <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               最近状态
             </dt>
-            <dd class="text-sm">{{ instance.lastStateObservedAtUtc ?? '未上报' }}</dd>
+            <dd class="text-sm">{{ formatInstanceTime(instance.lastStateObservedAtUtc) }}</dd>
           </div>
         </dl>
 

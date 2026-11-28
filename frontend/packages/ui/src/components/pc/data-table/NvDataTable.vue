@@ -232,7 +232,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 </script>
 
 <template>
-  <div :class="cn('nv-dt flex flex-col rounded-xl border bg-card shadow-sm', props.class)">
+  <div :class="cn('nv-dt flex min-w-0 flex-col rounded-xl border bg-card shadow-sm', props.class)">
     <!-- ░░ Toolbar (standalone NvDataTableToolbar, composed) ░░ -->
     <NvDataTableToolbar
       v-if="hasToolbar"
@@ -417,10 +417,9 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
               :key="col.key"
               :class="
                 cn(
-                  'nv-dt-th h-10 text-xs font-medium text-muted-foreground',
+                  'nv-dt-th h-10 overflow-hidden text-xs font-medium text-muted-foreground',
                   alignClass[col.align ?? 'start'],
                   widthClass(col.width),
-                  !col.width && 'nv-dt-fill',
                   col.headerClass,
                 )
               "
@@ -539,13 +538,25 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
               <TableCell
                 v-for="col in visibleColumns"
                 :key="col.key"
-                :class="cn(rowPad, cellText, alignClass[col.align ?? 'start'], col.cellClass)"
+                :class="
+                  cn(
+                    'overflow-hidden',
+                    rowPad,
+                    cellText,
+                    alignClass[col.align ?? 'start'],
+                    col.cellClass,
+                  )
+                "
               >
                 <!-- 兜底渲染统一走空值占位：空单元格此前渲染成完全空白的 <td>，
                      读者分不清「没有值」还是「界面坏了」。插槽拿到的 `value`
                      仍是原始值，调用点想自己处理空值不受影响。 -->
                 <slot :name="`cell-${col.key}`" :row="row" :value="valueOf(row, col)" :column="col">
                   <span
+                    class="block overflow-hidden text-ellipsis"
+                    :title="
+                      isEmptyValue(valueOf(row, col)) ? undefined : displayValue(valueOf(row, col))
+                    "
                     :class="isEmptyValue(valueOf(row, col)) ? 'text-muted-foreground' : undefined"
                     >{{ displayValue(valueOf(row, col)) }}</span
                   >
@@ -618,15 +629,6 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     min-width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-  }
-
-  /* Columns without an explicit `width` share the leftover space, so the table
-   fills its container instead of leaving dead space on the right. Under `fixed`
-   these resolve to the table's leftover width once the declared columns are
-   subtracted; give a column an explicit `width` to take it out of that share
-   (number / status columns that should stay compact). */
-  .nv-dt-fill {
-    width: 100%;
   }
 
   /* Header: a slightly recessed second surface, sticky when asked. */

@@ -57,10 +57,12 @@ function rowKey(instance: InstanceListItem) {
   >
     <template #cell-app="{ row }">
       <div class="flex flex-col gap-0.5">
-        <span class="font-semibold">{{
+        <span class="truncate font-semibold" :title="row.applicationName ?? row.applicationKey">{{
           row.applicationName ?? row.applicationKey ?? '未知应用'
         }}</span>
-        <span class="text-xs text-muted-foreground">{{ row.version ?? '无版本' }}</span>
+        <span class="truncate text-xs text-muted-foreground" :title="row.version">{{
+          row.version ?? '无版本'
+        }}</span>
       </div>
     </template>
     <template #cell-reportedStatus="{ row }">

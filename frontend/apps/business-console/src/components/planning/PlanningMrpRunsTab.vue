@@ -75,7 +75,11 @@ defineProps<{
           >
         </div>
       </template>
-      <template #cell-inputSources="{ row }">{{ inputSourcesLabel(row.inputSources) }}</template>
+      <template #cell-inputSources="{ row }">
+        <span class="block truncate" :title="inputSourcesLabel(row.inputSources)">
+          {{ inputSourcesLabel(row.inputSources) }}
+        </span>
+      </template>
       <template #cell-inputCoverage="{ row }">{{ inputCoverageLabel(row) }}</template>
       <template #cell-demandCount="{ row }"
         ><span class="tabular-nums">{{ row.demandCount ?? 0 }}</span></template

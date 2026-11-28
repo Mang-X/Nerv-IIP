@@ -49,7 +49,8 @@ vi.mock('@/composables/approval/useBusinessApproval', () => ({
     chains: computed(() => [
       {
         chainId: 'chain-1',
-        status: 'Running',
+        status: 'Approved',
+        startedBy: 'user-admin',
         documentType: '采购订单',
         documentId: 'PO-260701-001',
         templateCode: 'purchase-order',
@@ -58,6 +59,9 @@ vi.mock('@/composables/approval/useBusinessApproval', () => ({
     chainsPending: shallowRef(false),
     chainsTotal: computed(() => 1),
     chainsError: shallowRef(undefined),
+    runningChainsTotal: computed(() => 0),
+    runningChainsPending: shallowRef(false),
+    runningChainsError: shallowRef(undefined),
     chainFilters: reactive({
       status: undefined,
       startedBy: undefined,
@@ -167,11 +171,13 @@ vi.mock('@/composables/approval/useBusinessApproval', () => ({
 }))
 
 const tableStub = {
-  props: ['rows'],
+  props: ['rows', 'columns'],
   template: `
     <section data-testid="data-table">
       <div v-for="row in rows" :key="row.chainId || row.delegationId || row.templateId || row.decisionId" data-testid="row">
         <span>{{ row.documentId || row.templateCode || row.delegationId || row.decisionId }}</span>
+        <span v-if="row.startedBy">{{ columns.find(column => column.key === 'startedBy')?.accessor(row) }}</span>
+        <slot name="cell-status" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </section>
@@ -271,6 +277,18 @@ beforeEach(() => {
 })
 
 describe('approval center page permissions and actions', () => {
+  it('shows completed chains in the all-documents tab with a separate pending count', async () => {
+    const wrapper = mountApproval(['business.approvals.read'])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('全部审批单据 (1)')
+    expect(wrapper.text()).toContain('进行中审批')
+    expect(wrapper.text()).toContain('Approved')
+    expect(wrapper.text()).toContain('系统管理员')
+    expect(wrapper.text()).not.toContain('user-admin')
+    expect(wrapper.findAll('button').some((button) => button.text() === '步骤')).toBe(true)
+  })
+
   it('renders task processing and delegation maintenance actions for approval managers', async () => {
     const wrapper = mountApproval(['business.approvals.read', 'business.approvals.manage'])
     await flushPromises()
