@@ -15,7 +15,6 @@ import type {
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useInventoryLocationSave } from '@/composables/inventory/useBusinessInventory'
 import { useBusinessMasterDataResources } from '@/composables/master-data'
-import { FALLBACK_INVENTORY_SITE_CODE } from '@/composables/inventory/useInventoryScope'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
@@ -67,13 +66,11 @@ const form = reactive({
   parentLocationCode: props.location?.parentLocationCode ?? '',
   status: props.location?.status ?? 'active',
 })
-// 没选过工厂时默认第一个工厂；工厂目录回来之前先不给默认值（取不到工厂时才用兜底工厂），
-// 免得下拉先挂上一个只有编码的临时项。
 const siteCode = computed({
   get: () =>
     form.siteCode ||
-    catalogSiteOptions.value[0]?.value ||
-    (siteCatalog.resourcesPending.value ? '' : FALLBACK_INVENTORY_SITE_CODE),
+    catalogSiteOptions.value.find((option) => option.value === businessContext.siteCode)?.value ||
+    (catalogSiteOptions.value.length === 1 ? catalogSiteOptions.value[0]!.value : ''),
   set: (value: string) => {
     form.siteCode = value
   },

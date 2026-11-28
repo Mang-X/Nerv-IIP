@@ -15,7 +15,7 @@ import {
 } from '@/composables/shared/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/wms'
-import { useInventoryScopeDefaults } from '@/composables/inventory/useInventoryScope'
+import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import { useWmsPostingRetry } from '@/composables/wms/useWmsPostingRetry'
 import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
@@ -106,6 +106,7 @@ const {
 const {
   scopeKey,
   scopeOptions,
+  siteCode: workSiteCode,
   hasSelection: inboundScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
@@ -189,7 +190,7 @@ function openCreate() {
   createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.sourceDocumentType = ''
   createForm.sourceDocumentId = ''
-  createForm.siteCode = filters.siteCode ?? ''
+  createForm.siteCode = workSiteCode.value ?? ''
   createForm.lines = [emptyLine()]
   createError.value = ''
   createOpen.value = true
@@ -347,9 +348,24 @@ const headerCount = computed(() => {
   if (inboundOrdersPending.value) return '加载中'
   return `${inboundOrdersTotal.value} 张入库单`
 })
-// 工厂给默认值、单位跟随物料——收货行的库存上下文只差「选哪个物料」。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
-  useInventoryScopeDefaults(filters)
+  useInventoryScopeCatalog()
+watchEffect(() => {
+  filters.siteCode = workSiteCode.value
+  filters.uomCode = resolveUomCode(filters.skuCode ?? '')
+})
+const hasListFilters = computed(() =>
+  Boolean(
+    filters.keyword || filters.status || filters.skuCode || filters.locationCode || filters.lotNo,
+  ),
+)
+function clearListFilters() {
+  filters.keyword = undefined
+  filters.status = undefined
+  filters.skuCode = undefined
+  filters.locationCode = undefined
+  filters.lotNo = undefined
+}
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -508,17 +524,6 @@ function formatDateTime(value?: string | null) {
           clearable
           aria-label="物料"
         />
-        <NvEntityPicker
-          v-model="filters.siteCode"
-          class="w-36"
-          :options="siteOptions"
-          title="选择工厂"
-          placeholder="工厂"
-          empty-text="暂无工厂主数据，请先在基础数据维护工厂"
-          :loading="sitesPending"
-          clearable
-          aria-label="工厂"
-        />
         <WmsOperationalCandidateFilters
           v-model:location-code="filters.locationCode"
           v-model:lot-no="filters.lotNo"
@@ -562,9 +567,13 @@ function formatDateTime(value?: string | null) {
       :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看入库单。'"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
+      empty-message="当前作业范围暂无入库单。"
       @retry="refreshAll"
     >
+      <template v-if="hasListFilters" #empty>
+        <p>没有符合筛选条件的入库单。</p>
+        <NvButton size="sm" variant="outline" @click="clearListFilters">清空筛选</NvButton>
+      </template>
       <template #cell-status="{ row }">
         <NvStatusBadge
           :value="row.inventoryPostingStatus === 'pending' ? 'InventoryPostingPending' : row.status"

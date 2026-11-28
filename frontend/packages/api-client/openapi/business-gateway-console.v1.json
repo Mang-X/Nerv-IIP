@@ -68829,6 +68829,9 @@
             "type": "number",
             "format": "decimal"
           },
+          "siteCode": {
+            "type": "string"
+          },
           "requiredDate": {
             "type": "string",
             "format": "date"

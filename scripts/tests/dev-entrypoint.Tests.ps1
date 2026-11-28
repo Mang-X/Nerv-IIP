@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Runs root development entrypoint smoke tests
@@ -36,6 +36,38 @@ foreach ($relativePath in @(
     if ($playwrightText.Contains('process.env.PLAYWRIGHT_BASE_URL', [StringComparison]::Ordinal) -or -not $playwrightText.Contains('process.env.NERV_IIP_PLAYWRIGHT_BASE_URL', [StringComparison]::Ordinal)) {
         throw "$relativePath must use the dedicated NERV_IIP_PLAYWRIGHT_BASE_URL override."
     }
+}
+
+$launchPath = Join-Path $repoRoot 'scripts/dev/start-platform.ps1'
+$launchTokens = $null
+$launchParseErrors = $null
+$launchAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $launchPath, [ref] $launchTokens, [ref] $launchParseErrors)
+if ($launchParseErrors.Count -gt 0) {
+    throw "Local launcher has parse errors: $launchParseErrors"
+}
+$environmentAssignment = $launchAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'appHostEnvironment', [StringComparison]::Ordinal)
+}, $true)
+$readLaunchEnvironment = [scriptblock]::Create($environmentAssignment.Right.Extent.Text)
+$savedProvider = $env:Messaging__Provider
+try {
+    foreach ($case in @(
+        @{ Override = $null; Expected = 'Redis' },
+        @{ Override = 'RabbitMQ'; Expected = 'RabbitMQ' }
+    )) {
+        $env:Messaging__Provider = $case.Override
+        $localEnvironment = & $readLaunchEnvironment
+        if (-not [string]::Equals([string]$localEnvironment.Messaging__Provider, [string]$case.Expected, [StringComparison]::Ordinal)) {
+            throw "Expected local Aspire messaging provider '$($case.Expected)'."
+        }
+    }
+}
+finally {
+    $env:Messaging__Provider = $savedProvider
 }
 
 function Invoke-Nerv {

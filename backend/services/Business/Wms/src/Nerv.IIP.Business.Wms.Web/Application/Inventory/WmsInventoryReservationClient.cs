@@ -274,6 +274,11 @@ public sealed class HttpWmsInventoryReservationClient(
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         response.EnsureSuccessStatusCode();
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryCountTaskResult>>(cancellationToken);
+        if (envelope is { Success: false, Message: "未找到盘点任务对应的库存台账。" })
+        {
+            throw new KnownException("该物料在所选库位和批次没有库存台账，无法创建盘点。");
+        }
+
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
             throw new KnownException("库存盘点任务创建失败，请刷新后重试。");

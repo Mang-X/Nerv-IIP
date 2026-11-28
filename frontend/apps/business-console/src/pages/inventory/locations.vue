@@ -39,7 +39,8 @@ const siteCatalog = useBusinessMasterDataResources('site')
 function siteLabel(code?: string | null) {
   if (!code) return '—'
   const site = siteCatalog.resources.value.find((s) => s.code === code)
-  return site?.displayName?.trim() || code
+  const name = site?.displayName?.trim()
+  return name && name !== code ? `${name} · ${code}` : code
 }
 
 const search = computed({

@@ -95,6 +95,7 @@ const {
 const {
   scopeKey,
   scopeOptions,
+  siteCode: workSiteCode,
   hasSelection: outboundScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
@@ -200,7 +201,7 @@ function openCreate() {
   createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.sourceDocumentType = ''
   createForm.sourceDocumentId = ''
-  createForm.siteCode = ''
+  createForm.siteCode = workSiteCode.value ?? ''
   createForm.lines = [emptyLine()]
   createError.value = ''
   createOpen.value = true

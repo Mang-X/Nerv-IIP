@@ -365,7 +365,11 @@ async function submitPayable() {
       </template>
     </NvPageHeader>
 
-    <NvMetricStrip :cells="settlementCells" />
+    <div v-if="summaryError" role="alert" class="flex items-center gap-3">
+      <p class="text-sm text-destructive">{{ summaryUnavailableNote }}</p>
+      <NvButton size="sm" variant="outline" @click="refreshSummary">重试摘要</NvButton>
+    </div>
+    <NvMetricStrip v-else :cells="settlementCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -393,7 +397,7 @@ async function submitPayable() {
       :page-size="receivablesPaged.pageSize.value"
       :total-items="receivables.total.value"
       :columns="receivableColumns"
-      :rows="receivables.items.value"
+      :rows="receivableState.error ? [] : receivables.items.value"
       :row-key="
         (r: BusinessConsoleErpReceivableItem) => r.receivableNo ?? r.sourceDocumentNo ?? '应收'
       "
@@ -457,7 +461,7 @@ async function submitPayable() {
       :page-size="payablesPaged.pageSize.value"
       :total-items="payables.total.value"
       :columns="payableColumns"
-      :rows="payables.items.value"
+      :rows="payableState.error ? [] : payables.items.value"
       :row-key="(r: BusinessConsoleErpPayableItem) => r.payableNo ?? r.sourceDocumentNo ?? '应付'"
       :loading="payables.pending.value"
       :searchable="false"

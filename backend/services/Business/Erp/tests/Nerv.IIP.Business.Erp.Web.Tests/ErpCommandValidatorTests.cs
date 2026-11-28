@@ -20,6 +20,17 @@ public sealed class ErpCommandValidatorTests
     }
 
     [Fact]
+    public void Rfq_requires_a_site_per_line_and_explains_how_to_fix_it()
+    {
+        var validator = new CreateRequestForQuotationCommandValidator();
+        var line = new RfqCommandLine("10", "SKU-001", "EA", 1m, "", new DateOnly(2026, 11, 30));
+        var command = new CreateRequestForQuotationCommand("org-001", "env-dev", null, ["SUP-001"], [line]);
+
+        Assert.Equal("请选择询价工厂。", Assert.Single(validator.Validate(command).Errors).ErrorMessage);
+        Assert.True(validator.Validate(command with { Lines = [line with { SiteCode = "ST001" }] }).IsValid);
+    }
+
+    [Fact]
     public void Purchase_receipt_requires_quality_status_per_line()
     {
         // #1345：qualityStatus 缺失必 400，是收货必填的业务决策点；补上后完整命令须可通过。

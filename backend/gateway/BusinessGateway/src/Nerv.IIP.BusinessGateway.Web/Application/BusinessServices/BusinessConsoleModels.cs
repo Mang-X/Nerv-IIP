@@ -3702,6 +3702,7 @@ public sealed record BusinessConsoleErpRfqLine(
     string SkuCode,
     string UomCode,
     decimal Quantity,
+    string SiteCode,
     DateOnly RequiredDate);
 
 public sealed record BusinessConsoleCreateErpRequestForQuotationResponse(string RequestForQuotationId);

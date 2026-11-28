@@ -90,6 +90,7 @@ const {
   createCountExecution,
   createCountExecutionPending,
   completeCountExecution,
+  verifyCountExecution,
   completeCountExecutionPending,
   filters,
 } = useWmsCountExecutions({ workScopeRequired: true })
@@ -199,6 +200,7 @@ const completeError = shallowRef('')
 const completeIntentKey = shallowRef('')
 const completeIntentAttempted = shallowRef(false)
 const completeIntentLocked = shallowRef(false)
+const verifyingCompletion = shallowRef(false)
 usePendingWriteLeaveGuard(() => createIntentLocked.value || completeIntentLocked.value)
 const completeFrozenPayload = shallowRef<{ countedQuantity: number }>()
 watch(
@@ -406,8 +408,44 @@ function closeSettledCount() {
   completeFrozenPayload.value = undefined
 }
 
+async function verifyCompletion() {
+  const id = completeTarget.value?.countExecutionId
+  const payload = completeFrozenPayload.value
+  if (
+    !id ||
+    !payload ||
+    !completeIntentLocked.value ||
+    verifyingCompletion.value ||
+    completeCountExecutionPending.value
+  )
+    return
+  verifyingCompletion.value = true
+  try {
+    const { row, settled, postingFailed } = await verifyCountExecution(id, payload.countedQuantity)
+    completeTarget.value = row
+    if (settled) {
+      closeSettledCount()
+      const message = `盘点单 ${row.countNo ?? MISSING_COUNT_NO}：${statusLabel(row.status)}`
+      if (postingFailed) {
+        notifyError(row.inventoryPostingFailureMessage || '盘点库存过账失败，请刷新后处理。')
+      } else if (row.status === 'Completed') {
+        notifySuccess(message)
+      } else {
+        notifyWarning(message)
+      }
+    } else {
+      completeError.value = '盘点单仍待处理，已保留实盘数量，可再次核验或按原内容重试。'
+    }
+  } catch (error) {
+    notifyOperationFailure('核验盘点结果失败', error, '核验盘点结果失败，请重试。')
+  } finally {
+    verifyingCompletion.value = false
+  }
+}
+
 async function submitComplete() {
-  if (!canManageCounts.value) return
+  if (!canManageCounts.value || verifyingCompletion.value || completeCountExecutionPending.value)
+    return
   const target = completeTarget.value
   if (!target?.countExecutionId) return
   if (completeForm.countedQuantity === '') {
@@ -467,7 +505,7 @@ async function submitComplete() {
     completeIntentLocked.value =
       completeIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
     completeError.value = completeIntentLocked.value
-      ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
+      ? '提交结果未知，已保留本次实盘数量，可核验结果或按原内容重试。'
       : ''
     notifyOperationFailure('完成盘点失败', error, '完成盘点失败，请稍后重试。')
   }
@@ -811,7 +849,19 @@ function refreshAll() {
                 取消
               </NvButton>
             </NvDialogClose>
-            <NvButton type="submit" :disabled="completeCountExecutionPending">
+            <NvButton
+              v-if="completeIntentLocked"
+              type="button"
+              variant="outline"
+              :disabled="verifyingCompletion || completeCountExecutionPending"
+              @click="verifyCompletion"
+            >
+              {{ verifyingCompletion ? '正在核验…' : '核验提交结果' }}
+            </NvButton>
+            <NvButton
+              type="submit"
+              :disabled="completeCountExecutionPending || verifyingCompletion"
+            >
               <NvSpinner v-if="completeCountExecutionPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               {{ completeIntentLocked ? '按原内容重试' : '完成盘点' }}

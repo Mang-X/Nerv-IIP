@@ -396,6 +396,8 @@ public sealed class InventoryBatchExpiryFefoTests
         Assert.Equal("expired-stock", expired.MovementBlockReasonCode);
         Assert.False(expired.CountAllowed);
         Assert.Equal("count-frozen", expired.CountBlockReasonCode);
+        Assert.Equal(0m, expired.AvailableQuantity);
+        Assert.Equal(3m, result.AvailableQuantity);
 
         var fresh = Assert.Single(result.Items, x => x.LotNo == "LOT-FRESH");
         Assert.False(fresh.IsExpired);

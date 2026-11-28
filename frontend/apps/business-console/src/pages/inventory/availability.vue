@@ -90,7 +90,8 @@ const {
   visibleExpiryAlerts,
 } = useInventoryExpiryView(filters)
 // 工厂给默认值、单位跟随物料——用户只需要选物料这一件事。
-const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(filters)
+const { siteSelection, siteOptions, sitesPending, skuOptions, skusPending } =
+  useInventoryScopeDefaults(filters, () => firstQuery(route.query.siteCode) ?? '')
 // 读面只回编码（RM-BAR-01 / WH-WB-A-01 / pcs），名称在主数据里，前端按编码 join 出中文名。
 const { resolveSkuName } = useSkuNames()
 const { formatUom, resolveLocation } = useMasterDataDisplayNames({ locations: true, uoms: true })
@@ -113,11 +114,9 @@ watch(
   (query) => {
     const sku = firstQuery(query.skuCode) || firstQuery(query.skuId)
     const lot = firstQuery(query.lotNo) || firstQuery(query.materialLotId)
-    const site = firstQuery(query.siteCode)
     const location = firstQuery(query.locationCode)
     if (sku) filters.skuCode = sku
     if (lot) filters.lotNo = lot
-    if (site) filters.siteCode = site
     if (location) filters.locationCode = location
   },
   { immediate: true },
@@ -127,7 +126,7 @@ const showSiteOverview = computed(() => !nearExpiryOnly.value && !hasSkuSelectio
 // 首屏不该要求先填条件：按物料目录并发扫台账，直接摆出本厂库存表，选物料才是「下钻」。
 const {
   refreshSiteStock,
-  scanMoreSiteStock,
+  siteStockCatalogPending,
   siteStockError,
   siteStockFailedCount,
   siteStockHasMore,
@@ -135,7 +134,9 @@ const {
   siteStockScannedCount,
   siteStockScanning,
   siteStockTotalSkuCount,
-} = useInventorySiteStockOverview(() => (showSiteOverview.value ? filters.siteCode : ''))
+} = useInventorySiteStockOverview(() => (showSiteOverview.value ? filters.siteCode : ''), {
+  autoContinue: true,
+})
 
 watch(availabilityError, (error) => {
   if (error && !nearExpiryOnly.value) {
@@ -253,7 +254,7 @@ const tableEmptyMessage = computed(() =>
  */
 const siteStockColumns: NvDataTableColumn<SiteStockRow>[] = [
   { key: 'skuCode', header: '物料', cellClass: 'font-medium' },
-  { key: 'onHandQuantity', header: '现存量', align: 'end', width: 'w-28' },
+  { key: 'onHandQuantity', header: '账面量', align: 'end', width: 'w-28' },
   { key: 'availableQuantity', header: '可用量', align: 'end', width: 'w-28' },
   { key: 'reservedQuantity', header: '预留', align: 'end', width: 'w-24' },
   { key: 'locationCount', header: '分布库位', align: 'end', width: 'w-24' },
@@ -267,10 +268,10 @@ const siteStockColumns: NvDataTableColumn<SiteStockRow>[] = [
   },
   {
     key: 'frozenFlag',
-    header: '冻结',
+    header: '冻结/其他',
     width: 'w-16',
     headerTitle: '存在质量冻结 / 盘点冻结 / 过期而不可动用的台账行；与是否追效期无关。',
-    accessor: (r) => (r.hasBlocked ? '有冻结行' : '—'),
+    accessor: (r) => lineFrozen(r),
   },
 ]
 
@@ -287,7 +288,9 @@ function siteStockExpiryText(row: SiteStockRow) {
 }
 const siteStockEmptyMessage = computed(() => {
   if (siteStockTotalSkuCount.value === 0) return '暂无物料主数据，请先在基础数据维护物料。'
-  return '已扫描的物料在本厂都没有库存台账。可继续扫描其余物料，或换一个工厂。'
+  if (siteStockHasMore.value) return '正在读取其余物料，已读取部分暂无库存台账。'
+  if (siteStockFailedCount.value > 0) return '部分物料读取失败，暂无法确认本厂库存。'
+  return '物料目录已扫描完成，本厂暂无库存台账。'
 })
 /** 一条都没扫出来才算整表失败；已经扫出物料时，失败数走下方的覆盖范围文案。 */
 const siteStockTableError = computed(() =>
@@ -340,14 +343,14 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
     cellClass: 'whitespace-normal break-all',
     accessor: (r) => ownerLabel(r.ownerType, r.ownerId),
   },
-  { key: 'onHandQuantity', header: '现存量', align: 'end', width: 'w-24' },
+  { key: 'onHandQuantity', header: '账面量', align: 'end', width: 'w-24' },
   { key: 'availableQuantity', header: '可用量', align: 'end', width: 'w-24' },
   {
     key: 'frozen',
     header: '冻结/其他',
     align: 'end',
     width: 'w-24',
-    accessor: (r) => lineFrozen(r.onHandQuantity, r.availableQuantity),
+    accessor: lineFrozen,
   },
   { key: 'actions', header: '操作', align: 'end', width: 'w-56', cellClass: 'whitespace-normal' },
 ]
@@ -420,8 +423,15 @@ function operationBlockReason(line: DisplayLine) {
   ]
   return [...new Set(reasons.filter(Boolean))].join('；')
 }
-function lineFrozen(onHand?: number, available?: number) {
-  return Math.max((onHand ?? 0) - (available ?? 0), 0)
+function lineFrozen(row: {
+  onHandQuantity?: number
+  availableQuantity?: number
+  reservedQuantity?: number
+}) {
+  return Math.max(
+    (row.onHandQuantity ?? 0) - (row.availableQuantity ?? 0) - (row.reservedQuantity ?? 0),
+    0,
+  )
 }
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
@@ -562,7 +572,7 @@ async function refreshCurrentView() {
           >单位 {{ formatUom(filters.uomCode) }}</span
         >
         <NvEntityPicker
-          v-model="filters.siteCode"
+          v-model="siteSelection"
           class="w-40"
           :options="siteOptions"
           title="选择工厂"
@@ -635,7 +645,7 @@ async function refreshCurrentView() {
         :columns="siteStockColumns"
         :rows="siteStockRows"
         :row-key="(row: SiteStockRow) => row.skuCode"
-        :loading="siteStockScanning && siteStockRows.length === 0"
+        :loading="siteStockCatalogPending || (siteStockScanning && siteStockRows.length === 0)"
         :searchable="false"
         :column-settings="false"
         :page-size-options="[25, 50, 100]"
@@ -684,26 +694,27 @@ async function refreshCurrentView() {
           <span v-else class="text-muted-foreground">不追效期</span>
         </template>
         <template #cell-frozenFlag="{ row }">
-          <!-- 库存语境下 blocked 叫「冻结」（foundation-conventions 契约注释），不沿用 MES 的「阻塞」。 -->
-          <NvStatusBadge v-if="row.hasBlocked" value="blocked" label="冻结" />
-          <span v-else class="text-muted-foreground">—</span>
+          <div class="grid justify-items-end gap-1">
+            <span class="tabular-nums">{{ formatQuantity(lineFrozen(row)) }}</span>
+            <NvStatusBadge v-if="row.hasBlocked" value="blocked" label="有冻结行" />
+          </div>
         </template>
       </NvDataTable>
-      <!--
-        覆盖范围如实交代：后端没有全量库存读面，这张表按物料逐个查台账再汇总，
-        所以要给出已扫描进度和继续扫描的出路，不能让人以为看到的就是全部。
-      -->
-      <div class="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-        <span>{{ siteStockCoverageText }}</span>
+      <div
+        v-if="siteSelected"
+        class="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground"
+      >
+        <span role="status"
+          >{{ siteStockCoverageText }}{{ siteStockScanning ? '，正在扫描' : '' }}</span
+        >
         <NvButton
-          v-if="siteStockHasMore"
+          v-if="siteStockFailedCount > 0 && !siteStockScanning"
           size="sm"
           type="button"
           variant="outline"
-          :disabled="siteStockScanning"
-          @click="scanMoreSiteStock"
+          @click="refreshSiteStock"
         >
-          {{ siteStockScanning ? '扫描中…' : '继续扫描其余物料' }}
+          重新扫描
         </NvButton>
       </div>
     </template>
@@ -781,9 +792,7 @@ async function refreshCurrentView() {
         ><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template
       >
       <template #cell-frozen="{ row }"
-        ><span class="tabular-nums">{{
-          formatQuantity(lineFrozen(row.onHandQuantity, row.availableQuantity))
-        }}</span></template
+        ><span class="tabular-nums">{{ formatQuantity(lineFrozen(row)) }}</span></template
       >
       <template #cell-actions="{ row }">
         <div class="flex min-w-48 flex-col items-end gap-1">

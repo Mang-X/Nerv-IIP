@@ -37,7 +37,9 @@ import {
 } from '@nerv-iip/ui'
 import { FileSearchIcon, RefreshCwIcon, ShoppingCartIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { erpReadState, firstQueryParam, formatDate, formatQuantity, readCount } from './shared'
 
 definePage({
@@ -49,6 +51,8 @@ definePage({
 })
 
 const route = useRoute()
+const auth = useAuthStore()
+const canReadMrp = computed(() => auth.principal?.permissionCodes?.includes(P.planningMrpRead))
 const requisitions = useErpPurchaseRequisitions()
 const suppliers = useBusinessPartners()
 // 物料列显中文名、单位列显「件 (pcs)」：读面只回编码，名称在主数据里。
@@ -399,6 +403,15 @@ async function submitRfq() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template v-if="readState.kind === 'empty'" #empty>
+        <p>{{ readState.emptyMessage }}</p>
+        <NvButton v-if="canReadMrp" as-child size="sm" variant="outline">
+          <RouterLink :to="{ path: '/planning', query: { suggestionType: 'planned-purchase' } }">
+            查看采购类 MRP 建议
+          </RouterLink>
+        </NvButton>
+        <p v-else class="text-sm text-muted-foreground">采购类 MRP 建议由计划员查看和处理。</p>
+      </template>
       <template #cell-quantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template
       >

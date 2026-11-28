@@ -2,7 +2,6 @@ import type { EffectScope } from 'vue'
 import { effectScope, nextTick, reactive } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  FALLBACK_INVENTORY_SITE_CODE,
   useInventoryScopeCatalog,
   useInventoryScopeDefaults,
   useInventorySiteExpiryOverview,
@@ -67,6 +66,21 @@ vi.mock('./useBusinessInventory', async () => {
   }
 })
 
+const context = reactive({
+  subject: 'original',
+  organizationId: 'org',
+  environmentId: 'env',
+  siteCode: '',
+})
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    get principal() {
+      return { principalId: context.subject }
+    },
+  }),
+}))
+vi.mock('@/stores/businessContext', () => ({ useBusinessContextStore: () => context }))
+
 describe('useInventoryScope', () => {
   let scope: EffectScope
 
@@ -96,26 +110,30 @@ describe('useInventoryScope', () => {
     expect(catalog.siteOptions.value).toEqual([{ value: 'SITE-002', label: '苏州工厂' }])
   })
 
-  it('默认工厂取主数据第一条，主数据为空时才回落到兜底工厂', async () => {
+  it('只在目录有唯一工厂时自动选择，无工厂时保持空白', () => {
     const filters = reactive({ skuCode: '', uomCode: '', siteCode: '' })
     scope.run(() => useInventoryScopeDefaults(filters))
-
     expect(filters.siteCode).toBe('SITE-002')
-
-    const emptyScope = effectScope()
     state.sites!.value = []
-    const deepLinked = reactive({ skuCode: '', uomCode: '', siteCode: '' })
-    emptyScope.run(() => useInventoryScopeDefaults(deepLinked))
-    await nextTick()
-    expect(deepLinked.siteCode).toBe(FALLBACK_INVENTORY_SITE_CODE)
-    emptyScope.stop()
+    expect(filters.siteCode).toBe('')
   })
 
-  it('深链带进来的工厂不被默认值覆盖', () => {
-    const filters = reactive({ skuCode: '', uomCode: '', siteCode: 'SITE-009' })
-    scope.run(() => useInventoryScopeDefaults(filters))
-
-    expect(filters.siteCode).toBe('SITE-009')
+  it('多工厂时等待选择，仅继承合法深链，并按主体记住显式选择', () => {
+    state.sites!.value = [{ code: 'SITE-002' }, { code: 'ST001' }]
+    const route = reactive({ siteCode: 'UNAUTHORIZED' })
+    const filters = reactive({ siteCode: '' })
+    const other = reactive({ siteCode: '' })
+    const scopeWithLink = scope.run(() => useInventoryScopeDefaults(filters, () => route.siteCode))!
+    scope.run(() => useInventoryScopeDefaults(other))
+    expect(filters.siteCode).toBe('')
+    route.siteCode = 'ST001'
+    expect(filters.siteCode).toBe('ST001')
+    expect(other.siteCode).toBe('')
+    scopeWithLink.siteSelection.value = 'SITE-002'
+    expect(other.siteCode).toBe('SITE-002')
+    context.subject = 'other'
+    expect(other.siteCode).toBe('')
+    expect(filters.siteCode).toBe('ST001')
   })
 
   it('单位跟随所选物料的基本单位，原材料不会被当成计件物料', async () => {

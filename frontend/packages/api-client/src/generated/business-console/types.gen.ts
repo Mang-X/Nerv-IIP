@@ -8560,6 +8560,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     skuCode?: string;
     uomCode?: string;
     quantity?: number;
+    siteCode?: string;
     requiredDate?: string;
 };
 

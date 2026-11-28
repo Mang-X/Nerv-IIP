@@ -117,7 +117,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
                 group.Key.IsFrozenForCount,
                 OnHandQuantity = group.Sum(x => x.OnHandQuantity),
                 ReservedQuantity = group.Sum(x => x.ReservedQuantity),
-                AvailableQuantity = group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity),
+                AvailableQuantity = group.Key.IsFrozenForCount ? 0m : group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity),
                 InventoryValue = group.Sum(x => x.InventoryValue),
             })
             .Take(MaxResultLines + 1)
@@ -198,7 +198,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             request.OwnerId,
             onHand,
             reserved,
-            onHand - reserved,
+            items.Sum(x => x.AvailableQuantity),
             inventoryValue,
             items);
     }

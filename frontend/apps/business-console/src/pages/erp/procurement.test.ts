@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   purchaseOrders: [] as Array<Record<string, unknown>>,
   purchaseOrdersTotal: 42,
   canManagePurchaseOrders: false,
+  canReadMrp: false,
   revisePurchaseOrder: vi.fn(),
   purchaseRequisitions: [] as Array<Record<string, unknown>>,
   purchaseRequisitionsTotal: 9,
@@ -152,7 +153,10 @@ vi.mock('@/composables/shared/usePagedList', () => ({
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     principal: {
-      permissionCodes: state.canManagePurchaseOrders ? ['business.erp.procurement.manage'] : [],
+      permissionCodes: [
+        ...(state.canManagePurchaseOrders ? ['business.erp.procurement.manage'] : []),
+        ...(state.canReadMrp ? ['business.planning.mrp.read'] : []),
+      ],
     },
   }),
 }))
@@ -201,6 +205,8 @@ const tableStub = {
     props: ['rows', 'totalItems'],
     template: `
       <section class="data-table" :data-total="totalItems">
+        <slot v-if="rows.length === 0" name="empty" />
+
         <article v-for="row in rows" :key="(row.purchaseOrderNo || row.requisitionNo) + '-' + (row.lineNo || row.purchaseRequisitionId)">
           <span>{{ row.purchaseOrderNo || row.requisitionNo }}</span>
           <span>{{ row.lineNo }}</span>
@@ -232,6 +238,8 @@ beforeEach(() => {
   receiptFilters.skip = 0
   receiptFilters.take = 10
   state.canManagePurchaseOrders = false
+  state.canReadMrp = false
+
   state.revisePurchaseOrder.mockReset()
   state.purchaseOrdersTotal = 42
   state.purchaseRequisitionsTotal = 9
@@ -562,3 +570,22 @@ it.each([true, false])(
     wrapper.unmount()
   },
 )
+
+it('待审批采购订单有待收量时显示原因且无登记入口', async () => {
+  state.receipts = [{ ...state.receipts[0], status: 'PendingApproval' }]
+  const wrapper = mount(ReceiptsPage, { global: { stubs: globalStubs } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('待审批，审批通过后可登记')
+  expect(wrapper.findAll('button').some((button) => button.text() === '登记收货')).toBe(false)
+  expect(state.recordPurchaseReceipt).not.toHaveBeenCalled()
+})
+
+it.each([true, false])('采购申请真实空态按 MRP 权限提供下一步（读权 %s）', async (canReadMrp) => {
+  state.canReadMrp = canReadMrp
+  state.purchaseRequisitions = []
+  state.purchaseRequisitionsTotal = 0
+  const wrapper = mount(PurchaseRequisitionsPage, { global: { stubs: globalStubs } })
+  await flushPromises()
+  expect(wrapper.text()).toContain(canReadMrp ? '查看采购类 MRP 建议' : '由计划员查看和处理')
+  expect(wrapper.text().includes('查看采购类 MRP 建议')).toBe(canReadMrp)
+})

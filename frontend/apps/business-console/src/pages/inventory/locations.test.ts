@@ -109,7 +109,7 @@ describe('inventory locations page', () => {
     expect(row.text()).toContain('一号工厂')
     expect(row.text()).toContain('停用')
     expect(row.text()).not.toContain('line-side')
-    expect(row.text()).not.toContain('SITE-001')
+    expect(row.text()).toContain('一号工厂 · SITE-001')
   })
 
   it('offers 清空筛选 instead of the first-use hint when a search finds nothing', async () => {

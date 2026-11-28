@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import ErpPage from './index.vue'
 
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ principal: null }) }))
+
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
 vi.mock('@/composables/master-data/useSkuNames', async () => {
@@ -64,6 +66,7 @@ vi.mock('@/composables/shared/usePagedList', () => ({
 }))
 
 vi.mock('vue-router', () => ({
+  RouterLink: { template: '<a><slot /></a>' },
   useRoute: () => ({ query: { keyword: 'PR-001' } }),
 }))
 

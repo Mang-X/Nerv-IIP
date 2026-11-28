@@ -180,6 +180,7 @@ const quoteCells = computed<NvMetricStripCell[]>(() => [
 const open = shallowRef(false)
 const form = reactive({
   rfqNo: '',
+  rfqLineNo: '',
   supplierCode: '',
   quotationNo: '',
   unitPrice: '0',
@@ -196,13 +197,21 @@ const supplierOptions = computed(() =>
   (quoteRow.value?.supplierCodes ?? []).map((code) => (code ?? '').trim()).filter(Boolean),
 )
 const needsSupplierChoice = computed(() => supplierOptions.value.length > 1)
-const quotedLine = computed(() => quoteRow.value?.lines?.[0])
+const rfqLines = computed(() => (quoteRow.value?.lines ?? []).filter((line) => line.lineNo))
+const quotedLine = computed(() => rfqLines.value.find((line) => line.lineNo === form.rfqLineNo))
 
 // 换询价单就重新带出：单一供应商自动落定，承诺交期默认取询价需求日期。
-watch(quoteRow, (row) => {
-  const codes = (row?.supplierCodes ?? []).map((code) => (code ?? '').trim()).filter(Boolean)
-  form.supplierCode = codes.length === 1 ? codes[0]! : ''
-  form.promisedDate = row?.lines?.[0]?.requiredDate ?? ''
+watch(
+  () => quoteRow.value?.rfqNo,
+  () => {
+    const row = quoteRow.value
+    const codes = (row?.supplierCodes ?? []).map((code) => (code ?? '').trim()).filter(Boolean)
+    form.supplierCode = codes.length === 1 ? codes[0]! : ''
+    form.rfqLineNo = rfqLines.value.length === 1 ? (rfqLines.value[0]?.lineNo ?? '') : ''
+  },
+)
+watch([() => quotedLine.value?.lineNo, () => quotedLine.value?.requiredDate], ([, date]) => {
+  form.promisedDate = date ?? ''
 })
 
 const quoteContextItems = computed(() => {
@@ -212,6 +221,7 @@ const quoteContextItems = computed(() => {
   return [
     { label: '询价单', value: row.rfqNo },
     { label: '供应商', value: needsSupplierChoice.value ? undefined : supplierOptions.value[0] },
+    { label: '工厂', value: line?.siteCode },
     { label: '物料', value: line?.skuCode },
     {
       label: '询价数量',
@@ -228,8 +238,10 @@ const invalid = computed(() => ({
   rfqNo: !form.rfqNo.trim(),
   // 询价行必须带物料与单位，回价才能与询价同口径比价；缺任一项就不让提交，也不替它编一个单位。
   quotedLine:
-    !(quotedLine.value?.skuCode ?? '').trim() || !(quotedLine.value?.uomCode ?? '').trim(),
-  supplierCode: !form.supplierCode.trim(),
+    !(quotedLine.value?.skuCode ?? '').trim() ||
+    !(quotedLine.value?.uomCode ?? '').trim() ||
+    !(Number(quotedLine.value?.quantity) > 0),
+  supplierCode: !supplierOptions.value.includes(form.supplierCode),
   promisedDate: !form.promisedDate,
   unitPrice: !(Number(form.unitPrice) >= 0),
 }))
@@ -237,6 +249,7 @@ const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 function openDialog() {
   form.rfqNo = ''
+  form.rfqLineNo = ''
   form.supplierCode = ''
   form.quotationNo = ''
   form.unitPrice = '0'
@@ -249,7 +262,15 @@ async function submit() {
   const row = quoteRow.value
   const line = quotedLine.value
   showErrors.value = true
-  if (!canSubmit.value || !row?.rfqNo || !line?.skuCode || !line.uomCode) return
+  if (
+    !canSubmit.value ||
+    !row?.rfqNo ||
+    !line?.skuCode ||
+    !line.uomCode ||
+    !line.lineNo ||
+    line.quantity == null
+  )
+    return
   try {
     await quotes.receiveSupplierQuotation({
       rfqNo: row.rfqNo,
@@ -257,11 +278,11 @@ async function submit() {
       quotationNo: form.quotationNo.trim() || undefined,
       lines: [
         {
-          lineNo: '10',
+          lineNo: line.lineNo,
           skuCode: line.skuCode,
           // 单位照抄询价行（RFQ 行的单位来自物料主档），不另起兜底：报价与询价必须同单位可比。
           uomCode: line.uomCode,
-          quantity: line.quantity ?? 1,
+          quantity: line.quantity,
           unitPrice: Number(form.unitPrice),
           promisedDate: form.promisedDate,
         },
@@ -364,7 +385,20 @@ async function submit() {
                   :key="rfq.rfqNo ?? ''"
                   :value="rfq.rfqNo ?? ''"
                 >
-                  {{ rfq.rfqNo }} · {{ rfq.lines?.[0]?.skuCode ?? '-' }}
+                  {{ rfq.rfqNo }} · {{ rfq.lines?.length ?? 0 }} 行
+                </NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </NvField>
+          <NvField v-if="quoteRow">
+            <NvFieldLabel for="erp-sq-line">询价明细</NvFieldLabel>
+            <NvSelect v-model="form.rfqLineNo">
+              <NvSelectTrigger id="erp-sq-line" :aria-invalid="showErrors && invalid.quotedLine">
+                <NvSelectValue placeholder="选择询价明细" />
+              </NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem v-for="line in rfqLines" :key="line.lineNo!" :value="line.lineNo!">
+                  第 {{ line.lineNo }} 行 · {{ line.skuCode }} · {{ line.siteCode }}
                 </NvSelectItem>
               </NvSelectContent>
             </NvSelect>
@@ -421,7 +455,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请选择带有物料与单位的回价询价单与供应商，并填写非负单价与承诺交期。
+            请选择询价单、带有物料与单位的询价明细及回价供应商，并填写非负单价与承诺交期。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

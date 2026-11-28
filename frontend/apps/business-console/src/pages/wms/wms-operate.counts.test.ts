@@ -146,7 +146,7 @@ describe('WMS operate actions', () => {
   )
 
   it('keeps an indeterminate count intent frozen when the dialog requests close', async () => {
-    wms.completeCountExecution.mockImplementationOnce(
+    wms.completeCountExecution.mockImplementation(
       (
         _id: string,
         _countedQuantity: number,
@@ -194,6 +194,22 @@ describe('WMS operate actions', () => {
     expect(input.disabled).toBe(true)
     expect(routeGuardState.guard?.()).toBe(false)
 
+    const verify = [...form.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '核验提交结果',
+    )!
+    wms.verifyCountExecution.mockResolvedValueOnce({
+      row: { countExecutionId: 'count-1', countNo: 'CNT-1', status: 'Open' },
+      settled: false,
+      postingFailed: false,
+    })
+    verify.click()
+    await flushPromises()
+    expect(wms.verifyCountExecution).toHaveBeenCalledWith('count-1', 8)
+    expect(wms.completeCountExecution).toHaveBeenCalledTimes(1)
+    expect(input.value).toBe('8')
+    expect(input.disabled).toBe(true)
+    expect(form.textContent).toContain('仍待处理')
+
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
     expect(wms.completeCountExecution).toHaveBeenNthCalledWith(
@@ -203,6 +219,18 @@ describe('WMS operate actions', () => {
       'wms-intent-1',
       expect.objectContaining({ attempt: 'retry' }),
     )
+
+    wms.verifyCountExecution.mockResolvedValueOnce({
+      row: { countExecutionId: 'count-1', countNo: 'CNT-1', status: 'Completed' },
+      settled: true,
+      postingFailed: false,
+    })
+    verify.click()
+    await flushPromises()
+    expect(wms.completeCountExecution).toHaveBeenCalledTimes(2)
+    expect(completeDialog!.props('open')).toBe(false)
+    expect(routeGuardState.guard?.()).toBe(true)
+    wrapper.unmount()
   })
 
   it('creates a count for the selected lot and shows that lot in the list', async () => {

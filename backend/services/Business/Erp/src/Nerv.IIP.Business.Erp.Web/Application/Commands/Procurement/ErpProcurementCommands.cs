@@ -571,7 +571,7 @@ public sealed class CreateRequestForQuotationCommandValidator : AbstractValidato
             line.RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
             line.RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
             line.RuleFor(x => x.Quantity).GreaterThan(0);
-            line.RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.SiteCode).NotEmpty().WithMessage("请选择询价工厂。").MaximumLength(100);
             line.RuleFor(x => x.RequiredDate).NotEqual(default(DateOnly));
         });
     }

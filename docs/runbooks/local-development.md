@@ -12,6 +12,8 @@
    链接工作树（linked worktree）中启动必须使用 Aspire 隔离模式（isolated mode）；由 `scripts/dev/start-platform.ps1` 处理。
    直接使用 `dotnet run` 会遗留过期 DCP/backchannel 状态，使后续 `aspire add`、部署和
    诊断不可靠。
+   `.\nerv.ps1 dev` 默认使用 Redis CAP，让审批完成事件可以从独立的 Approval 进程投递到 ERP。
+   可通过 `Messaging__Provider` 显式指定传输。已有开发会话需重新启动才能切换传输。
 
 2. **Aspire `Finished` 不是 Dashboard 问题。** 项目资源显示为 `Finished` 通常表示进程在
    启动期间已退出。修改代码或盲目重启前，先检查 `%TEMP%\aspire-dcp*` 下最新的 DCP stderr

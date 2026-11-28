@@ -2448,7 +2448,8 @@ public sealed class CompleteCountExecutionCommandHandler
                 return new CompleteWmsMovementResult(pendingReceipt.Id, null);
             }
 
-            if (adjustment.Status != "posted" || string.IsNullOrWhiteSpace(adjustment.MovementId))
+            if (adjustment.Status != "posted" ||
+                (adjustment.VarianceQuantity != 0m && string.IsNullOrWhiteSpace(adjustment.MovementId)))
             {
                 throw new WmsUnprocessableException("库存盘点调整当前状态无法完成过账，请刷新后核实。");
             }

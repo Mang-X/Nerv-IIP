@@ -20,6 +20,39 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
 public sealed class StockCountApprovalTests
 {
+    [Theory]
+    [InlineData(100)]
+    [InlineData(0)]
+    public async Task Matching_count_confirms_and_replays_without_movement_or_freeze(decimal bookQuantity)
+    {
+        var options = CreateDbContextOptions($"inventory-matching-count-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+        await using var db = CreateDbContext(options);
+        var ledger = bookQuantity == 0m ? DomainLedgerFactory.NewLedger() : NewLedgerWithOnHand(bookQuantity);
+        var task = DomainCountTaskFactory.NewTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+        db.StockLedgers.Add(ledger);
+        db.StockCountTasks.Add(task);
+        await db.SaveChangesAsync();
+
+        var approval = new CapturingStockCountApprovalClient("unused");
+        var handler = new ConfirmStockCountAdjustmentCommandHandler(db, approval);
+        var command = new ConfirmStockCountAdjustmentCommand(task.Id, bookQuantity, "matching-count");
+        var result = await handler.Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        Assert.Equal(StockCountAdjustmentStatuses.Posted, result.Status);
+        Assert.Equal(0m, result.VarianceQuantity);
+        Assert.Equal(bookQuantity, result.OnHandQuantity);
+        Assert.Null(result.MovementId);
+        Assert.Null(approval.Request);
+        Assert.Empty(db.StockMovements);
+        Assert.False(db.StockLedgers.Single().IsFrozenForCount);
+        Assert.Equal(StockCountTaskStatuses.Confirmed, db.StockCountTasks.Single().Status);
+        Assert.NotNull(db.StockCountAdjustments.Single().ConfirmedAtUtc);
+        Assert.Equal(result, await handler.Handle(command, CancellationToken.None));
+    }
+
     [Fact]
     public async Task Above_threshold_adjustment_remains_frozen_and_unposted_until_approval_completes()
     {
