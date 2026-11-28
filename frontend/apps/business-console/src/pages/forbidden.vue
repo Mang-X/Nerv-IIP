@@ -28,7 +28,7 @@ const returnPath = computed(() => sanitizeRedirectPath(route.query.from))
       </div>
       <div class="flex flex-wrap gap-2">
         <Button as-child>
-          <RouterLink to="/">回到工作台</RouterLink>
+          <RouterLink to="/">返回岗位首页</RouterLink>
         </Button>
         <Button as-child variant="outline">
           <RouterLink :to="returnPath">重试原页面</RouterLink>

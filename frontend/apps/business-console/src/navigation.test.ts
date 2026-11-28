@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BUSINESS_DOMAINS,
   DOMAIN_SIDE_NAV,
-  jobHomePath,
+  resolveBusinessEntry,
   permittedBy,
   resolveDomainId,
   sideNavForDomain,
@@ -237,13 +237,91 @@ it('hides protected navigation while permissions are loading', () => {
 })
 
 it.each([
-  [P.erpProcurementRead, P.erpProcurementManage, '/erp'],
-  [P.erpSalesRead, P.erpSalesManage, '/erp/sales'],
-  [P.erpFinanceRead, P.erpFinanceManage, '/erp/finance'],
-  [P.planningDemandsRead, 'business.planning.demands.manage', '/planning'],
-  [P.mesDowntimeRead, P.mesDowntimeManage, '/mes/downtime'],
-  [P.maintenanceWorkOrdersRead, P.maintenanceWorkOrdersManage, '/maintenance/work-orders'],
-])('selects a job home for %s and %s', (read, manage, path) => {
-  const codes = new Set([read, manage, P.masterDataResourcesRead, P.erpProcurementRead])
-  expect(jobHomePath((required) => required.every((code) => codes.has(code)))).toBe(path)
+  ['role-platform-admin', '/', 'workbench', [P.notificationTasksRead], 1],
+  ['role-erp-procurement', '/erp', 'erp', [P.erpProcurementRead], 5],
+  ['role-erp-sales', '/erp/sales', 'erp', [P.erpSalesRead], 4],
+  [
+    'role-erp-finance',
+    '/erp/finance',
+    'erp',
+    [P.erpFinanceRead, P.erpProcurementRead, P.erpSalesRead, P.maintenanceWorkOrdersRead],
+    8,
+  ],
+  [
+    'role-production-planner',
+    '/planning',
+    'planning',
+    [P.planningDemandsRead, P.schedulingPlansRead, P.mesWorkOrdersRead, P.notificationTasksRead],
+    2,
+  ],
+  [
+    'role-pda-warehouse',
+    '/wms/inbound',
+    'wms',
+    [P.wmsReceiptsRead, P.wmsShipmentsRead, P.wmsCountsRead],
+    5,
+  ],
+  [
+    'role-pda-operator',
+    '/mes/operation-tasks',
+    'mes',
+    [
+      P.mesWorkOrdersRead,
+      P.mesDispatchRead,
+      P.mesOperationsRead,
+      P.mesReportingRead,
+      P.mesMaterialsRead,
+      P.mesReceiptsRead,
+      P.maintenanceWorkOrdersRead,
+      P.engineeringDocumentsRead,
+    ],
+    8,
+  ],
+  [
+    'role-mes-downtime-team-leader',
+    '/mes/downtime',
+    'mes',
+    [P.mesDowntimeRead, P.mesOperationsRead, P.mesWorkOrdersRead, P.maintenanceDowntimeReasonsRead],
+    1,
+  ],
+  [
+    'role-pda-inspector',
+    '/quality/inspection-tasks',
+    'quality',
+    [P.qualityInspectionRecordsRead, P.mesWorkOrdersRead],
+    2,
+  ],
+  [
+    'role-quality-manager',
+    '/quality/ncrs',
+    'quality',
+    [P.qualityInspectionRecordsRead, P.qualityNcrRead, P.qualityNcrManage],
+    7,
+  ],
+  [
+    'role-maintenance-technician',
+    '/maintenance/work-orders',
+    'equipment',
+    [P.maintenanceWorkOrdersRead, P.maintenancePlansRead, P.maintenanceDowntimeReasonsRead],
+    7,
+  ],
+  [
+    'role-masterdata-admin',
+    '/master-data/skus',
+    'master-data',
+    [P.masterDataProductsRead, P.masterDataResourcesRead],
+    14,
+  ],
+] as const)('selects the work area for %s', (role, path, domain, grants, count) => {
+  const roles = [role]
+  const codes = [...grants, P.masterDataResourcesRead]
+  expect(resolveBusinessEntry(roles, codes)).toBe(path)
+  expect(resolveBusinessEntry(roles, codes, domain)).toBe(path)
+  expect(sideNavForDomain(domain, codes, roles).flatMap((group) => group.items)).toHaveLength(count)
+  if (role !== 'role-platform-admin' && domain !== 'master-data') {
+    expect(sideNavForDomain('master-data', codes, roles)).toEqual([])
+  }
+  if (role === 'role-erp-finance') {
+    expect(sideNavForDomain('equipment', codes, roles)).toEqual([])
+  }
 })

@@ -33,6 +33,10 @@ const actionsStub = () => ({
   actionError: computed(() => undefined),
 })
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.masterdata.products.manage'] } }),
+}))
+
 vi.mock('@/composables/master-data', () => ({
   useBusinessUoms: () => ({
     createUom: vi.fn(),

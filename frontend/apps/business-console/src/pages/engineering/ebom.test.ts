@@ -4,6 +4,10 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import EbomPage from './ebom.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.engineering.boms.manage'] } }),
+}))
+
 const stub = vi.hoisted(() => ({
   releaseEbom: vi.fn().mockResolvedValue({ data: {} }),
   fetchEbomDetail: vi.fn(),

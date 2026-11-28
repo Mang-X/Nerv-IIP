@@ -189,6 +189,16 @@ beforeEach(() => {
   state.costCandidates = []
 })
 
+it('leaves receivables, payables, and cost candidates readable without registration actions', () => {
+  useAuthStore().$patch({ principal: { permissionCodes: ['business.erp.finance.read'] } })
+  const global = { stubs: { ...layoutStub, ...selectStubs } }
+  const arAp = mount(ArApPage, { global })
+  const candidates = mount(CostCandidatesPage, { global })
+  expect(arAp.text()).not.toContain('登记应收')
+  expect(arAp.text()).not.toContain('登记应付')
+  expect(candidates.text()).not.toContain('登记成本')
+})
+
 describe('ERP finance AR/AP page', () => {
   it('keeps AR/AP status filters aligned with backend open/settled values', async () => {
     const wrapper = mount(ArApPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })

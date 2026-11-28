@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import LoginForm from '@/components/auth/LoginForm.vue'
-import { jobHomePath } from '@/navigation'
-import { usePermission } from '@/composables/usePermission'
 import { sanitizeRedirectPath } from '@/router/redirects'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
-import { computed, shallowRef } from 'vue'
+import { shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -22,12 +20,6 @@ const { authError } = storeToRefs(auth)
 const route = useRoute('/login')
 const router = useRouter()
 const pending = shallowRef(false)
-const { canAll } = usePermission()
-const redirectPath = computed(() => {
-  const target = sanitizeRedirectPath(route.query.redirect)
-  return target === '/' ? jobHomePath(canAll) : target
-})
-
 async function submit(credentials: { loginName: string; password: string }) {
   pending.value = true
   try {
@@ -38,7 +30,7 @@ async function submit(credentials: { loginName: string; password: string }) {
     pending.value = false
   }
 
-  await router.push(redirectPath.value)
+  await router.push(sanitizeRedirectPath(route.query.redirect))
 }
 </script>
 

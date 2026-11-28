@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import { useRoute, useRouter } from 'vue-router'
 import { queryText } from '@/components/erp/costRecovery'
 import type {
@@ -51,6 +52,9 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, pickerInvalidClass } from '../shared'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.erp.finance.manage'))
 
 definePage({
   meta: { requiresAuth: true, title: 'AR/AP', requiredPermissions: ['business.erp.finance.read'] },
@@ -273,6 +277,7 @@ const canSubmitReceivable = computed(() => !Object.values(receivableInvalid.valu
 const canSubmitPayable = computed(() => !Object.values(payableInvalid.value).some(Boolean))
 
 function openReceivableDialog() {
+  if (!canManage.value) return
   receivableForm.sourceDocumentNo = ''
   receivableForm.customerCode = ''
   receivableForm.amount = '0'
@@ -280,6 +285,7 @@ function openReceivableDialog() {
   receivableOpen.value = true
 }
 function openPayableDialog() {
+  if (!canManage.value) return
   payableForm.sourceDocumentNo = ''
   payableForm.supplierCode = ''
   payableForm.amount = '0'
@@ -288,6 +294,7 @@ function openPayableDialog() {
 }
 
 async function submitReceivable() {
+  if (!canManage.value) return
   receivableShowErrors.value = true
   if (!canSubmitReceivable.value) return
   try {
@@ -311,6 +318,7 @@ async function submitReceivable() {
 }
 
 async function submitPayable() {
+  if (!canManage.value) return
   payableShowErrors.value = true
   if (!canSubmitPayable.value) return
   try {
@@ -356,10 +364,10 @@ async function submitPayable() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openReceivableDialog"
+        <NvButton v-if="canManage" size="sm" type="button" @click="openReceivableDialog"
           ><PlusIcon aria-hidden="true" />登记应收</NvButton
         >
-        <NvButton size="sm" type="button" @click="openPayableDialog"
+        <NvButton v-if="canManage" size="sm" type="button" @click="openPayableDialog"
           ><PlusIcon aria-hidden="true" />登记应付</NvButton
         >
       </template>
@@ -491,7 +499,7 @@ async function submitPayable() {
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 
-    <NvDialog v-model:open="receivableOpen">
+    <NvDialog v-if="canManage" v-model:open="receivableOpen">
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>登记应收</NvDialogTitle
@@ -570,7 +578,7 @@ async function submitPayable() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="payableOpen">
+    <NvDialog v-if="canManage" v-model:open="payableOpen">
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>登记应付</NvDialogTitle

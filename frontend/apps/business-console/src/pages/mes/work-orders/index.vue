@@ -7,6 +7,9 @@ import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
 import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { computed } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -47,6 +50,7 @@ definePage({
 
 const {
   canCreateRush,
+  canManageWorkOrders,
   canReportOrder,
   canSubmitRelease,
   clearReleaseIntent,
@@ -124,6 +128,8 @@ const {
   workOrdersPending,
   workOrdersTotal,
 } = useWorkOrdersPage()
+const { can } = usePermission()
+const canOpenPlans = computed(() => can(P.mesPlansRead))
 </script>
 
 <template>
@@ -134,11 +140,23 @@ const {
       :count="`${workOrdersTotal} 个工单`"
     >
       <template #actions>
-        <NvButton size="sm" type="button" variant="outline" @click="router.push('/mes/plans')">
+        <NvButton
+          v-if="canOpenPlans"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="router.push('/mes/plans')"
+        >
           <CalendarCheckIcon aria-hidden="true" />
           生产计划
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" @click="rushSheetOpen = true">
+        <NvButton
+          v-if="canManageWorkOrders"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="rushSheetOpen = true"
+        >
           <FactoryIcon aria-hidden="true" />
           创建急单
         </NvButton>
@@ -408,6 +426,7 @@ const {
     />
 
     <RushWorkOrderDialog
+      v-if="canManageWorkOrders"
       v-model:rush-sheet-open="rushSheetOpen"
       :can-create-rush="canCreateRush"
       :create-rush-work-order-pending="createRushWorkOrderPending"

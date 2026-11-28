@@ -12,7 +12,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   BUSINESS_DOMAINS,
   mesViewsForPath,
-  permittedBy,
+  resolveBusinessEntry,
   resolveDomainId,
   sideNavForDomain,
 } from '@/navigation'
@@ -29,15 +29,17 @@ const permissionCodes = computed(() =>
 
 const currentDomainId = computed(() => resolveDomainId(route.path))
 
-// Use the first visible page in side navigation order as the domain landing page.
+const roleIds = computed(() => principal.value?.roleIds)
 const topDomains = computed(() =>
-  permittedBy(BUSINESS_DOMAINS, permissionCodes.value).flatMap((domain) => {
-    const firstPage = sideNavForDomain(domain.id, permissionCodes.value)[0]?.items[0]
-    return firstPage ? [{ ...domain, to: firstPage.to }] : []
+  BUSINESS_DOMAINS.flatMap((domain) => {
+    const path = resolveBusinessEntry(roleIds.value, permissionCodes.value, domain.id)
+    return path ? [{ ...domain, to: { path } }] : []
   }),
 )
 
-const sideNav = computed(() => sideNavForDomain(currentDomainId.value, permissionCodes.value))
+const sideNav = computed(() =>
+  sideNavForDomain(currentDomainId.value, permissionCodes.value, roleIds.value),
+)
 const currentPagePath = computed(() => route.matched?.at(-1)?.path ?? route.path)
 const mesViews = computed(() => mesViewsForPath(currentPagePath.value, permissionCodes.value))
 

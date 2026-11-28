@@ -6,7 +6,12 @@ import RoutingsPage from './routings.vue'
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    principal: { permissionCodes: ['business.engineering.standard-operations.read'] },
+    principal: {
+      permissionCodes: [
+        'business.engineering.standard-operations.read',
+        'business.engineering.routings.manage',
+      ],
+    },
   }),
 }))
 

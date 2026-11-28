@@ -4,6 +4,10 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import SkusPage from './skus.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.masterdata.products.manage'] } }),
+}))
+
 const stub = vi.hoisted(() => ({
   createSku: vi.fn().mockResolvedValue({ data: { code: 'SKU-NEW' } }),
   update: vi.fn().mockResolvedValue(undefined),

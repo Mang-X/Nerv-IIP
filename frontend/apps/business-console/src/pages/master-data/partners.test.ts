@@ -5,6 +5,10 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import PartnersPage from './partners.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.masterdata.partners.manage'] } }),
+}))
+
 const stub = vi.hoisted(() => ({
   createPartner: vi.fn().mockResolvedValue({ data: { code: 'P-NEW' } }),
   toastSuccess: vi.fn(),

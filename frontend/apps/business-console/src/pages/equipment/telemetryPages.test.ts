@@ -60,7 +60,12 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   }
 })
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: telemetryPageMocks.permissionCodes } }),
+}))
+
 const telemetryPageMocks = vi.hoisted(() => ({
+  permissionCodes: ['business.iiot.alarms.read', 'business.iiot.alarm-rules.manage'],
   aggregateBuckets: [] as Array<Record<string, unknown>>,
   aggregateError: undefined as unknown,
   aggregateFilters: undefined as Record<string, string | number> | undefined,
@@ -528,6 +533,10 @@ const stubs = {
 
 describe('equipment telemetry pages', () => {
   beforeEach(() => {
+    telemetryPageMocks.permissionCodes = [
+      'business.iiot.alarms.read',
+      'business.iiot.alarm-rules.manage',
+    ]
     telemetryPageMocks.aggregateBuckets = [
       {
         dimension: 'day',
@@ -939,6 +948,14 @@ describe('equipment telemetry pages', () => {
     const emptyText = mount(TelemetryOeePage, { global: { stubs } }).text()
     expect(emptyText).toContain('所选时段没有完整的 OEE 数据')
     expect(emptyText).toContain('所选时段和筛选范围内没有 OEE 数据')
+  })
+
+  it('keeps alarm rules readable without showing write actions to an alarm reader', () => {
+    telemetryPageMocks.permissionCodes = ['business.iiot.alarms.read']
+    const wrapper = mount(TelemetryAlarmRulesPage, { global: { stubs } })
+    expect(wrapper.text()).toContain('TEMP_HIGH')
+    expect(wrapper.text()).not.toContain('新建报警规则')
+    expect(wrapper.text()).not.toContain('维护规则')
   })
 
   it('requires a numeric threshold before saving an alarm rule', async () => {

@@ -4,6 +4,10 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import UnitsPage from './units.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.masterdata.products.manage'] } }),
+}))
+
 const stub = vi.hoisted(() => ({
   createUom: vi.fn().mockResolvedValue({ data: { code: 'EA' } }),
   update: vi.fn().mockResolvedValue(undefined),

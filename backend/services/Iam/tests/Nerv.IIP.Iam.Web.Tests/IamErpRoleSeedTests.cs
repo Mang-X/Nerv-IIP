@@ -552,6 +552,8 @@ public sealed class IamErpRoleSeedTests
             ("demo-planner", "role-production-planner", "business.planning.demands.manage"),
             ("demo-lead", "role-mes-downtime-team-leader", "business.mes.downtime.manage"),
             ("demo-maintainer", "role-maintenance-technician", "business.maintenance.work-orders.manage"),
+            ("demo-qa-manager", "role-quality-manager", "business.quality.measuring-devices.manage"),
+            ("demo-masterdata", "role-masterdata-admin", "business.masterdata.partners.manage"),
         };
         const string demoPassword = "Worker-Demo-Test-2026!";
         await using var dbContext = CreateDbContext();

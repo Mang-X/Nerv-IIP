@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleCreateEngineeringItemRevisionRequest,
   BusinessConsoleEngineeringItemRevisionItem,
@@ -51,6 +52,9 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.engineering.items.manage'))
 
 definePage({
   meta: {
@@ -210,12 +214,14 @@ const canSubmit = computed(
 )
 
 function openCreate() {
+  if (!canManage.value) return
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
 }
 
 async function submitForm() {
+  if (!canManage.value) return
   if (!canSubmit.value) {
     showErrors.value = true
     return
@@ -282,7 +288,7 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="formOpen">
+        <NvDialog v-if="canManage" v-model:open="formOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />

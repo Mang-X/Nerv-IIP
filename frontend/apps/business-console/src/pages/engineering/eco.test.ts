@@ -196,7 +196,7 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 
 beforeEach(() => {
   routeState.query = {}
-  stub.permissionCodes = []
+  stub.permissionCodes = ['business.engineering.changes.manage']
   stub.impacts.mockReset()
   stub.reschedule.mockReset().mockResolvedValue({ data: { success: true } })
   stub.cancelSchedule.mockReset().mockResolvedValue({ data: { success: true } })

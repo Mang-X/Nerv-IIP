@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import { useFirstInvalidField } from '@/components/masterData/useFirstInvalidField'
 import type {
   BusinessConsoleCreateStandardOperationRequest,
@@ -44,6 +45,9 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { friendlyErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.engineering.standard-operations.manage'))
 
 definePage({
   meta: {
@@ -240,6 +244,7 @@ const canSubmit = computed(
 )
 
 function openCreate() {
+  if (!canManage.value) return
   editingCode.value = null
   editingRow.value = null
   Object.assign(form, blankForm())
@@ -247,6 +252,7 @@ function openCreate() {
   formOpen.value = true
 }
 function openEdit(row: BusinessConsoleStandardOperationItem) {
+  if (!canManage.value) return
   if (!row.operationCode) return
   editingCode.value = row.operationCode
   editingRow.value = row
@@ -267,6 +273,7 @@ function openEdit(row: BusinessConsoleStandardOperationItem) {
 }
 
 async function submitForm() {
+  if (!canManage.value) return
   if (!canSubmit.value) {
     showErrors.value = true
     await focusFirstInvalidField()
@@ -314,11 +321,13 @@ async function submitForm() {
 const archiveOpen = shallowRef(false)
 const archiveTarget = shallowRef<BusinessConsoleStandardOperationItem | null>(null)
 function openArchive(row: BusinessConsoleStandardOperationItem) {
+  if (!canManage.value) return
   if (!row.operationCode) return
   archiveTarget.value = row
   archiveOpen.value = true
 }
 async function confirmArchive() {
+  if (!canManage.value) return
   const target = archiveTarget.value
   if (!target?.operationCode) return
   try {
@@ -350,7 +359,7 @@ async function confirmArchive() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="formOpen">
+        <NvDialog v-if="canManage" v-model:open="formOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
@@ -610,8 +619,11 @@ async function confirmArchive() {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</NvButton>
+          <NvButton v-if="canManage" type="button" variant="ghost" size="sm" @click="openEdit(row)"
+            >编辑</NvButton
+          >
           <NvButton
+            v-if="canManage"
             type="button"
             variant="ghost"
             size="sm"
@@ -623,7 +635,7 @@ async function confirmArchive() {
       </template>
     </NvDataTable>
 
-    <NvAlertDialog v-model:open="archiveOpen">
+    <NvAlertDialog v-if="canManage" v-model:open="archiveOpen">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>停用标准工序</NvAlertDialogTitle>

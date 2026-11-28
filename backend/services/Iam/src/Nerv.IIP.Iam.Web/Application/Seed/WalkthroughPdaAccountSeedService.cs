@@ -91,6 +91,8 @@ public sealed class WalkthroughPdaAccountSeedService(
         ("demo-planner", "生产计划员", NervIipSeedRoles.ProductionPlannerRoleId),
         ("demo-lead", "停机班组长", NervIipSeedRoles.MesDowntimeTeamLeader.RoleId),
         ("demo-maintainer", "维保技师", NervIipSeedRoles.MaintenanceTechnician.RoleId),
+        ("demo-qa-manager", "质检主管", NervIipSeedRoles.QualityManager.RoleId),
+        ("demo-masterdata", "主数据管理员", NervIipSeedRoles.MasterDataAdministrator.RoleId),
     ];
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)

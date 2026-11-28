@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import {
   cancelScheduledBusinessConsoleEngineeringChange,
   listBusinessConsoleEngineeringBomsQueryOptions,
@@ -6,7 +7,6 @@ import {
   listBusinessConsoleEngineeringProductionVersionsQueryOptions,
   rescheduleBusinessConsoleEngineeringChange,
 } from '@nerv-iip/api-client'
-import { useAuthStore } from '@/stores/auth'
 import type {
   BusinessConsoleEngineeringChangeImpactNode,
   BusinessConsoleEngineeringChangeImpactRisk,
@@ -74,6 +74,9 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.engineering.changes.manage'))
 
 definePage({
   meta: {
@@ -394,6 +397,7 @@ const impactNodes = computed(() => impactPreview.value?.nodes ?? [])
 const impactRisks = computed(() => impactPreview.value?.risks ?? [])
 
 function openCreate() {
+  if (!canManage.value) return
   Object.assign(form, blankForm())
   clearImpactPreview()
   showErrors.value = false
@@ -428,6 +432,7 @@ async function previewFormImpact() {
 }
 
 async function submitForm() {
+  if (!canManage.value) return
   if (!canSubmit.value) {
     showErrors.value = true
     return
@@ -463,22 +468,20 @@ const route = useRoute()
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringChangeItem | null>(null)
 const detailPending = ref(false)
-const auth = useAuthStore()
-const canManageSchedule = computed(() =>
-  auth.principal?.permissionCodes?.includes('business.engineering.changes.manage'),
-)
 const scheduleAction = ref<'reschedule' | 'cancel'>()
 const scheduleReason = ref('')
 const scheduleDate = ref<string | null>(null)
 const schedulePending = ref(false)
 
 function openScheduleAction(action: 'reschedule' | 'cancel') {
+  if (!canManage.value) return
   scheduleReason.value = ''
   scheduleDate.value = viewTarget.value?.effectiveDate ?? null
   scheduleAction.value = action
 }
 
 async function submitScheduleAction() {
+  if (!canManage.value) return
   const action = scheduleAction.value
   const changeNumber = viewTarget.value?.changeNumber
   const reason = scheduleReason.value.trim()
@@ -639,7 +642,7 @@ function riskTone(severity?: string | null): StatusTone {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="formOpen">
+        <NvDialog v-if="canManage" v-model:open="formOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
@@ -1017,7 +1020,7 @@ function riskTone(severity?: string | null): StatusTone {
         </p>
         <div v-if="viewTarget" class="grid min-h-0 gap-3 overflow-y-auto px-4 py-2">
           <div
-            v-if="canManageSchedule && viewTarget.status?.toLowerCase() === 'scheduled'"
+            v-if="canManage && viewTarget.status?.toLowerCase() === 'scheduled'"
             class="flex gap-2"
           >
             <NvButton variant="outline" @click="openScheduleAction('reschedule')">改期</NvButton>

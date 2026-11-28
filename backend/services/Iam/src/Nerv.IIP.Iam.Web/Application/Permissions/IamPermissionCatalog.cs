@@ -159,7 +159,7 @@ public static class IamPermissionCatalog
     private static readonly HashSet<string> SeedCodes = NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal);
 
     private static readonly ILookup<string, string> JobRoles = NervIipSeedRoles.ErpJobRoles
-        .Concat([NervIipSeedRoles.ProductionPlanner, NervIipSeedRoles.MesDowntimeTeamLeader, NervIipSeedRoles.MaintenanceTechnician])
+        .Concat([NervIipSeedRoles.ProductionPlanner, NervIipSeedRoles.MesDowntimeTeamLeader, NervIipSeedRoles.MaintenanceTechnician, NervIipSeedRoles.QualityManager, NervIipSeedRoles.MasterDataAdministrator])
         .SelectMany(role => role.PermissionCodes.Select(code => (Code: code, Name: role.RoleName)))
         .ToLookup(x => x.Code, x => x.Name, StringComparer.Ordinal);
 

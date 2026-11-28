@@ -21,6 +21,7 @@ export function useRushWorkOrderDialog(
   }: Pick<ReturnType<typeof useMesMaterialVersionCatalog>, 'productionVersionOptions'> &
     Pick<ReturnType<typeof useMesOperationTasks>, 'operationTasks'>,
   rushSheetOpen: Ref<boolean>,
+  canManageWorkOrders: Readonly<Ref<boolean>>,
   newMesIdempotencyKey: (scope: string) => string,
 ) {
   const rushForm = reactive({
@@ -65,6 +66,7 @@ export function useRushWorkOrderDialog(
 
   const canCreateRush = computed(
     () =>
+      canManageWorkOrders.value &&
       isNonEmpty(filters.organizationId) &&
       isNonEmpty(filters.environmentId) &&
       isNonEmpty(rushForm.skuId) &&

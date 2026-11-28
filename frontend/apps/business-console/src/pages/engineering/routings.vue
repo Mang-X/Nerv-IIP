@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleReleaseRoutingRequest,
   BusinessConsoleRoutingItem,
@@ -55,6 +56,9 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.engineering.routings.manage'))
 
 definePage({
   meta: {
@@ -297,6 +301,7 @@ const canSubmit = computed(
 )
 
 function openCreate() {
+  if (!canManage.value) return
   Object.assign(form, blankForm())
   form.operations = [blankOperation(10)]
   showErrors.value = false
@@ -333,6 +338,7 @@ function moveDown(index: number) {
 }
 
 async function submitForm() {
+  if (!canManage.value) return
   if (!canSubmit.value) {
     showErrors.value = true
     return
@@ -407,7 +413,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="formOpen">
+        <NvDialog v-if="canManage" v-model:open="formOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleCreateProductionVersionRequest,
   BusinessConsoleProductionVersionItem,
@@ -62,6 +63,9 @@ import { computed, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDate, today } from '@/utils/format'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.engineering.production-versions.manage'))
 
 definePage({
   meta: {
@@ -359,6 +363,7 @@ watchEffect(() => {
 })
 
 function openCreate() {
+  if (!canManage.value) return
   editingId.value = null
   editingRow.value = null
   Object.assign(form, blankForm())
@@ -366,6 +371,7 @@ function openCreate() {
   formOpen.value = true
 }
 function openEdit(row: BusinessConsoleProductionVersionItem) {
+  if (!canManage.value) return
   if (!row.productionVersionId) return
   if (row.status?.toLowerCase() === 'archived') return
   editingId.value = row.productionVersionId
@@ -386,6 +392,7 @@ function openEdit(row: BusinessConsoleProductionVersionItem) {
 }
 
 async function submitForm() {
+  if (!canManage.value) return
   if (!canSubmit.value) {
     showErrors.value = true
     return
@@ -435,12 +442,14 @@ const archiveOpen = shallowRef(false)
 const archiveTarget = shallowRef<BusinessConsoleProductionVersionItem | null>(null)
 const archiveReason = ref('')
 function openArchive(row: BusinessConsoleProductionVersionItem) {
+  if (!canManage.value) return
   if (!row.productionVersionId || row.status?.toLowerCase() === 'archived') return
   archiveTarget.value = row
   archiveReason.value = ''
   archiveOpen.value = true
 }
 async function confirmArchive() {
+  if (!canManage.value) return
   const target = archiveTarget.value
   if (!target?.productionVersionId) return
   const reason = archiveReason.value.trim() || '不再用于排产'
@@ -498,7 +507,7 @@ async function runResolve() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="formOpen">
+        <NvDialog v-if="canManage" v-model:open="formOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
@@ -850,6 +859,7 @@ async function runResolve() {
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
           <NvButton
+            v-if="canManage"
             type="button"
             variant="ghost"
             size="sm"
@@ -859,6 +869,7 @@ async function runResolve() {
             编辑
           </NvButton>
           <NvButton
+            v-if="canManage"
             type="button"
             variant="ghost"
             size="sm"
@@ -871,7 +882,7 @@ async function runResolve() {
       </template>
     </NvDataTable>
 
-    <NvAlertDialog v-model:open="archiveOpen">
+    <NvAlertDialog v-if="canManage" v-model:open="archiveOpen">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>归档生产版本</NvAlertDialogTitle>
