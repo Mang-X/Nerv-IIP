@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
@@ -104,6 +106,8 @@ defineProps<{
   workingDaySet: View['workingDaySet']
 }>()
 
+const { can } = usePermission()
+
 const calKeyword = defineModel<View['calKeyword']>('calKeyword', { required: true })
 
 const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', { required: true })
@@ -132,7 +136,7 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
         <IncludeDisabledFilter v-model="includeDisabled" />
       </template>
       <template #actions>
-        <NvDialog v-model:open="calOpen">
+        <NvDialog v-if="can(P.masterDataResourcesManage)" v-model:open="calOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreateCal"
               ><PlusIcon aria-hidden="true" />新建工作日历</NvButton
@@ -223,6 +227,7 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
             <!-- 行尾「⋯」操作菜单：编辑 / 停用。绝对定位避免按钮嵌套。 -->
             <div class="absolute inset-y-0 right-1 flex items-center">
               <MasterDataRowActions
+                :read-only="!can(P.masterDataResourcesManage)"
                 :row="row"
                 entity-label="工作日历"
                 :detail-fields="baseDetailFields(row, '日历编码', '日历名称')"
@@ -294,7 +299,13 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
             <div class="grid gap-2">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <p class="text-sm font-medium">每周工作模式</p>
-                <NvButton size="sm" variant="outline" type="button" @click="openManageSheet()">
+                <NvButton
+                  v-if="can(P.masterDataResourcesManage)"
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  @click="openManageSheet()"
+                >
                   <CalendarCogIcon aria-hidden="true" />管理节假日 / 例外日
                 </NvButton>
               </div>
@@ -305,7 +316,7 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
                   size="sm"
                   type="button"
                   :variant="workingDaySet.has(wd.key) ? 'default' : 'outline'"
-                  :disabled="calBoardSaving"
+                  :disabled="calBoardSaving || !can(P.masterDataResourcesManage)"
                   :aria-pressed="workingDaySet.has(wd.key)"
                   @click="toggleWeekday(wd.key)"
                 >
@@ -376,8 +387,8 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
                 :title="cell.inMonth ? cell.title : undefined"
                 :aria-label="cell.inMonth ? `${cell.key}，${cell.title}` : undefined"
                 :aria-current="cell.isToday ? 'date' : undefined"
-                :disabled="!cell.inMonth"
-                @click="cell.inMonth && openManageSheet(cell.key)"
+                :disabled="!cell.inMonth || !can(P.masterDataResourcesManage)"
+                @click="openManageSheet(cell.key)"
               >
                 <template v-if="cell.inMonth">
                   <span class="tabular-nums">{{ cell.label }}</span>
@@ -405,7 +416,7 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
     </div>
 
     <!-- 节假日 / 例外日管理抽屉（右侧滑出） -->
-    <NvSheet v-model:open="manageSheetOpen">
+    <NvSheet v-if="can(P.masterDataResourcesManage)" v-model:open="manageSheetOpen">
       <NvSheetContent class="w-full gap-0 overflow-y-auto sm:max-w-md">
         <NvSheetHeader>
           <NvSheetTitle>节假日 / 例外日 · {{ selectedCalName }}</NvSheetTitle>

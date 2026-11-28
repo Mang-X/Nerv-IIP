@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
   BusinessConsoleErpRequestForQuotationItem,
   BusinessConsoleErpSupplierQuotationItem,
@@ -53,6 +55,8 @@ import {
 } from '../shared'
 
 const { locale } = i18n.global
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -275,6 +279,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!can(P.erpProcurementManage)) return
   const row = quoteRow.value
   const line = quotedLine.value
   showErrors.value = true
@@ -334,7 +339,13 @@ async function submit() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" :disabled="!rfqs.items.value.length" @click="openDialog">
+        <NvButton
+          v-if="can(P.erpProcurementManage)"
+          size="sm"
+          type="button"
+          :disabled="!rfqs.items.value.length"
+          @click="openDialog"
+        >
           录入报价
         </NvButton>
       </template>
@@ -375,7 +386,7 @@ async function submit() {
     />
 
     <!-- 「带出式录入」：先选回价对象（询价单），物料 / 单位 / 数量随之只读带出，不做输入位。 -->
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpProcurementManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>录入供应商报价</NvDialogTitle>

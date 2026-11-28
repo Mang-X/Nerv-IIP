@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import { i18n } from '@/i18n'
 import type {
   BusinessConsoleCreateMaintenancePlanRequest,
@@ -57,9 +58,8 @@ definePage({
 })
 
 const auth = useAuthStore()
-const canManagePlans = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(P.maintenancePlansManage),
-)
+const { can } = usePermission()
+const canManagePlans = computed(() => can(P.maintenancePlansManage))
 
 const {
   plans,
@@ -327,7 +327,10 @@ async function submitGenerate() {
         />
       </template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`">
+        <NvRowActions
+          v-if="canManagePlans"
+          :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`"
+        >
           <NvDropdownMenuItem :disabled="!row.planId" @click="openEdit(row)">
             <PencilIcon aria-hidden="true" />
             编辑触发条件

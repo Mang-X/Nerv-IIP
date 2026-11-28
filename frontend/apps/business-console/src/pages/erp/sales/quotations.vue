@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpQuotations } from '@/composables/erp/useBusinessErp'
@@ -53,6 +55,8 @@ import {
 } from '../shared'
 
 const { locale } = i18n.global
+
+const { can } = usePermission()
 
 definePage({
   meta: { requiresAuth: true, title: '销售报价', requiredPermissions: ['business.erp.sales.read'] },
@@ -189,6 +193,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!can(P.erpSalesManage)) return
   showErrors.value = true
   if (!canSubmit.value) return
   const quantity = Number(form.quantity)
@@ -224,6 +229,7 @@ function isApprovable(row: BusinessConsoleErpQuotationItem) {
 }
 
 async function approve(row: BusinessConsoleErpQuotationItem) {
+  if (!can(P.erpSalesManage)) return
   if (!row.quotationNo || !isApprovable(row)) return
   try {
     await quotations.approveQuotation(row.quotationNo)
@@ -256,7 +262,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog">
+        <NvButton v-if="can(P.erpSalesManage)" size="sm" type="button" @click="openDialog">
           <PlusIcon aria-hidden="true" />
           新建报价
         </NvButton>
@@ -328,12 +334,20 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >
       <template #cell-actions="{ row }">
-        <NvButton v-if="canConvert(row)" as-child size="sm" variant="outline">
+        <NvButton
+          v-if="can(P.erpSalesManage) && canConvert(row)"
+          as-child
+          size="sm"
+          variant="outline"
+        >
           <RouterLink :to="{ path: '/erp/sales/orders', query: { quotationNo: row.quotationNo } }">
             转为销售订单
           </RouterLink>
         </NvButton>
-        <NvRowActions v-else-if="isApprovable(row)" :label="`报价单操作 ${row.quotationNo ?? ''}`">
+        <NvRowActions
+          v-else-if="can(P.erpSalesManage) && isApprovable(row)"
+          :label="`报价单操作 ${row.quotationNo ?? ''}`"
+        >
           <NvDropdownMenuItem
             :disabled="quotations.approveQuotationPending.value"
             @click="approve(row)"
@@ -346,7 +360,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建销售报价</NvDialogTitle>

@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { createBusinessConsoleI18n } from '@/i18n'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import IndexPage from '@/pages/index.vue'
 import BusinessLayout from './BusinessLayout.vue'
@@ -63,13 +64,21 @@ function mountLayout(pinia = createPinia()) {
   })
 }
 
+function mountWithPermissions(permissionCodes: string[]) {
+  const pinia = createPinia()
+  useAuthStore(pinia).$patch({
+    principal: { organizationId: 'org-001', environmentId: 'env-dev', permissionCodes },
+  })
+  return mountLayout(pinia)
+}
+
 describe('BusinessLayout (T-shaped)', () => {
   beforeEach(() => {
     routeState.path = '/inventory/availability'
   })
 
   it('passes the T-shaped navigation model to AppShellT', () => {
-    const wrapper = mountLayout()
+    const wrapper = mountWithPermissions(Object.values(P))
     const shell = wrapper.getComponent(AppShellTStub)
 
     expect(shell.props('title')).toBe('Nerv-IIP 业务控制台')
@@ -187,7 +196,13 @@ describe('BusinessLayout (T-shaped)', () => {
 
   it('resolves WMS routes to the 仓储作业 domain', () => {
     routeState.path = '/wms/inbound'
-    const wrapper = mountLayout()
+    const wrapper = mountWithPermissions([
+      P.wmsReceiptsRead,
+      P.wmsShipmentsRead,
+      P.wmsAutomationManage,
+      P.wmsCountsRead,
+      P.wmsWorkPoolsManage,
+    ])
     const shell = wrapper.getComponent(AppShellTStub)
 
     expect(shell.props('currentDomainId')).toBe('wms')
@@ -205,7 +220,7 @@ describe('BusinessLayout (T-shaped)', () => {
 
   it('resolves barcode routes to the 条码标签 domain', () => {
     routeState.path = '/barcode/rules'
-    const wrapper = mountLayout()
+    const wrapper = mountWithPermissions([P.barcodeTemplatesManage, P.barcodePrint])
     const shell = wrapper.getComponent(AppShellTStub)
 
     expect(shell.props('currentDomainId')).toBe('barcode')

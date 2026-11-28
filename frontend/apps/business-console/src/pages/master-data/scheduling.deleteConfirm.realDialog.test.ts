@@ -1,3 +1,5 @@
+import { useAuthStore } from '@/stores/auth'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -159,6 +161,10 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({
+    principal: { permissionCodes: ['business.masterdata.resources.manage'] },
+  })
   for (const fn of [
     stub.toastSuccess,
     stub.toastError,

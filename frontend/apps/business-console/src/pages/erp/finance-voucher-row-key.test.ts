@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { NvDataTable } from '@nerv-iip/ui'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -117,6 +118,7 @@ function renderedRowTexts(wrapper: ReturnType<typeof mount>) {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia())
   hoisted.rows!.value = []
 })
 

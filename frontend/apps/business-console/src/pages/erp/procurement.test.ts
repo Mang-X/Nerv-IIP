@@ -237,7 +237,7 @@ beforeEach(() => {
   receiptFilters.keyword = undefined
   receiptFilters.skip = 0
   receiptFilters.take = 10
-  state.canManagePurchaseOrders = false
+  state.canManagePurchaseOrders = true
   state.canReadMrp = false
 
   state.revisePurchaseOrder.mockReset()
@@ -336,7 +336,7 @@ beforeEach(() => {
 })
 
 describe('ERP procurement purchase requisition page', () => {
-  it('offers conversion only for open requisitions and calls the conversion action once', async () => {
+  it('enables conversion for open requisitions and explains why other rows are blocked', async () => {
     const wrapper = mount(PurchaseRequisitionsPage, { global: { stubs: globalStubs } })
     await flushPromises()
 
@@ -346,9 +346,13 @@ describe('ERP procurement purchase requisition page', () => {
     const convertButtons = wrapper
       .findAll('button')
       .filter((button) => button.text().includes('转采购订单'))
-    expect(convertButtons).toHaveLength(1)
+    expect(convertButtons).toHaveLength(2)
+    const enabled = convertButtons.filter((button) => button.attributes('disabled') === undefined)
+    expect(enabled).toHaveLength(1)
+    const blocked = convertButtons.find((button) => button.attributes('disabled') !== undefined)
+    expect(blocked?.attributes('title')).toBe('仅待处理的采购申请可继续采购')
 
-    await convertButtons[0]!.trigger('click')
+    await enabled[0]!.trigger('click')
     await flushPromises()
 
     expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'])
@@ -571,12 +575,13 @@ it.each([true, false])(
   },
 )
 
-it('待审批采购订单有待收量时显示原因且无登记入口', async () => {
+it('待审批采购订单有待收量时显示原因并禁用登记入口', async () => {
   state.receipts = [{ ...state.receipts[0], status: 'PendingApproval' }]
   const wrapper = mount(ReceiptsPage, { global: { stubs: globalStubs } })
   await flushPromises()
   expect(wrapper.text()).toContain('待审批，审批通过后可登记')
-  expect(wrapper.findAll('button').some((button) => button.text() === '登记收货')).toBe(false)
+  const register = wrapper.findAll('button').find((button) => button.text() === '登记收货')
+  expect(register?.attributes('disabled')).toBe('')
   expect(state.recordPurchaseReceipt).not.toHaveBeenCalled()
 })
 

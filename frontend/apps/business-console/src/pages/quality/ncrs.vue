@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleNcrCloseRequest,
   BusinessConsoleNcrDispositionRequest,
@@ -95,6 +96,7 @@ definePage({
 
 const route = useRoute()
 const auth = useAuthStore()
+const { can } = usePermission()
 const initialNcrKeyword = firstQuery(route.query.ncrId)
 const {
   closeNcr,
@@ -172,11 +174,8 @@ const locatedTargetId = shallowRef('')
 
 const listErrorMessage = computed(() => inlineErrorMessage(ncrsError.value))
 const selectedNcrId = computed(() => selectedNcr.value?.id ?? '')
-const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
-const canManageNcr = computed(() => permissionCodes.value.includes('business.quality.ncr.manage'))
-const canReadMesWorkOrders = computed(() =>
-  permissionCodes.value.includes('business.mes.work-orders.read'),
-)
+const canManageNcr = computed(() => can('business.quality.ncr.manage'))
+const canReadMesWorkOrders = computed(() => can('business.mes.work-orders.read'))
 const reworkWorkOrderLink = computed(() => {
   const ncr = selectedNcr.value
   return canReadMesWorkOrders.value &&

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.Iam;
+using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
@@ -11,7 +12,7 @@ using Nerv.IIP.Iam.Web.Application.Auth;
 
 namespace Nerv.IIP.Iam.Web.Application.Seed;
 
-/// <summary>为本地 PDA 验证补齐受限的现场账号和授权。</summary>
+/// <summary>为本地演示补齐 PDA 与 PC 岗位账号和授权。</summary>
 public sealed class WalkthroughPdaAccountSeedService(
     IServiceProvider serviceProvider,
     IOptions<IamSeedOptions> options,
@@ -80,6 +81,16 @@ public sealed class WalkthroughPdaAccountSeedService(
         ("user-emp-012", "emp012", "EMP-012", "孙明辉", "生产部", OperatorRoleId),
         ("user-emp-034", "emp034", "EMP-034", "朱立新", "质量部", InspectorRoleId),
         ("user-emp-049", "emp049", "EMP-049", "周文斌", "仓储部", WarehouseRoleId),
+    ];
+
+    private static readonly (string LoginName, string DisplayName, string RoleId)[] PcAccounts =
+    [
+        ("demo-buyer", "采购专员", "role-erp-procurement"),
+        ("demo-sales", "销售专员", "role-erp-sales"),
+        ("demo-finance", "财务专员", "role-erp-finance"),
+        ("demo-planner", "生产计划员", NervIipSeedRoles.ProductionPlannerRoleId),
+        ("demo-lead", "停机班组长", NervIipSeedRoles.MesDowntimeTeamLeader.RoleId),
+        ("demo-maintainer", "维保技师", NervIipSeedRoles.MaintenanceTechnician.RoleId),
     ];
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -193,21 +204,7 @@ public sealed class WalkthroughPdaAccountSeedService(
             var user = await dbContext.Users.FirstOrDefaultAsync(x => x.Id == typedUserId, cancellationToken);
             if (user is null)
             {
-                user = new User(
-                    typedUserId,
-                    loginName,
-                    $"{loginName}@ninghu-damper.local",
-                    passwordService.Hash(seed.DemoWorkerPassword),
-                    enabled: true,
-                    Guid.NewGuid().ToString("n"),
-                    permissionVersion: 1,
-                    accountExpiresAtUtc: null,
-                    passwordChangedAtUtc: now,
-                    passwordExpiresAtUtc: null,
-                    passwordChangeRequired: false,
-                    displayName: name,
-                    employeeNo: employeeNo,
-                    departmentName: department);
+                user = CreateDemoUser(typedUserId, loginName, seed.DemoWorkerPassword, now, name, employeeNo, department);
                 dbContext.Users.Add(user);
             }
 
@@ -262,6 +259,66 @@ public sealed class WalkthroughPdaAccountSeedService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task SeedPcAccountsAsync(CancellationToken cancellationToken = default)
+    {
+        var seed = options.Value;
+        if (!seed.Enabled || string.IsNullOrWhiteSpace(seed.DemoWorkerPassword)) return;
+
+        var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
+        var organizationId = new OrganizationId(seed.OrganizationId);
+        var environmentId = new IamEnvironmentId(seed.EnvironmentId);
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var (loginName, displayName, roleId) in PcAccounts)
+        {
+            var userId = new UserId($"user-{loginName}");
+            var user = await dbContext.Users.FindAsync([userId], cancellationToken);
+            if (user is null)
+            {
+                user = CreateDemoUser(userId, loginName, seed.DemoWorkerPassword, now, displayName);
+                dbContext.Users.Add(user);
+            }
+            else if (user.PasswordChangeRequired || !passwordService.Verify(user, seed.DemoWorkerPassword))
+            {
+                user.UpdatePasswordHash(passwordService.Hash(seed.DemoWorkerPassword), now, null, false, 0);
+            }
+
+            var membershipId = new MembershipId($"{userId.Id}:{seed.OrganizationId}:{seed.EnvironmentId}");
+            if (await dbContext.Memberships.FindAsync([membershipId], cancellationToken) is null)
+            {
+                var membership = new Membership(membershipId, userId, organizationId, environmentId, [new RoleId(roleId)]);
+                membership.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
+                dbContext.Memberships.Add(membership);
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private User CreateDemoUser(
+        UserId userId,
+        string loginName,
+        string password,
+        DateTimeOffset now,
+        string name,
+        string? employeeNo = null,
+        string? department = null) =>
+        new(
+            userId,
+            loginName,
+            $"{loginName}@ninghu-damper.local",
+            passwordService.Hash(password),
+            enabled: true,
+            Guid.NewGuid().ToString("n"),
+            permissionVersion: 1,
+            accountExpiresAtUtc: null,
+            passwordChangedAtUtc: now,
+            passwordExpiresAtUtc: null,
+            passwordChangeRequired: false,
+            displayName: name,
+            employeeNo: employeeNo,
+            departmentName: department);
 
     private static bool HasExactRole(Membership membership, RoleId roleId) =>
         membership.Roles.Count == 1 && membership.Roles.Single().RoleId == roleId;

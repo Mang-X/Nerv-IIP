@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
   BusinessConsolePersonnelSkillMatrixCell,
   BusinessConsolePersonnelSkillMatrixRow,
@@ -55,6 +57,8 @@ import {
 import { i18n } from '@/i18n'
 
 const locale = i18n.global.locale
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -314,7 +318,12 @@ async function submitSkill() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton v-if="!isEmpty" size="sm" type="button" @click="openAssign()">
+        <NvButton
+          v-if="can(P.masterDataResourcesManage) && !isEmpty"
+          size="sm"
+          type="button"
+          @click="openAssign()"
+        >
           <PlusIcon aria-hidden="true" />
           登记技能
         </NvButton>
@@ -394,7 +403,12 @@ async function submitSkill() {
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
       <p class="text-sm text-muted-foreground">尚未登记技能</p>
-      <NvButton size="sm" type="button" @click="openAssign()">
+      <NvButton
+        v-if="can(P.masterDataResourcesManage)"
+        size="sm"
+        type="button"
+        @click="openAssign()"
+      >
         <PlusIcon aria-hidden="true" />
         去登记技能
       </NvButton>

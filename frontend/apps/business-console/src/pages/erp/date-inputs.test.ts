@@ -47,7 +47,14 @@ vi.mock('vue-router', () => ({
 }))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    principal: { principalId: 'buyer', permissionCodes: ['business.erp.procurement.manage'] },
+    principal: {
+      principalId: 'erp-test',
+      permissionCodes: [
+        'business.erp.procurement.manage',
+        'business.erp.sales.manage',
+        'business.erp.finance.manage',
+      ],
+    },
   }),
 }))
 vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyOperationFailure: vi.fn() }))

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { shouldRetainPendingBusinessIntent } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseReceipts } from '@/composables/erp/useBusinessErp'
@@ -44,6 +46,8 @@ import {
   pickerInvalidClass,
   readCount,
 } from '../shared'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -194,6 +198,7 @@ function openDialog(row: (typeof rows.value)[number]) {
 }
 
 async function submit() {
+  if (!can(P.erpProcurementManage)) return
   const row = receiptRow.value
   if (!row || receipts.recordPurchaseReceiptPending.value) return
   showErrors.value = true
@@ -301,16 +306,20 @@ async function submit() {
           size="sm"
           type="button"
           variant="outline"
-          v-if="!receiptBlockReason(row)"
+          v-if="can(P.erpProcurementManage)"
+          :disabled="Boolean(receiptBlockReason(row))"
+          :title="receiptBlockReason(row) || undefined"
           @click="openDialog(row)"
           >登记收货</NvButton
         >
-        <span v-else class="text-sm text-muted-foreground">{{ receiptBlockReason(row) }}</span>
+        <span v-if="receiptBlockReason(row)" class="text-sm text-muted-foreground">{{
+          receiptBlockReason(row)
+        }}</span>
       </template>
     </NvDataTable>
 
     <!-- 「带出式录入」：采购单 / 行号 / 物料 / 数量全部由所选行带出，只读呈现，不做输入位。 -->
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpProcurementManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>登记采购收货</NvDialogTitle>

@@ -32,6 +32,7 @@ import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/noti
 const props = defineProps<{
   teamCode: string
   teamName: string
+  readOnly?: boolean
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -110,6 +111,7 @@ watch(open, (isOpen) => {
 })
 
 async function submitAdd() {
+  if (props.readOnly) return
   if (!canAdd.value) {
     showErrors.value = true
     return
@@ -126,6 +128,7 @@ async function submitAdd() {
 }
 
 async function confirmRemove() {
+  if (props.readOnly) return
   const userId = removeTarget.value
   const reason = removeReason.value.trim()
   removeReasonTouched.value = true
@@ -162,11 +165,12 @@ function onRemoveOpenChange(value: boolean) {
   <NvDialog v-model:open="open">
     <NvDialogContent class="sm:max-w-2xl">
       <NvDialogHeader>
-        <NvDialogTitle>{{ teamName }} · 成员维护</NvDialogTitle>
+        <NvDialogTitle>{{ teamName }} · {{ readOnly ? '成员' : '成员维护' }}</NvDialogTitle>
         <NvDialogDescription class="sr-only">班组 {{ teamCode }} 的成员</NvDialogDescription>
       </NvDialogHeader>
 
       <form
+        v-if="!readOnly"
         class="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
         @submit.prevent="submitAdd"
       >
@@ -206,6 +210,7 @@ function onRemoveOpenChange(value: boolean) {
               type="button"
               variant="ghost"
               size="sm"
+              v-if="!readOnly"
               :disabled="removePending"
               :aria-label="`移除成员 ${memberLabel(member.userId)}`"
               @click="requestRemove(member.userId)"
@@ -222,7 +227,7 @@ function onRemoveOpenChange(value: boolean) {
     </NvDialogContent>
   </NvDialog>
 
-  <NvAlertDialog :open="removeTarget !== null" @update:open="onRemoveOpenChange">
+  <NvAlertDialog v-if="!readOnly" :open="removeTarget !== null" @update:open="onRemoveOpenChange">
     <NvAlertDialogContent>
       <NvAlertDialogHeader>
         <NvAlertDialogTitle

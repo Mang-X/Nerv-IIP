@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 import { defineComponent } from 'vue'
 import { createConsoleI18n } from '@/i18n'
@@ -48,7 +49,36 @@ describe('DefaultLayout', () => {
       title: 'Business',
       to: { path: '/business' },
     })
-    expect(topDomains[3]).toMatchObject({ id: 'iam', title: 'IAM', to: { path: '/iam/users' } })
+    expect(topDomains).toHaveLength(3)
+  })
+
+  it('shows only readable IAM sections and opens the first one', async () => {
+    const pinia = createPinia()
+    useAuthStore(pinia).$patch({
+      principal: { permissionCodes: ['iam.roles.read', 'iam.sessions.read'] },
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/iam/roles', component: { template: '<div />' } }],
+    })
+    await router.push('/iam/roles')
+    const wrapper = mountLayout([pinia, router, createConsoleI18n({ locale: 'en-US' })])
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    expect(shell.props('topDomains')).toContainEqual(
+      expect.objectContaining({
+        id: 'iam',
+        to: { path: '/iam/roles' },
+      }),
+    )
+    expect(shell.props('sideNav')).toEqual([
+      {
+        items: [
+          expect.objectContaining({ to: { path: '/iam/roles' } }),
+          expect.objectContaining({ to: { path: '/iam/sessions' } }),
+        ],
+      },
+    ])
   })
 
   it('uses a dedicated translated fallback for authenticated user display name', () => {

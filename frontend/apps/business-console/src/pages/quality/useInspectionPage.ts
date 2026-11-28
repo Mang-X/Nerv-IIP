@@ -1,3 +1,4 @@
+import { usePermission } from '@/composables/usePermission'
 import {
   emptyLine,
   formatSpecification,
@@ -57,9 +58,8 @@ export function useInspectionPage(onDirectRecordCreated: () => void) {
   const route = useRoute()
   const router = useRouter()
   const auth = useAuthStore()
-  const canManageInspectionPlans = computed(() =>
-    (auth.principal?.permissionCodes ?? []).includes('business.quality.inspection-plans.manage'),
-  )
+  const { can } = usePermission()
+  const canManageInspectionPlans = computed(() => can('business.quality.inspection-plans.manage'))
   const activeView = shallowRef(
     firstQuery(route.query.view) === 'first-article-records' ? 'first-article-records' : 'plans',
   )
@@ -321,7 +321,7 @@ export function useInspectionPage(onDirectRecordCreated: () => void) {
       else if (receivingEntry) recordForm.sourceType = 'receiving'
       if (sourceService) recordForm.sourceService = sourceService
       else if (receivingEntry) recordForm.sourceService = 'wms'
-      if (source) recordSheetOpen.value = true
+      if (source && can('business.quality.inspection-records.create')) recordSheetOpen.value = true
     },
     { immediate: true },
   )
@@ -578,6 +578,7 @@ export function useInspectionPage(onDirectRecordCreated: () => void) {
     )
   }
   function useInspectionPlan(plan: BusinessConsoleQualityItem) {
+    if (!can('business.quality.inspection-records.create')) return
     recordForm.inspectionPlanId = plan.id ?? ''
     if (plan.skuCode && !isOperationInspectionFlow.value && !firstQuery(route.query.skuCode))
       recordForm.skuCode = plan.skuCode
@@ -726,7 +727,7 @@ export function useInspectionPage(onDirectRecordCreated: () => void) {
       notifyError('业务范围尚未就绪，请稍后重试。')
       return
     }
-    if (!canCreateRecord.value) return
+    if (!can('business.quality.inspection-records.create') || !canCreateRecord.value) return
     const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
     if (inspectionTaskId) {
       let inspectionRecordId: string | null | undefined

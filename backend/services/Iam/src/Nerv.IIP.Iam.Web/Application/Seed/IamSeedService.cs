@@ -143,6 +143,13 @@ public sealed class IamSeedService(
         await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
         await EnsureMesDowntimeTeamLeaderAsync(dbContext, cancellationToken);
 
+        var maintenance = NervIipSeedRoles.MaintenanceTechnician;
+        var maintenanceRoleId = new RoleId(maintenance.RoleId);
+        if (!await dbContext.Roles.AnyAsync(role => role.Id == maintenanceRoleId, cancellationToken))
+        {
+            dbContext.Roles.Add(new Role(maintenanceRoleId, maintenance.RoleName, maintenance.PermissionCodes));
+        }
+
         var (role, user) = await EnsurePlatformAdministratorAsync(
             dbContext,
             seed,

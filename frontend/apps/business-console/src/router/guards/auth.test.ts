@@ -15,6 +15,20 @@ describe('business console auth route guard', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', component: { template: '<div />' }, meta: { requiresAuth: true } },
+        ...[
+          ['/wms', { domainIndex: true }],
+          ['/wms/inbound', { requiredPermissions: ['business.wms.receipts.read'] }],
+          ['/wms/picking', { requiredPermissions: ['business.wms.shipments.read'] }],
+          ['/engineering', { domainIndex: true }],
+          [
+            '/engineering/routings',
+            { requiredPermissions: ['business.engineering.routings.read'] },
+          ],
+        ].map(([path, meta]) => ({
+          path: path as string,
+          component: { template: '<div />' },
+          meta: { ...(meta as object), requiresAuth: true },
+        })),
         {
           path: '/inventory/availability',
           component: { template: '<div />' },
@@ -101,6 +115,23 @@ describe('business console auth route guard', () => {
     await router.push('/inventory/availability')
 
     expect(router.currentRoute.value.path).toBe('/inventory/availability')
+  })
+
+  it.each([
+    ['/wms', ['business.wms.shipments.read'], '/wms/picking'],
+    ['/wms', ['business.wms.receipts.read', 'business.wms.shipments.read'], '/wms/inbound'],
+    ['/engineering', ['business.engineering.routings.read'], '/engineering/routings'],
+    ['/engineering', ['business.wms.shipments.read'], '/forbidden'],
+  ])('opens the first permitted page for %s with %j', async (root, permissionCodes, expected) => {
+    const router = createGuardedRouter()
+    useAuthStore().$patch({
+      accessToken: 'token',
+      principal: { principalId: 'user', permissionCodes },
+    })
+
+    await router.push(root)
+
+    expect(router.currentRoute.value.path).toBe(expected)
   })
 
   it('sanitizes guest redirect targets', async () => {

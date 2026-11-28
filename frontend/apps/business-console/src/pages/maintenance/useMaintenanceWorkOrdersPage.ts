@@ -1,3 +1,4 @@
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleAuthorizedWorkScope,
   BusinessConsoleMaintenanceSparePartInput,
@@ -99,11 +100,10 @@ export function useMaintenanceWorkOrdersPage() {
   const { resolvePartner } = useBusinessPartnerNames()
   // 当前登录用户（开单人默认当前用户，可改选他人，不自由输入）。
   const auth = useAuthStore()
+  const { can } = usePermission()
   const { principal } = storeToRefs(auth)
   const currentUserId = computed(() => principal.value?.principalId ?? '')
-  const canManageWorkOrders = computed(() =>
-    (principal.value?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
-  )
+  const canManageWorkOrders = computed(() => can(P.maintenanceWorkOrdersManage))
   const workerOptions = computed(() =>
     workers.value
       .map((w) => ({

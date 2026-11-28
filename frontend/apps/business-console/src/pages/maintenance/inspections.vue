@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleMaintenanceInspectionItem,
   BusinessConsoleMaintenanceInspectionMeasurementItem,
@@ -84,11 +85,10 @@ const { page, pageSize } = usePagedList(filters)
 // 人员目录 + 当前登录用户（点检人默认当前用户，可改选他人，不自由输入）。
 const { workers } = useBusinessWorkers()
 const auth = useAuthStore()
+const { can } = usePermission()
 const { principal } = storeToRefs(auth)
 const currentUserId = computed(() => principal.value?.principalId ?? '')
-const canRecordInspections = computed(() =>
-  (principal.value?.permissionCodes ?? []).includes(P.maintenancePlansManage),
-)
+const canRecordInspections = computed(() => can(P.maintenancePlansManage))
 const workerOptions = computed(() =>
   workers.value
     .map((w) => ({

@@ -1,3 +1,5 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -175,6 +177,8 @@ const selectStubs = {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({ principal: { permissionCodes: ['business.erp.finance.manage'] } })
   state.summaryError = undefined
   state.payableError = undefined
   state.refreshSummary.mockClear()
@@ -203,6 +207,23 @@ describe('ERP finance AR/AP page', () => {
 })
 
 describe('ERP finance voucher and cost pages', () => {
+  it.each([false, true])(
+    'renders the post voucher button only with finance manage (%s)',
+    (manage) => {
+      useAuthStore().$patch({
+        principal: {
+          permissionCodes: [
+            'business.erp.finance.read',
+            ...(manage ? ['business.erp.finance.manage'] : []),
+          ],
+        },
+      })
+      const wrapper = mount(VouchersPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })
+
+      expect(wrapper.findAll('button').some((button) => button.text() === '过账凭证')).toBe(manage)
+    },
+  )
+
   it('voucher page keeps keyword search and no status select', async () => {
     const wrapper = mount(VouchersPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })
     await flushPromises()

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
   CreateQualityReasonRequest,
   QualityReasonItem,
@@ -48,6 +50,8 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -255,7 +259,7 @@ async function confirmArchive() {
         </NvButton>
         <NvDialog v-model:open="formOpen">
           <NvDialogTrigger as-child>
-            <NvButton size="sm" type="button" @click="openCreate">
+            <NvButton v-if="can(P.qualityNcrManage)" size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建原因
             </NvButton>
@@ -419,10 +423,16 @@ async function confirmArchive() {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">{{
-            row.enabled === false ? '重新启用' : '编辑'
-          }}</NvButton>
           <NvButton
+            v-if="can(P.qualityNcrManage)"
+            type="button"
+            variant="ghost"
+            size="sm"
+            @click="openEdit(row)"
+            >{{ row.enabled === false ? '重新启用' : '编辑' }}</NvButton
+          >
+          <NvButton
+            v-if="can(P.qualityNcrManage)"
             type="button"
             variant="ghost"
             size="sm"

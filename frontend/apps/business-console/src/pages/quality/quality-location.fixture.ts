@@ -56,6 +56,7 @@ const routeState = vi.hoisted(() => ({
 }))
 const authState = vi.hoisted(() => ({
   permissionCodes: [
+    'business.quality.inspection-records.create',
     'business.quality.ncr.read',
     'business.quality.ncr.manage',
     'business.mes.work-orders.read',
@@ -540,6 +541,7 @@ export function resetQualityLocationFixture() {
     },
   ]
   authState.permissionCodes = [
+    'business.quality.inspection-records.create',
     'business.quality.ncr.read',
     'business.quality.ncr.manage',
     'business.mes.work-orders.read',

@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import {
   closeBusinessConsoleQualityCapa,
   completeBusinessConsoleQualityCapaAction,
   verifyBusinessConsoleQualityCapaEffectiveness,
 } from '@nerv-iip/api-client'
-import { useAuthStore } from '@/stores/auth'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -152,10 +152,8 @@ function openCapa(row: QualityCapaItem) {
   detailOpen.value = true
 }
 
-const auth = useAuthStore()
-const canManageCapa = computed(() =>
-  auth.principal?.permissionCodes?.includes('business.quality.ncr.manage'),
-)
+const { can } = usePermission()
+const canManageCapa = computed(() => can('business.quality.ncr.manage'))
 const capaWritePending = ref(false)
 const verificationRecordId = ref('')
 const verificationResult = ref('')

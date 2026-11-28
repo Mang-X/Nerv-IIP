@@ -2,6 +2,7 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import { AppShellT } from '@nerv-iip/app-shell'
 import { NvDropdownMenuItem } from '@nerv-iip/ui'
+import { usePermission } from '@nerv-iip/auth'
 import { useAuthStore } from '@/stores/auth'
 import {
   BellIcon,
@@ -24,6 +25,13 @@ const { principal } = storeToRefs(auth)
 const router = useRouter()
 const route = useRoute()
 
+const { can } = usePermission(() => principal.value?.permissionCodes)
+const iamItems = computed(() =>
+  (['users', 'roles', 'sessions'] as const)
+    .filter((section) => can(`iam.${section}.read`))
+    .map((section) => ({ title: t(`nav.${section}`), to: { path: `/iam/${section}` } })),
+)
+
 // 顶部一级能力区（T 型导航的横向部分）。
 const topDomains = computed<NavDomain[]>(() => [
   { id: 'instances', title: t('nav.instances'), icon: LayersIcon, to: { name: '/' } },
@@ -34,7 +42,12 @@ const topDomains = computed<NavDomain[]>(() => [
     to: { path: '/notifications' },
   },
   { id: 'business', title: t('nav.business'), icon: Building2Icon, to: { path: '/business' } },
-  { id: 'iam', title: t('nav.iam'), icon: ShieldIcon, to: { path: '/iam/users' } },
+  ...iamItems.value.slice(0, 1).map(({ to }) => ({
+    id: 'iam',
+    title: t('nav.iam'),
+    icon: ShieldIcon,
+    to,
+  })),
 ])
 
 function resolveDomainId(path: string): string {
@@ -65,17 +78,7 @@ const sideNav = computed<SideNav>(() => {
     ]
   }
 
-  if (currentDomainId.value !== 'iam') return []
-
-  return [
-    {
-      items: [
-        { title: t('nav.users'), to: { path: '/iam/users' } },
-        { title: t('nav.roles'), to: { path: '/iam/roles' } },
-        { title: t('nav.sessions'), to: { path: '/iam/sessions' } },
-      ],
-    },
-  ]
+  return currentDomainId.value === 'iam' && iamItems.value.length ? [{ items: iamItems.value }] : []
 })
 
 const shellUser = computed(() => {

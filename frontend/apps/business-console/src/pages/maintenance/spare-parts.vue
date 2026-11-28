@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleCreateMaintenanceSparePartRequest,
   BusinessConsoleMaintenanceSparePartItem,
@@ -19,7 +20,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { useAuthStore } from '@/stores/auth'
 import {
   Empty,
   EmptyDescription,
@@ -67,10 +67,8 @@ const {
   createSparePart,
   createSparePartPending,
 } = useMaintenanceSpareParts()
-const auth = useAuthStore()
-const canManageSpareParts = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
-)
+const { can } = usePermission()
+const canManageSpareParts = computed(() => can(P.maintenanceWorkOrdersManage))
 const { page, pageSize } = usePagedList(filters)
 
 const createOpen = shallowRef(false)

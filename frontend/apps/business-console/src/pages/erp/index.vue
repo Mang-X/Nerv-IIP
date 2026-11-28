@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleErpPurchaseRequisitionItem,
   BusinessConsoleResourceItem,
@@ -41,6 +42,8 @@ import { RouterLink, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { erpReadState, firstQueryParam, formatDate, formatQuantity, readCount } from './shared'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -219,6 +222,7 @@ const rfqContextItems = computed(() => {
 })
 
 async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisitionItem) {
+  if (!can(P.erpProcurementManage)) return
   if (!canConvert(row)) return
   try {
     const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!])
@@ -265,6 +269,7 @@ function closeRfqDialog() {
 }
 
 async function submitRfq() {
+  if (!can(P.erpProcurementManage)) return
   const row = rfqRow.value
   if (!row || !canConvert(row)) return
   rfqShowErrors.value = true
@@ -419,12 +424,14 @@ async function submitRfq() {
         ><NvStatusBadge :value="row.status" :label="statusLabel(row.status)"
       /></template>
       <template #cell-actions="{ row }">
-        <div v-if="canConvert(row)" class="flex justify-end gap-2">
+        <div v-if="can(P.erpProcurementManage)" class="flex justify-end gap-2">
           <NvButton
             size="sm"
             type="button"
             variant="outline"
-            :disabled="requisitions.convertToPurchaseOrderPending.value"
+            :disabled="!canConvert(row) || requisitions.convertToPurchaseOrderPending.value"
+            class="disabled:pointer-events-auto"
+            :title="canConvert(row) ? undefined : '仅待处理的采购申请可继续采购'"
             @click="openRfqDialog(row)"
           >
             <FileSearchIcon aria-hidden="true" />
@@ -434,7 +441,9 @@ async function submitRfq() {
             size="sm"
             type="button"
             variant="outline"
-            :disabled="requisitions.convertToPurchaseOrderPending.value"
+            :disabled="!canConvert(row) || requisitions.convertToPurchaseOrderPending.value"
+            class="disabled:pointer-events-auto"
+            :title="canConvert(row) ? undefined : '仅待处理的采购申请可继续采购'"
             @click="convertToPurchaseOrder(row)"
           >
             <ShoppingCartIcon aria-hidden="true" />
@@ -445,6 +454,7 @@ async function submitRfq() {
     </NvDataTable>
 
     <NvDialog
+      v-if="can(P.erpProcurementManage)"
       :open="rfqDialogOpen"
       @update:open="
         (value) => {

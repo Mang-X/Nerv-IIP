@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpSalesOrders } from '@/composables/erp/useBusinessErp'
@@ -54,6 +56,8 @@ import {
   pickerInvalidClass,
   readCount,
 } from '../shared'
+
+const { can } = usePermission()
 
 definePage({
   meta: { requiresAuth: true, title: '销售订单', requiredPermissions: ['business.erp.sales.read'] },
@@ -311,6 +315,7 @@ function openCreditHoldDialog(row: BusinessConsoleErpSalesOrderItem) {
 }
 
 async function submitCreditHoldRelease() {
+  if (!can(P.erpSalesManage)) return
   const salesOrderNo = creditHoldOrder.value?.salesOrderNo
   if (!salesOrderNo) return
   try {
@@ -338,6 +343,7 @@ function openReleaseDeliveryDialog(row: BusinessConsoleErpSalesOrderItem) {
 }
 
 async function submitReleaseDelivery() {
+  if (!can(P.erpSalesManage)) return
   const salesOrderNo = releaseDeliveryOrder.value?.salesOrderNo
   if (!salesOrderNo) return
   try {
@@ -366,7 +372,7 @@ function openDialog() {
 watch(
   () => firstQueryParam(route.query.quotationNo),
   (quotationNo) => {
-    if (!quotationNo) return
+    if (!quotationNo || !can(P.erpSalesManage)) return
     openDialog()
     form.quotationNo = quotationNo
   },
@@ -374,6 +380,7 @@ watch(
 )
 
 async function submit() {
+  if (!can(P.erpSalesManage)) return
   if (orders.createSalesOrderPending.value) return
   showErrors.value = true
   if (!canSubmit.value) return
@@ -421,7 +428,7 @@ async function submit() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog">
+        <NvButton v-if="can(P.erpSalesManage)" size="sm" type="button" @click="openDialog">
           <PlusIcon aria-hidden="true" />
           新建订单
         </NvButton>
@@ -497,7 +504,7 @@ async function submit() {
       <template #cell-fulfillment="{ row }">
         <div class="flex flex-wrap items-center justify-end gap-1">
           <NvButton
-            v-if="isCreditHeld(row)"
+            v-if="can(P.erpSalesManage) && isCreditHeld(row)"
             size="sm"
             variant="ghost"
             type="button"
@@ -508,11 +515,13 @@ async function submit() {
             解冻复核
           </NvButton>
           <NvButton
-            v-if="isDeliverable(row)"
+            v-if="can(P.erpSalesManage)"
             size="sm"
             variant="ghost"
             type="button"
-            :disabled="orders.releaseDeliveryOrderPending.value"
+            :disabled="!isDeliverable(row) || orders.releaseDeliveryOrderPending.value"
+            class="disabled:pointer-events-auto"
+            :title="isDeliverable(row) ? undefined : '仅已下达的销售订单可释放发货'"
             @click="openReleaseDeliveryDialog(row)"
           >
             <TruckIcon aria-hidden="true" />
@@ -538,7 +547,7 @@ async function submit() {
       @refresh-order="orders.refreshSalesOrders"
     />
 
-    <NvDialog v-model:open="creditHoldOpen">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="creditHoldOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>提交信用解冻复核</NvDialogTitle>
@@ -569,7 +578,7 @@ async function submit() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="releaseDeliveryOpen">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="releaseDeliveryOpen">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>释放发货</NvDialogTitle>
@@ -602,7 +611,7 @@ async function submit() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpSalesManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建销售订单</NvDialogTitle>

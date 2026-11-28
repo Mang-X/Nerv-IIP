@@ -4,9 +4,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Abstractions;
+using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Seed;
 
@@ -495,6 +499,89 @@ public sealed class IamErpRoleSeedTests
             .Select(permission => permission.PermissionCode)
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    [Fact]
+    public async Task Development_pc_demo_accounts_retain_their_roles_and_passwords_after_reseed()
+    {
+        var expectedAccounts = new (string LoginName, string RoleId, string ManagePermission)[]
+        {
+            ("demo-buyer", "role-erp-procurement", "business.erp.procurement.manage"),
+            ("demo-sales", "role-erp-sales", "business.erp.sales.manage"),
+            ("demo-finance", "role-erp-finance", "business.erp.finance.manage"),
+            ("demo-planner", "role-production-planner", "business.planning.demands.manage"),
+            ("demo-lead", "role-mes-downtime-team-leader", "business.mes.downtime.manage"),
+            ("demo-maintainer", "role-maintenance-technician", "business.maintenance.work-orders.manage"),
+        };
+        const string demoPassword = "Worker-Demo-Test-2026!";
+        await using var dbContext = CreateDbContext();
+        using var services = new ServiceCollection().AddSingleton(dbContext).BuildServiceProvider();
+        var passwordService = new IamPasswordService();
+        var seed = CreateSeed(dbContext);
+        var demoSeed = new WalkthroughPdaAccountSeedService(
+            services,
+            Options.Create(new IamSeedOptions { Enabled = true, DemoWorkerPassword = demoPassword }),
+            passwordService);
+
+        await seed.SeedAsync();
+        await demoSeed.SeedPcAccountsAsync();
+        var originalHashes = await dbContext.Users.Where(user => user.LoginName.StartsWith("demo-"))
+            .ToDictionaryAsync(user => user.LoginName, user => user.PasswordHash);
+        await seed.SeedAsync();
+        await demoSeed.SeedPcAccountsAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var environment = new TestWebHostEnvironment();
+        var auth = new PostgreSqlIamAuthService(
+            new UserRepository(dbContext),
+            new UserSessionRepository(dbContext),
+            new MembershipRepository(dbContext),
+            new ConnectorHostCredentialRepository(dbContext),
+            new ExternalClientRepository(dbContext),
+            passwordService,
+            new IamTokenService(new ConfigurationBuilder().Build(), environment),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new SecurityAuditRecorder(new SecurityAuditRepository(dbContext)),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            environment);
+        Assert.Equal(expectedAccounts.Length, await dbContext.Users.CountAsync(user => user.LoginName.StartsWith("demo-")));
+        foreach (var (loginName, roleId, managePermission) in expectedAccounts)
+        {
+            var user = await dbContext.Users.SingleAsync(user => user.LoginName == loginName);
+            Assert.True(user.Enabled);
+            Assert.False(user.PasswordChangeRequired);
+            var session = await auth.LoginAsync(loginName, demoPassword, null, null, CancellationToken.None);
+            Assert.False(string.IsNullOrWhiteSpace(session.AccessToken));
+            Assert.False(session.PasswordChangeRequired);
+            Assert.Equal(originalHashes[loginName], user.PasswordHash);
+
+            var membership = await dbContext.Memberships.Include(m => m.Roles).Include(m => m.DataScopes)
+                .SingleAsync(m => m.UserId == user.Id);
+            Assert.Equal("org-001", membership.OrganizationId.Id);
+            Assert.Equal("env-dev", membership.EnvironmentId.Id);
+            Assert.Equal(roleId, Assert.Single(membership.Roles).RoleId.Id);
+            var scope = Assert.Single(membership.DataScopes);
+            Assert.Equal("org-001", scope.ScopeCode);
+            var role = await dbContext.Roles.Include(r => r.Permissions).SingleAsync(r => r.Id == new RoleId(roleId));
+            Assert.Contains(role.Permissions, permission => permission.PermissionCode == managePermission);
+        }
+
+        var technician = await dbContext.Roles.Include(r => r.Permissions)
+            .SingleAsync(r => r.Id == new RoleId("role-maintenance-technician"));
+        var codes = technician.Permissions.Select(permission => permission.PermissionCode).Order().ToArray();
+        Assert.Equal(new[]
+        {
+            "business.maintenance.downtime-reasons.read",
+            "business.maintenance.plans.manage",
+            "business.maintenance.plans.read",
+            "business.maintenance.work-orders.manage",
+            "business.maintenance.work-orders.read",
+            "business.masterdata.products.read",
+            "business.masterdata.resources.read",
+        }.Order(), codes);
+        Assert.All(codes, code => Assert.Contains(code, NervIipSeedPermissions.All));
     }
 
     private static ApplicationDbContext CreateDbContext()

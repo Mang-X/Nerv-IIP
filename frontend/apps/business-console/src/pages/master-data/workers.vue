@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleWorkerDirectoryItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
@@ -40,6 +42,8 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { friendlyErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -306,7 +310,12 @@ async function confirmRestore() {
         </NvButton>
         <NvDialog v-model:open="formOpen">
           <NvDialogTrigger as-child>
-            <NvButton size="sm" type="button" @click="openCreate">
+            <NvButton
+              v-if="can(P.masterDataResourcesManage)"
+              size="sm"
+              type="button"
+              @click="openCreate"
+            >
               <PlusIcon aria-hidden="true" />
               新增员工
             </NvButton>
@@ -495,7 +504,7 @@ async function confirmRestore() {
           :tone="statusTone(row.employmentStatus)"
         />
       </template>
-      <template #cell-actions="{ row }">
+      <template v-if="can(P.masterDataResourcesManage)" #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
           <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</NvButton>
           <NvButton

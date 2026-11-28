@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { NvDataTableColumn, NvMetricFacet } from '@nerv-iip/ui'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
@@ -41,6 +43,8 @@ import {
 } from '@/utils/notify'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -176,6 +180,7 @@ function openReassignment(task: BusinessConsoleQualityInspectionTaskItem) {
 }
 
 async function submitReassignment() {
+  if (!can(P.qualityInspectionPlansManage)) return
   const task = assignmentTask.value
   const inspectionTaskId = task?.inspectionTaskId?.trim()
   const targetUserId = assignmentTargetUserId.value.trim()
@@ -294,6 +299,7 @@ function sourceDocumentRoute(task: BusinessConsoleQualityInspectionTaskItem) {
 }
 
 async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
+  if (!can(P.qualityInspectionRecordsCreate)) return
   const inspectionTaskId = task.inspectionTaskId?.trim()
   if (!inspectionTaskId) return
   const needsClaim = task.allowedActions?.includes('claim')
@@ -508,8 +514,9 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
       <template #cell-actions="{ row }">
         <NvButton
           v-if="
-            row.allowedActions?.includes('claim') ||
-            row.allowedActions?.includes('submit-inspection')
+            can(P.qualityInspectionRecordsCreate) &&
+            (row.allowedActions?.includes('claim') ||
+              row.allowedActions?.includes('submit-inspection'))
           "
           size="sm"
           :disabled="!row.inspectionTaskId || openingTaskId === row.inspectionTaskId"
@@ -520,7 +527,11 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
           <ArrowRightIcon aria-hidden="true" />
         </NvButton>
         <NvButton
-          v-if="row.status === 'pending' && isTaskClaimedByAnother(row)"
+          v-if="
+            can(P.qualityInspectionPlansManage) &&
+            row.status === 'pending' &&
+            isTaskClaimedByAnother(row)
+          "
           size="sm"
           variant="outline"
           @click="openReassignment(row)"

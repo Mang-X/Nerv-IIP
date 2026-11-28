@@ -203,14 +203,23 @@ const {
       /></template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`维护工单操作 ${workOrderNo(row)}`">
+        <NvRowActions v-if="canManageWorkOrders" :label="`维护工单操作 ${workOrderNo(row)}`">
           <NvDropdownMenuItem
             :disabled="!canUpdateExpectedRestore(row)"
+            class="data-disabled:pointer-events-auto"
+            :title="
+              canUpdateExpectedRestore(row) ? undefined : '当前工单状态不允许更新预计恢复时间'
+            "
             @click="openExpectedRestore(row)"
           >
             更新预计恢复时间
           </NvDropdownMenuItem>
-          <NvDropdownMenuItem :disabled="!canComplete(row)" @click="openComplete(row)">
+          <NvDropdownMenuItem
+            :disabled="!canComplete(row)"
+            class="data-disabled:pointer-events-auto"
+            :title="canComplete(row) ? undefined : '当前工单状态不允许完工'"
+            @click="openComplete(row)"
+          >
             <CheckCircle2Icon aria-hidden="true" />
             完成工单
           </NvDropdownMenuItem>

@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import {
   createBusinessConsoleQualityMeasuringDevice,
   recordBusinessConsoleQualityMeasuringDeviceCalibration,
 } from '@nerv-iip/api-client'
 import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
-import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -258,10 +258,8 @@ function refreshAll() {
   void refreshMeasuringDevices()
   void refreshCalibrationRecords()
 }
-const auth = useAuthStore()
-const canManage = computed(() =>
-  auth.principal?.permissionCodes?.includes(P.qualityMeasuringDevicesManage),
-)
+const { can } = usePermission()
+const canManage = computed(() => can(P.qualityMeasuringDevicesManage))
 const writeMode = shallowRef<'device' | 'calibration'>('device')
 const writeOpen = shallowRef(false)
 const saving = shallowRef(false)

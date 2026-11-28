@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
@@ -19,6 +21,8 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { inlineErrorMessage } from '@/utils/notify'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -227,7 +231,12 @@ function openEdit(row: BusinessConsoleResourceItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openForm()">
+        <NvButton
+          v-if="can(P.masterDataResourcesManage)"
+          size="sm"
+          type="button"
+          @click="openForm()"
+        >
           <PlusIcon aria-hidden="true" />
           新建设备
         </NvButton>
@@ -269,6 +278,7 @@ function openEdit(row: BusinessConsoleResourceItem) {
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions
+          :read-only="!can(P.masterDataResourcesManage)"
           :row="row"
           entity-label="设备"
           :detail-fields="deviceDetailFields(row)"

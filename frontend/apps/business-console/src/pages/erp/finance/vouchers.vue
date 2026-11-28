@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { BusinessConsoleErpJournalVoucherItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpJournalVouchers } from '@/composables/erp/useBusinessErp'
@@ -39,6 +41,8 @@ import {
 } from '../shared'
 
 const { locale } = i18n.global
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -193,6 +197,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!can(P.erpFinanceManage)) return
   showErrors.value = true
   if (!canSubmit.value) return
   const amount = Number(form.amount)
@@ -242,7 +247,7 @@ async function submit() {
           @click="vouchers.refresh"
           ><RefreshCwIcon aria-hidden="true" />刷新</NvButton
         >
-        <NvButton size="sm" type="button" @click="openDialog"
+        <NvButton v-if="can(P.erpFinanceManage)" size="sm" type="button" @click="openDialog"
           ><PlusIcon aria-hidden="true" />过账凭证</NvButton
         >
       </template>
@@ -319,7 +324,7 @@ async function submit() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="can(P.erpFinanceManage)" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>过账会计凭证</NvDialogTitle

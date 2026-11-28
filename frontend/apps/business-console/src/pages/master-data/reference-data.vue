@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
   BusinessConsoleCreateReferenceDataCodeRequest,
   BusinessConsoleResourceItem,
@@ -34,6 +36,8 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -297,6 +301,7 @@ function isNonEmpty(value: string) {
           此字典由系统维护，不能新增条目
         </span>
         <NvButton
+          v-if="can(P.masterDataResourcesManage)"
           size="sm"
           type="button"
           class="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
@@ -449,6 +454,7 @@ function isNonEmpty(value: string) {
           </template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions
+              :read-only="!can(P.masterDataResourcesManage)"
               :row="row"
               entity-label="字典条目"
               :detail-fields="codeDetailFields(row)"

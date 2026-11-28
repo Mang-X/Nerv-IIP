@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type { BusinessConsoleErpPurchaseOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseOrders } from '@/composables/erp/useBusinessErp'
@@ -58,6 +59,8 @@ import {
 
 const { locale } = i18n.global
 
+const { can } = usePermission()
+
 definePage({
   meta: {
     requiresAuth: true,
@@ -69,7 +72,7 @@ definePage({
 const orders = useErpPurchaseOrders()
 const auth = useAuthStore()
 const permissions = computed(() => auth.principal?.permissionCodes ?? [])
-const canManage = computed(() => permissions.value.includes('business.erp.procurement.manage'))
+const canManage = computed(() => can(P.erpProcurementManage))
 const canReadApprovals = computed(() => permissions.value.includes(P.approvalsRead))
 // 供应商 / 工厂 / 物料 / 单位一律从主数据目录里选，手输编码只会在提交时才发现敲错。
 const { supplierOptions, partnersPending } = useErpPartnerCatalog()
@@ -251,6 +254,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!can(P.erpProcurementManage)) return
   if (orders.createPurchaseOrderPending.value) return
   showErrors.value = true
   if (!canSubmit.value) return
@@ -314,6 +318,7 @@ watch([orders.organizationId, orders.environmentId], () => {
 })
 
 async function submitRevision() {
+  if (!can(P.erpProcurementManage)) return
   if (!canManage.value || orders.revisePurchaseOrderPending.value) return
   const order = orders.items.value.find((item) => item.purchaseOrderNo === revisionOrderNo.value)
   if (!order?.canReviseBeforeApproval) return
@@ -372,7 +377,7 @@ async function submitRevision() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openDialog">
+        <NvButton v-if="canManage" size="sm" type="button" @click="openDialog">
           <PlusIcon aria-hidden="true" />
           新建采购单
         </NvButton>
@@ -538,7 +543,7 @@ async function submitRevision() {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="canManage" v-model:open="open">
       <NvDialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>新建采购订单</NvDialogTitle>

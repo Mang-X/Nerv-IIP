@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { shallowRef } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
@@ -27,6 +29,8 @@ import { ClipboardCheckIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import InspectionRecordCreateDialog from './components/InspectionRecordCreateDialog.vue'
 import { useInspectionPage } from './useInspectionPage'
+
+const { can } = usePermission()
 
 definePage({
   meta: {
@@ -127,7 +131,12 @@ const {
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="scanAuditRoute">扫码记录</RouterLink>
         </NvButton>
-        <NvButton size="sm" type="button" @click="recordSheetOpen = true">
+        <NvButton
+          v-if="can(P.qualityInspectionRecordsCreate)"
+          size="sm"
+          type="button"
+          @click="recordSheetOpen = true"
+        >
           <ClipboardCheckIcon aria-hidden="true" />
           创建检验记录
         </NvButton>
@@ -222,7 +231,10 @@ const {
                 <Settings2Icon aria-hidden="true" />
                 启用首件方案
               </NvDropdownMenuItem>
-              <NvDropdownMenuItem @click="useInspectionPlan(row)">
+              <NvDropdownMenuItem
+                v-if="can(P.qualityInspectionRecordsCreate)"
+                @click="useInspectionPlan(row)"
+              >
                 <ClipboardCheckIcon aria-hidden="true" />
                 创建检验记录
               </NvDropdownMenuItem>
@@ -250,6 +262,7 @@ const {
     />
 
     <InspectionRecordCreateDialog
+      v-if="can(P.qualityInspectionRecordsCreate)"
       v-model:record-sheet-open="recordSheetOpen"
       v-model:record-plan-model="recordPlanModel"
       :-s-o-u-r-c-e_-d-o-c-u-m-e-n-t_-k-i-n-d-s="SOURCE_DOCUMENT_KINDS"
