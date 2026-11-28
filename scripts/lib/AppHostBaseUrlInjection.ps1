@@ -484,7 +484,7 @@ function Get-NervProviderServiceName {
     #>
     param([Parameter(Mandatory)] [string] $ProjectName)
 
-    if ($ProjectName -eq 'Nerv.IIP.ConnectorHost.DevSimulator') {
+    if ([string]::Equals($ProjectName, 'Nerv.IIP.ConnectorHost.DevSimulator', [StringComparison]::Ordinal)) {
         return 'DevSimulator'
     }
     if (-not $ProjectName.StartsWith('Nerv.IIP.', [StringComparison]::Ordinal)) {
