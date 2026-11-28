@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import NvAreaChart from '../../chart/NvAreaChart.vue'
+import { hasMeaningfulTrend } from '../metric'
 
 /**
  * Internal — the `sparkline` bottom-zone: an in-card trend that reuses the
@@ -31,7 +32,7 @@ const ariaLabel = computed(() => {
 </script>
 
 <template>
-  <div v-if="chartData.length > 1" role="img" :aria-label="ariaLabel" class="mt-4">
+  <div v-if="hasMeaningfulTrend(series)" role="img" :aria-label="ariaLabel" class="mt-4">
     <NvAreaChart
       minimal
       crosshair

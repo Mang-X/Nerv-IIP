@@ -450,29 +450,29 @@ const columns: NvDataTableColumn<PickingRow>[] = [
   {
     key: 'taskNo',
     header: '任务号',
-    width: 'w-64',
+    width: 'w-40',
     cellClass: 'font-medium',
     // warehouseTaskId 是系统 GUID，不上屏；没有人读任务号就如实留空。
     accessor: (r) => r.taskNo ?? '无任务号',
   },
-  { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'status', header: '状态', width: 'w-20' },
   {
     key: 'sourceOrderNo',
     header: '来源单据',
-    width: 'w-56',
+    width: 'w-40',
     accessor: (r) => r.sourceOrderNo ?? '—',
   },
   {
     key: 'skuCode',
     header: '物料',
-    width: 'w-48',
+    width: 'w-32',
     accessor: (r) => skuText(r.skuCode),
   },
-  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
+  { key: 'inventoryContext', header: '库存上下文', width: 'w-52' },
   {
     key: 'location',
     header: '起讫库位',
-    width: 'w-56',
+    width: 'w-40',
     accessor: (r) => `${locationLabel(r.fromLocationCode)} → ${locationLabel(r.toLocationCode)}`,
   },
   {
@@ -504,9 +504,9 @@ const columns: NvDataTableColumn<PickingRow>[] = [
   {
     key: 'actions',
     header: '操作',
-    width: 'w-56',
-    headerClass: 'sticky right-0 z-20 border-l bg-background',
-    cellClass: 'sticky right-0 z-10 border-l bg-card',
+    width: 'w-52',
+    headerClass: 'sticky end-0 z-20 border-l bg-card',
+    cellClass: 'sticky end-0 z-10 border-l bg-card',
     // 不可操作时这一列要说「为什么」，导出/排序取阻断原因而不是空串。
     accessor: (r) => (taskActions(r).length > 0 ? '可执行' : blockReasonText(r) || '不可操作'),
   },

@@ -73,21 +73,36 @@ const columns: NvDataTableColumn<BusinessConsoleErpSupplierQuotationItem>[] = [
   {
     key: 'quotationNo',
     header: '报价单号',
-    cellClass: 'font-medium',
+    width: 'w-36',
+    cellClass: 'font-medium whitespace-normal wrap-anywhere',
     accessor: (r) => r.quotationNo ?? '-',
   },
-  { key: 'rfqNo', header: '关联询价单', accessor: (r) => r.rfqNo ?? '-' },
+  {
+    key: 'rfqNo',
+    header: '关联询价单',
+    width: 'w-36',
+    cellClass: 'whitespace-normal wrap-anywhere',
+    accessor: (r) => r.rfqNo ?? '-',
+  },
   {
     key: 'supplierCode',
     header: '供应商',
+    width: 'w-36',
+    cellClass: 'whitespace-normal wrap-anywhere',
     accessor: (r) => resolvePartnerLabel(r.supplierCode ?? '', '') || '-',
   },
-  { key: 'skuCode', header: '物料', accessor: (r) => r.lines?.[0]?.skuCode ?? '-' },
+  {
+    key: 'skuCode',
+    header: '物料',
+    width: 'w-36',
+    cellClass: 'whitespace-normal wrap-anywhere',
+    accessor: (r) => r.lines?.[0]?.skuCode ?? '-',
+  },
   {
     key: 'quantity',
     header: '报价数量',
     align: 'end',
-    width: 'w-28',
+    width: 'w-20',
     accessor: (r) => {
       const line = r.lines?.[0]
       if (!line || line.quantity === null || line.quantity === undefined) return '-'
@@ -98,26 +113,27 @@ const columns: NvDataTableColumn<BusinessConsoleErpSupplierQuotationItem>[] = [
     key: 'unitPrice',
     header: '单价（元）',
     align: 'end',
-    width: 'w-28',
+    width: 'w-24',
     accessor: (r) => formatAmount(r.lines?.[0]?.unitPrice),
   },
   {
     key: 'totalAmount',
     header: '报价金额（元）',
     align: 'end',
-    width: 'w-32',
+    width: 'w-28',
     accessor: (r) => formatAmount(r.totalAmount),
   },
   {
     key: 'promisedDate',
     header: '承诺交期',
-    width: 'w-28',
+    width: 'w-24',
     accessor: (r) => formatDate(r.lines?.[0]?.promisedDate),
   },
   {
     key: 'receivedAtUtc',
     header: '收到时间',
-    width: 'w-40',
+    width: 'w-32',
+    cellClass: 'whitespace-normal wrap-anywhere',
     accessor: (r) => formatDateTime(r.receivedAtUtc),
   },
 ]

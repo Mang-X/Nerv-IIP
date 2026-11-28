@@ -62,6 +62,7 @@ const stub = vi.hoisted(() => ({
 }))
 
 const bindingState = vi.hoisted(() => ({
+  error: undefined as Error | undefined,
   rows: [
     {
       deviceControlChannelBindingId: 'binding-1',
@@ -85,7 +86,7 @@ const authState = vi.hoisted(() => ({
 vi.mock('@/composables/equipment/useBusinessDeviceControlBinding', () => ({
   useBusinessDeviceControlBindings: () => ({
     bindings: computed(() => bindingState.rows),
-    bindingsError: shallowRef(),
+    bindingsError: computed(() => bindingState.error),
     bindingsPending: shallowRef(false),
     bindingsTotal: computed(() => bindingState.rows.length),
     filters: reactive({ deviceAssetId: '', skip: 0, take: 100 }),
@@ -168,6 +169,8 @@ const stubs = {
 }
 
 beforeEach(() => {
+  bindingState.error = undefined
+  stub.refreshBindings.mockClear()
   bindingState.rows = [
     {
       deviceControlChannelBindingId: 'binding-1',
@@ -190,6 +193,18 @@ beforeEach(() => {
 })
 
 describe('device control bindings page', () => {
+  it('shows a retryable load error instead of the empty bindings state', async () => {
+    bindingState.rows = []
+    bindingState.error = new Error('控制通道暂时不可用')
+    const wrapper = mount(ControlBindingsPage, { global: { stubs } })
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('控制通道暂时不可用')
+    expect(wrapper.text()).not.toContain('还没有设备控制通道绑定')
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试')
+    await retry!.trigger('click')
+    expect(stub.refreshBindings).toHaveBeenCalledOnce()
+  })
+
   it('renders the title, binding rows, headers and create action', async () => {
     const wrapper = mount(ControlBindingsPage, { global: { stubs } })
     await flushPromises()

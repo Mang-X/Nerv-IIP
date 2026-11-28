@@ -143,44 +143,60 @@ const recordErrorMessage = computed(() =>
 )
 
 const deviceColumns: NvDataTableColumn<QualityMeasuringDeviceItem>[] = [
-  { key: 'deviceCode', header: '器具编码', cellClass: 'font-medium' },
-  { key: 'deviceType', header: '类别', accessor: (row) => row.deviceType?.trim() || '未分类' },
-  { key: 'accuracy', header: '规格与精度', accessor: (row) => row.accuracy?.trim() || '未登记' },
+  { key: 'deviceCode', header: '器具编码', width: 'w-28', cellClass: 'font-medium' },
+  {
+    key: 'deviceType',
+    header: '类别',
+    width: 'w-20',
+    accessor: (row) => row.deviceType?.trim() || '未分类',
+  },
+  {
+    key: 'accuracy',
+    header: '规格与精度',
+    width: 'w-24',
+    accessor: (row) => row.accuracy?.trim() || '未登记',
+  },
   {
     key: 'calibrationIntervalDays',
     header: '检定周期',
     align: 'end',
-    width: 'w-24',
+    width: 'w-20',
     accessor: (row) =>
       typeof row.calibrationIntervalDays === 'number' ? `${row.calibrationIntervalDays} 天` : '无',
   },
-  { key: 'status', header: '器具状态', width: 'w-24' },
+  { key: 'status', header: '器具状态', width: 'w-20' },
   {
     key: 'lastCalibratedAtUtc',
     header: '末次校准',
+    width: 'w-24',
     accessor: (row) => formatDate(row.lastCalibratedAtUtc),
   },
   {
     key: 'calibrationDueAtUtc',
     header: '下次到期',
+    width: 'w-24',
     accessor: (row) => formatDate(row.calibrationDueAtUtc),
   },
-  { key: 'calibrationState', header: '校准状态', width: 'w-28' },
+  { key: 'calibrationState', header: '校准状态', width: 'w-24' },
   {
     key: 'daysUntilDue',
     header: '剩余天数',
     align: 'end',
-    width: 'w-32',
+    width: 'w-20',
     accessor: (row) => calibrationRemainingText(row.daysUntilDue),
   },
   {
     key: 'latestCalibrationNo',
     header: '末次证书号',
+    width: 'w-32',
+    cellClass: 'whitespace-normal wrap-anywhere',
     accessor: (row) => row.latestCalibrationNo?.trim() || '无',
   },
   {
     key: 'latestCalibrationProvider',
     header: '校准机构',
+    width: 'w-36',
+    cellClass: 'whitespace-normal wrap-anywhere',
     accessor: (row) => row.latestCalibrationProvider?.trim() || '无',
   },
 ]

@@ -6,6 +6,7 @@ import { cn } from '../../../lib/utils'
 import NvAreaChart from '../chart/NvAreaChart.vue'
 import NvCard from './NvCard.vue'
 import {
+  hasMeaningfulTrend,
   metricToneText,
   metricToneTint,
   type NvMetricAction,
@@ -123,6 +124,7 @@ const valueToneClass = computed(() =>
     ? metricToneText[props.tone]
     : '',
 )
+const showTrendChart = computed(() => hasMeaningfulTrend(props.series))
 const defaultChartData = computed(() =>
   (props.series ?? []).map((v, i) => ({ label: props.seriesLabels?.[i] ?? String(i), value: v })),
 )
@@ -153,7 +155,7 @@ const seriesAriaLabel = computed(() => {
 
 <template>
   <NvCard
-    :class="cn('nv-metric overflow-hidden p-5', alertShell, props.class)"
+    :class="cn('nv-metric overflow-hidden p-4', alertShell, props.class)"
     :data-variant="variant"
   >
     <!-- icon variant: horizontal, tone chip leads -->
@@ -183,7 +185,7 @@ const seriesAriaLabel = computed(() => {
              number rather than below it: a short sparkline for the shape, the chip
              for the figure. Both are supplementary and yield on narrow cells. -->
         <div
-          v-if="iconChartData.length > 1"
+          v-if="showTrendChart"
           class="nv-metric-spark w-16"
           role="img"
           :aria-label="seriesAriaLabel"
@@ -302,7 +304,7 @@ const seriesAriaLabel = computed(() => {
       <!-- default (back-compat: optional sparkline + deprecated hint) -->
       <template v-else>
         <NvAreaChart
-          v-if="defaultChartData.length > 1"
+          v-if="showTrendChart"
           minimal
           :data="defaultChartData"
           :height="46"

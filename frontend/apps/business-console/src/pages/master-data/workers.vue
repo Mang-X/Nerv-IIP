@@ -17,6 +17,7 @@ import {
   NvDataTable,
   NvDialog,
   NvDialogContent,
+  NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
@@ -115,15 +116,22 @@ const listErrorMessage = computed(() =>
 )
 
 const columns: NvDataTableColumn<BusinessConsoleWorkerDirectoryItem>[] = [
-  { key: 'employeeNo', header: '工号', width: 'w-32' },
-  { key: 'displayName', header: '姓名', cellClass: 'font-medium' },
-  { key: 'jobTitle', header: '岗位', width: 'w-40' },
-  { key: 'departmentName', header: '部门', width: 'w-36' },
-  { key: 'loginName', header: '登录账号', width: 'w-36' },
-  { key: 'teams', header: '班组' },
-  { key: 'skills', header: '技能' },
-  { key: 'employmentStatus', header: '在岗状态', width: 'w-28' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-32' },
+  { key: 'employeeNo', header: '工号', width: 'w-28' },
+  { key: 'displayName', header: '姓名', width: 'w-28', cellClass: 'font-medium' },
+  { key: 'jobTitle', header: '岗位', width: 'w-32' },
+  { key: 'departmentName', header: '部门', width: 'w-28' },
+  { key: 'loginName', header: '登录账号', width: 'w-32' },
+  { key: 'teams', header: '班组', width: 'w-28' },
+  { key: 'skills', header: '技能', width: 'w-28' },
+  { key: 'employmentStatus', header: '在岗状态', width: 'w-24' },
+  {
+    key: 'actions',
+    header: '操作',
+    align: 'end',
+    width: 'w-32',
+    headerClass: 'sticky end-0 z-20 border-l bg-card',
+    cellClass: 'sticky end-0 z-10 border-l bg-card',
+  },
 ]
 
 interface WorkerForm {
@@ -306,6 +314,9 @@ async function confirmRestore() {
           <NvDialogContent class="sm:max-w-2xl">
             <NvDialogHeader>
               <NvDialogTitle>{{ editingCode ? '编辑员工' : '新增员工' }}</NvDialogTitle>
+              <NvDialogDescription class="sr-only"
+                >填写员工基本信息和岗位资料。</NvDialogDescription
+              >
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">

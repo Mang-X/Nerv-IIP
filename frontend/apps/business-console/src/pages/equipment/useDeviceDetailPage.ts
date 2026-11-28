@@ -130,6 +130,7 @@ export function useDeviceDetailPage() {
     commandsPending: controlCommandsPending,
     commandsTotal: controlCommandsTotal,
     historyFilters: controlHistoryFilters,
+    refreshCommands: refreshControlCommands,
   } = useBusinessDeviceControlCommands(deviceAssetIdRef)
   const { page: controlPage, pageSize: controlPageSize } = usePagedList(controlHistoryFilters)
   const controlCommandsErrorMessage = computed(() => inlineErrorMessage(controlCommandsError.value))
@@ -677,6 +678,7 @@ export function useDeviceDetailPage() {
     controlCommandRowKey,
     controlCommands,
     controlCommandsErrorMessage,
+    refreshControlCommands,
     controlCommandsPending,
     controlCommandsTotal,
     controlPage,

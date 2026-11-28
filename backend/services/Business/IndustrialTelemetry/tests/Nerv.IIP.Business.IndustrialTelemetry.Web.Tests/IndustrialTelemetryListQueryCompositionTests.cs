@@ -31,6 +31,25 @@ public sealed class IndustrialTelemetryListQueryCompositionTests
     };
 
     [Theory]
+    [InlineData("device-control-bindings", "")]
+    [InlineData("device-control-commands", "&deviceAssetId=EQ00001")]
+    public async Task Empty_control_lists_return_ok_with_scope_validation_enabled(string route, string filter)
+    {
+        await using var factory = new IndustrialTelemetryListQueryHttpTestFactory();
+        using var client = CreateAuthorizedClient(factory);
+
+        using var response = await client.GetAsync(
+            $"/api/business/v1/iiot/{route}?organizationId=org-001&environmentId=env-dev&skip=0&take=10{filter}");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(0, data.GetProperty("total").GetInt32());
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
+    }
+
+    [Theory]
     [MemberData(nameof(ListRoutes))]
     [Trait("Category", "PublicContract")]
     [Trait("Category", "Regression")]
@@ -220,6 +239,7 @@ public sealed class IndustrialTelemetryListQueryCompositionTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
+            builder.UseDefaultServiceProvider(options => options.ValidateScopes = true);
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             builder.ConfigureTestServices(services =>
             {

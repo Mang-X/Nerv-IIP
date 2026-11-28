@@ -112,36 +112,43 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   {
     key: 'salesOrderNo',
     header: '销售单号',
-    width: 'w-44',
+    width: 'w-40',
     cellClass: 'font-medium',
     accessor: (r) => r.salesOrderNo ?? '-',
   },
   {
     key: 'customerCode',
     header: '客户',
-    width: 'w-56',
+    width: 'w-40',
     accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
   },
-  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'status', header: '状态', width: 'w-24' },
   // 交期是销售员看订单的第一眼信息，此前整列缺失（GH#1292 第 1 项）。
   // 销售订单读面本身不带交期，但紧急度读面（本页已在取）带 timeCriticality.dueUtc，
   // 正是这张订单的承诺交期——直接用它，不新增契约。
   {
     key: 'dueUtc',
     header: '交期',
-    width: 'w-32',
+    width: 'w-28',
     accessor: (r) => dueUtcOf(r),
   },
-  { key: 'urgency', header: '紧急度', width: 'w-28' },
+  { key: 'urgency', header: '紧急度', width: 'w-24' },
   {
     key: 'totalAmount',
     header: '金额',
     align: 'end',
-    width: 'w-32',
+    width: 'w-24',
     accessor: (r) => r.totalAmount ?? 0,
   },
-  { key: 'lineQuantities', header: '分配与发运', width: 'w-60', cellClass: 'align-top' },
-  { key: 'fulfillment', header: '履约', align: 'end', width: 'w-28' },
+  { key: 'lineQuantities', header: '分配与发运', width: 'w-52', cellClass: 'align-top' },
+  {
+    key: 'fulfillment',
+    header: '操作',
+    align: 'end',
+    width: 'w-28',
+    headerClass: 'sticky end-0 z-20 border-l bg-card',
+    cellClass: 'sticky end-0 z-10 border-l bg-card',
+  },
 ]
 
 const releasedCount = computed(

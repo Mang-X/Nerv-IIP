@@ -66,6 +66,7 @@ internal sealed partial class AppHostComposition
             .WithHttpEndpoint(port: fullStackEphemeral ? null : 5102, name: "http")
             .WithEnvironment("Persistence__Provider", "PostgreSQL")
             .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
+            .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
             .WithEnvironment("Iam__Seed__Enabled", developmentOnlyEnabledValue)
             .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
             .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)

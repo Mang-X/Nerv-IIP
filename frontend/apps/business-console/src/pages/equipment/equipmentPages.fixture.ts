@@ -114,6 +114,8 @@ const authState = vi.hoisted(() => ({
 }))
 
 const deviceControlState = vi.hoisted(() => ({
+  error: undefined as Error | undefined,
+  refreshCommands: vi.fn(),
   commands: [
     {
       commandId: 'cmd-1',
@@ -404,7 +406,8 @@ vi.mock('@/composables/equipment/useBusinessDeviceControl', async (importOrigina
   isTerminalDeviceControlStatus: () => true,
   useBusinessDeviceControlCommands: () => ({
     commands: computed(() => deviceControlState.commands),
-    commandsError: shallowRef(),
+    commandsError: computed(() => deviceControlState.error),
+    refreshCommands: deviceControlState.refreshCommands,
     commandsPending: shallowRef(false),
     commandsTotal: computed(() => deviceControlState.commands.length),
     historyFilters: { deviceAssetId: 'DEV-OIL-01', status: '', skip: 0, take: 20 },
@@ -579,6 +582,7 @@ const stubs = {
 }
 
 export {
+  deviceControlState,
   readFaceState,
   routeState,
   equipmentComposableState,

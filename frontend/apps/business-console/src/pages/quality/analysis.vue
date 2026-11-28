@@ -479,7 +479,7 @@ function spcViolationKey(row: QualitySpcViolation) {
       NCR 数据加载失败：{{ listErrorMessage }}
     </p>
 
-    <div v-else class="grid gap-4 lg:grid-cols-3">
+    <div v-else class="grid items-start gap-4 lg:grid-cols-3">
       <NvMetricRing
         label="不合格品处置构成"
         :value="summary.sampledNcrCount"
@@ -594,7 +594,7 @@ function spcViolationKey(row: QualitySpcViolation) {
         </template>
       </NvToolbar>
 
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <NvMetricCard
           variant="facets"
           label="分析范围"

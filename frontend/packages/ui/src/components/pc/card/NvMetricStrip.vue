@@ -7,6 +7,7 @@ import NvAreaChart from '../chart/NvAreaChart.vue'
 import NvCard from './NvCard.vue'
 import {
   metricItemKey,
+  hasMeaningfulTrend,
   metricToneText,
   metricToneTint,
   type NvMetricStripCell,
@@ -44,7 +45,7 @@ const reservesMeta = computed(() =>
  * derived ratio doesn't), so reserve the chart band across the row whenever any
  * cell plots one.
  */
-const reservesChart = computed(() => props.cells.some((cell) => (cell.series?.length ?? 0) > 1))
+const reservesChart = computed(() => props.cells.some((cell) => hasMeaningfulTrend(cell.series)))
 
 const metaIcon = { up: TrendingUpIcon, down: TrendingDownIcon, flat: MinusIcon } as const
 function metaToneClass(tone?: string) {
@@ -73,7 +74,7 @@ function chartData(cell: NvMetricStripCell) {
 function hasDatedSeries(cell: NvMetricStripCell) {
   return (
     (cell.seriesLabels?.length ?? 0) === (cell.series?.length ?? 0) &&
-    (cell.series?.length ?? 0) > 1
+    hasMeaningfulTrend(cell.series)
   )
 }
 
@@ -105,13 +106,13 @@ function chartAriaLabel(cell: NvMetricStripCell) {
     <div
       v-for="(cell, i) in cells"
       :key="metricItemKey(cell, i)"
-      class="flex min-w-0 flex-1 flex-col gap-1 border-border p-4 [&:not(:first-child)]:border-t sm:p-5 sm:[&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-t-0"
+      class="flex min-w-0 flex-1 flex-col gap-1 border-border px-4 py-3 [&:not(:first-child)]:border-t sm:px-5 sm:py-3.5 sm:[&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-t-0"
     >
       <p class="truncate text-sm text-muted-foreground">{{ cell.label }}</p>
       <p
         :class="
           cn(
-            'truncate text-xl font-semibold tabular-nums tracking-tight',
+            'truncate text-2xl font-semibold tabular-nums tracking-tight',
             cell.valueTone ? metricToneText[cell.valueTone] : '',
           )
         "
@@ -155,7 +156,7 @@ function chartAriaLabel(cell: NvMetricStripCell) {
       <span v-else-if="reservesMeta" class="text-xs" aria-hidden="true">&nbsp;</span>
 
       <div
-        v-if="(cell.series?.length ?? 0) > 1"
+        v-if="hasMeaningfulTrend(cell.series)"
         role="img"
         :aria-label="chartAriaLabel(cell)"
         class="mt-1.5"

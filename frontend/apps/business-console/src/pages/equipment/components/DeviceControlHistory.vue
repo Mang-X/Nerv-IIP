@@ -23,6 +23,8 @@ defineProps<{
   controlCommandsTotal: View['controlCommandsTotal']
 }>()
 
+defineEmits<{ retry: [] }>()
+
 const controlSheetOpen = defineModel<View['controlSheetOpen']>('controlSheetOpen', {
   required: true,
 })
@@ -50,11 +52,20 @@ const controlPageSize = defineModel<View['controlPageSize']>('controlPageSize', 
       </NvButton>
     </div>
 
-    <p v-if="controlCommandsErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ controlCommandsErrorMessage }}
-    </p>
+    <div v-if="controlCommandsErrorMessage" class="flex items-center gap-3">
+      <p class="text-sm text-destructive" role="alert">{{ controlCommandsErrorMessage }}</p>
+      <NvButton
+        size="sm"
+        variant="outline"
+        :disabled="controlCommandsPending"
+        @click="$emit('retry')"
+      >
+        重试
+      </NvButton>
+    </div>
 
     <NvDataTable
+      v-else
       manual
       :page="controlPage"
       :page-size="controlPageSize"

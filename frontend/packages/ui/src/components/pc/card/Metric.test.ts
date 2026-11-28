@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import { describe, expect, it } from 'vitest'
+import NvAreaChart from '../chart/NvAreaChart.vue'
 import NvMetricCard from './NvMetricCard.vue'
 import NvMetricRing from './NvMetricRing.vue'
 import NvMetricStrip from './NvMetricStrip.vue'
@@ -12,6 +13,21 @@ import NvMetricStrip from './NvMetricStrip.vue'
 // NvAreaChart（unovis）要用的 ResizeObserver 桩现在由 `src/test/setup.ts` 统一提供（#2014）。
 
 describe('NvMetricCard 变体契约', () => {
+  it.each(['default', 'icon', 'sparkline'] as const)(
+    '%s 卡片只绘制有波动的面积图',
+    async (variant) => {
+      const wrapper = mount(NvMetricCard, {
+        props: { variant, label: '产量', value: 0, series: [0, 0] },
+      })
+
+      expect(wrapper.findComponent(NvAreaChart).exists()).toBe(false)
+      await wrapper.setProps({ value: 10, series: [10, 10] })
+      expect(wrapper.findComponent(NvAreaChart).exists()).toBe(false)
+      await wrapper.setProps({ series: [10, 8, 10] })
+      expect(wrapper.findComponent(NvAreaChart).exists()).toBe(true)
+    },
+  )
+
   it('delta 方向派生语义 tone，可被 override 表达「涨了但是坏事」', () => {
     const up = mount(NvMetricCard, {
       props: {
@@ -785,7 +801,7 @@ describe('NvMetricRing / NvMetricStrip', () => {
     })
     const cells = wrapper.findAll('.flex-1')
     expect(cells).toHaveLength(2)
-    expect(cells[1].find('p.text-xl').classes()).toContain('text-destructive-strong')
+    expect(cells[1].find('p.text-2xl').classes()).toContain('text-destructive-strong')
     // 向上 meta 出趋势图标（svg）
     expect(cells[0].find('svg').exists()).toBe(true)
   })
@@ -840,6 +856,22 @@ describe('NvMetricRing / NvMetricStrip', () => {
     // 没有 series 的那格留占位，避免整行下沿参差
     expect(cells[1].find('[role="img"]').exists()).toBe(false)
     expect(cells[1].find('.h-\\[34px\\]').exists()).toBe(true)
+  })
+
+  it.each([
+    [0, 0],
+    [12, 12],
+  ])('strip 平直序列不绘图也不占位（%i、%i）', (first, last) => {
+    const wrapper = mount(NvMetricStrip, {
+      props: {
+        cells: [
+          { label: '今日产量', value: first, series: [first, last] },
+          { label: '报工工单', value: 26 },
+        ],
+      },
+    })
+    expect(wrapper.findComponent(NvAreaChart).exists()).toBe(false)
+    expect(wrapper.find('.h-\\[34px\\]').exists()).toBe(false)
   })
 
   it('strip 单点 series 不画图（一个点画不出走势）', () => {

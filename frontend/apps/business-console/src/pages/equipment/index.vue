@@ -161,17 +161,25 @@ const columns: NvDataTableColumn<Device>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
+    width: 'w-48',
     cellClass: 'font-medium',
     accessor: (r) =>
       resolveDevice(r.deviceAssetId)
         ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
         : (r.deviceAssetId ?? '无编号'),
   },
-  { key: 'currentState', header: '状态', width: 'w-32' },
-  { key: 'isSourceFresh', header: '实时数据', width: 'w-32' },
-  { key: 'activeAlarmCount', header: '报警', align: 'end', width: 'w-20' },
-  { key: 'activeBlockCount', header: '阻塞', align: 'end', width: 'w-20' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+  { key: 'currentState', header: '状态', width: 'w-24' },
+  { key: 'isSourceFresh', header: '实时数据', width: 'w-24' },
+  { key: 'activeAlarmCount', header: '报警', align: 'end', width: 'w-16' },
+  { key: 'activeBlockCount', header: '阻塞', align: 'end', width: 'w-16' },
+  {
+    key: 'actions',
+    header: '操作',
+    align: 'end',
+    width: 'w-16',
+    headerClass: 'sticky end-0 z-20 border-l bg-card',
+    cellClass: 'sticky end-0 z-10 border-l bg-card',
+  },
 ]
 
 function badgeVariant(tone: EquipmentTone) {
@@ -350,9 +358,11 @@ function formatDateTime(value?: string | null) {
         <template #cell-deviceAssetId="{ row }">
           <RouterLink
             :to="`/equipment/${row.deviceAssetId}`"
-            class="grid leading-tight text-brand underline-offset-4 hover:underline"
+            class="grid min-w-0 leading-tight text-brand underline-offset-4 hover:underline"
           >
-            <span class="font-medium">{{ deviceLabel(row.deviceAssetId) }}</span>
+            <span class="min-w-0 truncate font-medium" :title="deviceLabel(row.deviceAssetId)">{{
+              deviceLabel(row.deviceAssetId)
+            }}</span>
             <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
               row.deviceAssetId
             }}</span>

@@ -58,6 +58,30 @@ public sealed class BusinessConsoleWorkerLoginAccountTests
         Assert.Equal("iam", item.GetProperty("sourceService").GetString());
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task Login_account_directory_reports_owner_rejection_without_invalidating_console_session(HttpStatusCode status)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [ManageGrant()]);
+        var iamHandler = new RecordingJsonHandler("{}", status);
+        await using var lease = LeaseHost(auth, iamHandler);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(
+            "/api/business-console/v1/directories/login-account?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Single(iamHandler.Requests);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("unavailable", data.GetProperty("status").GetString());
+        Assert.Equal("login-account-directory-unavailable", data.GetProperty("reasonCode").GetString());
+        Assert.Equal(0, data.GetProperty("total").GetInt32());
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
+    }
+
     // 账号名单是组织级人事事实：只持有受限范围（self / 车间）授权的主体不能借「目录无范围维度」读到整份名单。
     [Theory]
     [InlineData("self", "user-leader")]
