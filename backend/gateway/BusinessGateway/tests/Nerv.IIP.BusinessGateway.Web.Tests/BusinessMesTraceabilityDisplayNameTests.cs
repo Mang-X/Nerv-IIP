@@ -79,12 +79,15 @@ public sealed class BusinessMesTraceabilityDisplayNameTests
     }
 
     [Theory]
-    [InlineData("work-orders/WO-1")]
-    [InlineData("batches/SN-1")]
-    [InlineData("material-lots/LOT-1")]
-    public async Task Authorized_graph_remains_available_when_Iam_rejects_directory_credentials(string route)
+    [InlineData("work-orders/WO-1", HttpStatusCode.Unauthorized)]
+    [InlineData("work-orders/WO-1", HttpStatusCode.Forbidden)]
+    [InlineData("batches/SN-1", HttpStatusCode.Unauthorized)]
+    [InlineData("batches/SN-1", HttpStatusCode.Forbidden)]
+    [InlineData("material-lots/LOT-1", HttpStatusCode.Unauthorized)]
+    [InlineData("material-lots/LOT-1", HttpStatusCode.Forbidden)]
+    public async Task Authorized_graph_remains_available_when_Iam_rejects_directory_credentials(string route, HttpStatusCode iamStatus)
     {
-        var iam = new IamHandler(rejectCredentials: true);
+        var iam = new IamHandler(iamStatus);
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesTraceabilityRead);
         await using var lease = Lease(auth, new MesHandler(), iam);
         using var client = lease.CreateClient();
@@ -94,8 +97,13 @@ public sealed class BusinessMesTraceabilityDisplayNameTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var nodes = document.RootElement.GetProperty("data").GetProperty("nodes").EnumerateArray().ToArray();
+        var data = document.RootElement.GetProperty("data");
+        var nodes = data.GetProperty("nodes").EnumerateArray().ToArray();
         Assert.DoesNotContain(nodes, node => node.GetProperty("nodeType").GetString() == "InspectionResult");
+        var edge = Assert.Single(data.GetProperty("edges").EnumerateArray());
+        Assert.Equal("reported-by", edge.GetProperty("relationType").GetString());
+        Assert.Equal("user-other", edge.GetProperty("fromNodeId").GetString());
+        Assert.Equal("user-admin", edge.GetProperty("toNodeId").GetString());
         var operators = nodes.Where(node => node.GetProperty("nodeType").GetString() == "Operator").ToArray();
         Assert.Equal(4, operators.Length);
         Assert.All(operators, node => Assert.Equal("姓名不可用", node.GetProperty("displayName").GetString()));
@@ -138,7 +146,7 @@ public sealed class BusinessMesTraceabilityDisplayNameTests
         }
     }
 
-    private sealed class IamHandler(bool rejectCredentials = false) : HttpMessageHandler
+    private sealed class IamHandler(HttpStatusCode? rejectionStatus = null) : HttpMessageHandler
     {
         public List<string> Queries { get; } = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -146,9 +154,9 @@ public sealed class BusinessMesTraceabilityDisplayNameTests
             Assert.Equal("/internal/iam/v1/member-accounts", request.RequestUri!.AbsolutePath);
             Assert.Equal("internal-token", request.Headers.Authorization?.Parameter);
             Queries.Add(Uri.UnescapeDataString(request.RequestUri.Query));
-            if (rejectCredentials)
+            if (rejectionStatus is { } status)
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+                return Task.FromResult(new HttpResponseMessage(status));
             }
 
             return Task.FromResult(Json(new

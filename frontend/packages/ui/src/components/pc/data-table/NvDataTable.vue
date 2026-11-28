@@ -419,7 +419,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                 cn(
                   'nv-dt-th h-10 overflow-hidden text-xs font-medium text-muted-foreground',
                   alignClass[col.align ?? 'start'],
-                  widthClass(col.width),
+                  widthClass(col.width ?? 'w-32'),
                   col.headerClass,
                 )
               "
@@ -615,10 +615,8 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
    widened to fit its content; when the declarations leave spare room, the
    surplus is shared out across the columns.
 
-   `min-width: 100%` (on top of the primitive's `w-full`) is what keeps a narrow
-   window honest: the table can grow past the container and let the primitive's
-   `overflow-x-auto` wrapper scroll it, instead of squeezing the columns. Without
-   it, `fixed` would let the undeclared columns collapse toward 0px.
+   Giving every data column a width lets the table overflow horizontally when
+   their combined widths exceed the scroll container.
 
    `:deep()` is required, not decoration: `Table` primitive's root element is the
    scroll wrapper `<div>`, so Vue puts this component's scope id on that div —

@@ -83,9 +83,10 @@ const periodDraft = shallowRef(queryText(route.query, 'periodCode') || today().s
 const periodError = shallowRef('')
 function commitPeriod() {
   const period = periodDraft.value.trim()
-  const valid = /^\d{4}-(0[1-9]|1[0-2])$/.test(period)
-  periodError.value = valid ? '' : '期间格式应为 YYYY-MM，月份需在 01-12 之间。'
-  rates.accountingPeriodCode.value = valid ? period : ''
+  const invalidMonth = /^\d{4}-\d{1,2}$/.test(period) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)
+  periodError.value = !period ? '请输入会计期间编码。' : ''
+  if (invalidMonth) periodError.value = '月份需在 01-12 之间。'
+  rates.accountingPeriodCode.value = periodError.value ? '' : period
 }
 commitPeriod()
 

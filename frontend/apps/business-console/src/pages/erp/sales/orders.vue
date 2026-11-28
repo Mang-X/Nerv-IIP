@@ -119,6 +119,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
   {
     key: 'customerCode',
     header: '客户',
+    width: 'w-56',
     accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
   },
   { key: 'status', header: '状态', width: 'w-28' },
