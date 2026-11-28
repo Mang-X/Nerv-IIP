@@ -260,7 +260,7 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
 describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
   const rows: Row[] = [{ id: 'A', name: 'a' }]
 
-  it('保留显式宽度，并为未声明宽度的列提供固定布局的兜底宽度', async () => {
+  it('保留显式宽度，并让未声明宽度的列自由吸收剩余空间', async () => {
     const wrapper = mount(NvDataTable, {
       props: {
         ...base,
@@ -279,8 +279,8 @@ describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
     // 均分列不吃调用点声明的类；声明的类原样出现在表头上。
     expect(declared.classes()).toContain('w-48')
     expect(declared.attributes('style')).toBeUndefined()
-    expect(heads[1].classes()).toContain('w-32')
-    expect(heads[1].classes()).not.toContain('w-48')
+    expect(heads[1].classes().some((c) => c.startsWith('w-'))).toBe(false)
+    expect(heads[1].attributes('style')).toBeUndefined()
     expect(wrapper.get('tbody td:nth-child(2) [title="a"]').text()).toBe('a')
     wrapper.unmount()
   })
