@@ -227,7 +227,13 @@ async function submit() {
             <NvFieldLabel for="sku-category"
               >产品分类 <span class="text-destructive">*</span></NvFieldLabel
             >
-            <NvSelect v-model="form.category">
+            <RouterLink
+              v-if="!dictionaryPending && !productCategoryOptions.length"
+              to="/master-data/product-categories"
+              class="text-sm text-primary underline"
+              >去维护产品分类</RouterLink
+            >
+            <NvSelect v-else v-model="form.category">
               <NvSelectTrigger id="sku-category"
                 ><NvSelectValue placeholder="请选择分类"
               /></NvSelectTrigger>
@@ -383,7 +389,7 @@ async function submit() {
               </NvSelectContent>
             </NvSelect>
           </NvField>
-          <NvField class="sm:col-span-2">
+          <NvField v-if="!editingCode" class="sm:col-span-2">
             <NvFieldLabel>质量/合规标签</NvFieldLabel>
             <div class="grid gap-2 rounded-md border p-3 sm:grid-cols-3">
               <label

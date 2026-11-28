@@ -67,7 +67,7 @@ vi.mock('@/composables/engineering', () => ({
     fetchDocumentDetail: stub.fetchDocumentDetail,
   }),
   useBomItemCatalog: () => ({
-    engineeringEntries: shallowRef([
+    itemEntries: shallowRef([
       { code: 'ITEM-1', name: '控制主板' },
       { code: 'SKU-FG', name: '成品' },
     ]),

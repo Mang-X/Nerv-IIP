@@ -96,6 +96,10 @@ const ROWS_BY_TYPE: Record<string, unknown[]> = {
   'production-line': LINE_ROWS,
   'work-center': WC_ROWS,
   station: STATION_ROWS,
+  'work-calendar': [
+    { code: 'CAL-A', displayName: '标准工作日历' },
+    { code: 'CAL-B', displayName: '轮班工作日历' },
+  ],
 }
 
 function stubResource(resourceType: string) {
@@ -383,7 +387,9 @@ describe('master-data facilities tree page', () => {
 
   it('在产线上新建工作中心：工厂取自产线自身的归属，产线带出为只读', async () => {
     stub.createWorkCenter.mockClear()
-    const wrapper = mount(FacilitiesPage, mountOpts)
+    const wrapper = mount(FacilitiesPage, {
+      global: { stubs: { ...mountOpts.global.stubs, ...formSelectStubs } },
+    })
     await flushPromises()
 
     await findNodeButton(wrapper, '后桥线')!.trigger('click')
@@ -400,7 +406,7 @@ describe('master-data facilities tree page', () => {
     expect(wrapper.find('#wc-plant').exists()).toBe(false)
     expect(wrapper.find('#wc-line').exists()).toBe(false)
     await wrapper.find('#wc-name').setValue('装配中心')
-    await wrapper.find('#wc-cal').setValue('CAL-A')
+    await wrapper.find('select:has(#wc-cal)').setValue('CAL-A')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -570,7 +576,7 @@ describe('master-data facilities tree page', () => {
     )
   })
 
-  it('编辑工作中心：可改挂工厂 / 产线（update 收到新 plantCode + lineCode）', async () => {
+  it('编辑工作中心时可更新默认日历和日产能', async () => {
     actionStub.update.mockClear()
     const wrapper = mount(FacilitiesPage, {
       global: {
@@ -595,14 +601,18 @@ describe('master-data facilities tree page', () => {
     // 归属字段就位（工厂 / 产线选择器）。
     expect(wrapper.find('#edit-wc-plant').exists()).toBe(true)
     expect(wrapper.find('#edit-wc-line').exists()).toBe(true)
+    await wrapper.find('select:has(#edit-wc-calendar)').setValue('CAL-B')
+    await wrapper.find('#edit-wc-capacity').setValue('450')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    // 不改归属直接提交：透传当前归属（plantCode/lineCode）给 update。
-    expect(actionStub.update).toHaveBeenCalledWith(
-      'WC-A',
-      expect.objectContaining({ plantCode: 'PLANT-A', lineCode: 'LINE-A' }),
-    )
+    expect(actionStub.update).toHaveBeenCalledWith('WC-A', {
+      name: '宁波工厂',
+      plantCode: 'PLANT-A',
+      lineCode: 'LINE-A',
+      defaultCalendarCode: 'CAL-B',
+      capacityMinutesPerDay: 450,
+    })
   })
 
   it('编辑产线改挂工厂后清空不匹配的车间（防归属错配）', async () => {

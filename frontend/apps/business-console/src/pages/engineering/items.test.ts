@@ -174,8 +174,6 @@ describe('engineering items page', () => {
 
     await wrapper.find('#item-rev').setValue('B')
     await wrapper.find('#item-name').setValue('新主控板')
-    // 勾选立即发布
-    await wrapper.find('input[type="checkbox"]').setValue(true)
     await flushPromises()
 
     await wrapper.find('form').trigger('submit')

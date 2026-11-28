@@ -106,6 +106,7 @@ const STATUS_FILTER_OPTIONS = [
 ]
 const statusFilter = ref('all')
 watch(statusFilter, (value) => {
+  page.value = 1
   filters.status = value === 'all' ? undefined : value
 })
 
@@ -113,6 +114,7 @@ watch(statusFilter, (value) => {
 const skuSearch = computed({
   get: () => filters.skuCode ?? '',
   set: (value: string) => {
+    page.value = 1
     filters.skuCode = value.trim() ? value : undefined
   },
 })
@@ -141,12 +143,6 @@ function skuLabel(code?: string | null) {
   if (!code) return '无'
   return skuNameByCode.value.get(code) ?? code
 }
-
-const skuOptions = computed(() =>
-  skus.value
-    .filter((s) => s.code)
-    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
-)
 
 function statusTone(status?: string | null) {
   return (status ?? '').toLowerCase() === 'active' ? 'success' : 'neutral'
@@ -729,16 +725,12 @@ async function runResolve() {
         >
           <NvField>
             <NvFieldLabel for="resolve-sku">物料</NvFieldLabel>
-            <NvSelect v-model="resolveForm.skuCode">
-              <NvSelectTrigger id="resolve-sku"
-                ><NvSelectValue placeholder="选择物料"
-              /></NvSelectTrigger>
-              <NvSelectContent>
-                <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                  o.label
-                }}</NvSelectItem>
-              </NvSelectContent>
-            </NvSelect>
+            <DirectoryPicker
+              id="resolve-sku"
+              v-model="resolveForm.skuCode"
+              directory-type="material"
+              placeholder="选择物料"
+            />
           </NvField>
           <NvField>
             <NvFieldLabel>生效日</NvFieldLabel>

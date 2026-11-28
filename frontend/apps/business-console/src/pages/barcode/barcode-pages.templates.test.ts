@@ -76,6 +76,7 @@ describe('barcode pages', () => {
     expect(wrapper.text()).not.toContain('file-label-box')
 
     await openNewTemplate(wrapper)
+    await wrapper.find('#barcode-template-item-0').setValue('lotNo')
     const example = wrapper.get('a[download="label-template.json"]')
     const content = decodeURIComponent((example.attributes('href') ?? '').split(',')[1]!)
     expect(JSON.parse(content)).toMatchObject({
@@ -83,8 +84,8 @@ describe('barcode pages', () => {
       version: 1,
       media: { dpi: 203, widthDots: 812, heightDots: 406 },
       fields: [
-        { kind: 'text', variable: 'skuCode' },
         { kind: 'barcode', variable: 'label.value' },
+        { kind: 'text', variable: 'lotNo' },
       ],
     })
 

@@ -8,10 +8,18 @@ import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
 import DevicesPage from './devices.vue'
 import { i18n } from '@/i18n'
 
+const parentAssetId = vi.hoisted(() => 'b7b7e6e2-f5df-4dd8-a296-57abaceeb30f')
+
 const stub = vi.hoisted(() => ({
   create: vi.fn().mockResolvedValue({ data: { code: 'EQ-NEW' } }),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+}))
+
+vi.mock('vue-router', async (original) => ({
+  ...(await original<typeof import('vue-router')>()),
+  useRoute: () => ({ query: {} }),
+  useRouter: () => ({ replace: vi.fn() }),
 }))
 
 const actionStub = vi.hoisted(() => ({
@@ -31,7 +39,7 @@ const actionStub = vi.hoisted(() => ({
     purchaseCurrencyCode: 'CNY',
     warrantyExpiresOn: '2027-01-14',
     supplierPartnerCode: 'SUP-ACME',
-    parentDeviceId: 'EQ-PARENT',
+    parentDeviceId: parentAssetId,
     components: [
       { componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: true },
     ],
@@ -59,7 +67,15 @@ function stubResource(resourceType: string) {
             purchaseCurrencyCode: 'CNY',
             warrantyExpiresOn: '2027-01-14',
             supplierPartnerCode: 'SUP-ACME',
-            parentDeviceId: 'EQ-PARENT',
+            parentDeviceId: parentAssetId,
+            snapshotVersion: '1',
+          },
+          {
+            resourceType: 'device-asset',
+            code: 'EQ-PARENT',
+            deviceAssetId: parentAssetId,
+            displayName: '焊装工作站',
+            active: true,
             snapshotVersion: '1',
           },
         ]
@@ -314,7 +330,7 @@ async function fillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper.find('#dev-purchase-cost').setValue('125000')
   await wrapper.find('#dev-warranty').setValue('2027-01-14')
   await wrapper.find('#dev-supplier').setValue('SUP-ACME')
-  await wrapper.find('#dev-parent').setValue('EQ-PARENT')
+  await wrapper.find('#dev-parent').setValue(parentAssetId)
   await wrapper.find('#dev-component-code-0').setValue('MOTOR')
   await wrapper.find('#dev-component-name-0').setValue('伺服电机')
   await flushPromises()
@@ -508,7 +524,7 @@ describe('master-data devices page', () => {
     expect(body.purchaseCurrencyCode).toBe('CNY')
     expect(body.warrantyExpiresOn).toBe('2027-01-14')
     expect(body.supplierPartnerCode).toBe('SUP-ACME')
-    expect(body.parentDeviceId).toBe('EQ-PARENT')
+    expect(body.parentDeviceId).toBe(parentAssetId)
     expect(body.components).toEqual([
       { componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: false },
     ])

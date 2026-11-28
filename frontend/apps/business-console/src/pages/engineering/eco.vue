@@ -367,18 +367,11 @@ const changeNumberValid = computed(() => form.changeNumber.trim().length > 0)
 const approvalValid = computed(() => form.approvalReferenceId.trim().length > 0)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function affectedValid(row: AffectedRow) {
-  const id = row.versionId.trim()
-  if (!row.versionKind || !id) return false
-  if (row.versionKind === 'ProductionVersion') return true
-  const separator = id.indexOf(':')
-  return separator > 0 && !!id.slice(0, separator).trim() && !!id.slice(separator + 1).trim()
-}
-function affectedVersionOptions(row: AffectedRow) {
-  const options = versionCatalog(row.versionKind)?.options.value ?? []
-  const value = row.versionId.trim()
-  return affectedValid(row) && !options.some((option) => option.value === value)
-    ? [{ value, label: value, hint: '手动指定' }, ...options]
-    : options
+  return (
+    versionCatalog(row.versionKind)?.options.value.some(
+      (option) => option.value === row.versionId,
+    ) ?? false
+  )
 }
 
 const affectedListValid = computed(
@@ -771,7 +764,7 @@ function riskTone(severity?: string | null): StatusTone {
                       <NvEntityPicker
                         :id="`eco-vid-${index}`"
                         :model-value="row.versionId.trim()"
-                        :options="affectedVersionOptions(row)"
+                        :options="versionCatalog(row.versionKind)?.options.value ?? []"
                         @update:model-value="row.versionId = String($event ?? '')"
                         title="选择受影响版本"
                         :placeholder="row.versionKind ? '选择受影响版本' : '请先选择对象类型'"
@@ -788,21 +781,6 @@ function riskTone(severity?: string | null): StatusTone {
                         clearable
                         :show-code="false"
                       />
-                      <details v-if="row.versionKind" class="text-sm">
-                        <summary class="cursor-pointer text-muted-foreground">直接输入版本</summary>
-                        <NvInput
-                          v-model="row.versionId"
-                          :aria-label="
-                            row.versionKind === 'ProductionVersion' ? '生产版本 ID' : '编号:修订'
-                          "
-                          :placeholder="
-                            row.versionKind === 'ProductionVersion'
-                              ? '输入生产版本 ID'
-                              : '输入编号:修订'
-                          "
-                          :aria-invalid="showErrors && !affectedValid(row)"
-                        />
-                      </details>
                       <NvButton
                         v-if="versionCatalog(row.versionKind)?.error.value"
                         type="button"

@@ -103,12 +103,14 @@ const STATUS_FILTER_OPTIONS = [
 ]
 const statusFilter = ref('all')
 watch(statusFilter, (value) => {
+  page.value = 1
   filters.status = value === 'all' ? undefined : value
 })
 
 const skuSearch = computed({
   get: () => filters.skuCode ?? '',
   set: (value: string) => {
+    page.value = 1
     filters.skuCode = value.trim() ? value : undefined
   },
 })

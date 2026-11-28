@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { NvButton, NvDataTable, NvPageHeader, NvStatusBadge } from '@nerv-iip/ui'
+import { NvButton, NvDataTable, NvPageHeader, NvStatusBadge, NvToolbar } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import CodeRuleDetailDialog from './components/CodeRuleDetailDialog.vue'
 import CodeRuleVersionDialog from './components/CodeRuleVersionDialog.vue'
@@ -43,6 +43,8 @@ const {
   page,
   pageSize,
   pagedRules,
+  search,
+  filteredRules,
   previewFormSample,
   previewViewSample,
   refresh,
@@ -94,11 +96,13 @@ const {
       {{ listErrorMessage }}
     </p>
 
+    <NvToolbar v-model:search="search" search-placeholder="搜索规则键、名称" />
+
     <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
-      :total-items="rules.length"
+      :total-items="filteredRules.length"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
       :searchable="false"

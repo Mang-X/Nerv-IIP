@@ -144,6 +144,10 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 **字段已具备、前端可拼、不等后端**:工厂结构树（siteCode/workshopCode/plantCode/lineCode 全回传 #345）、部门树（parentDepartmentCode）。
 **曾经的真数据缺口 → 已由 #373/#375 后端交付、前端补完整形态**（不再假做）:① 日历月历 ← 后端回 `workingTimes/holidays/exceptions`(detail) + update 写回 → 排班与日历页真实月历；② 技能矩阵 ← `listPersonnelSkillMatrix`(skillCodes+rows) → 人员技能页真实矩阵；③ 改挂上级 ← update 全字段(parentDepartmentCode/departmentCode/shiftCode/siteCode/workshopCode/lineCode 等) → 部门/班组/工厂结构改归属；④ 列表过滤 + 回归属字段 ← `parentCode/category/keyword` + 列表回 `parentDepartmentCode/departmentCode` → 部门多层树 + 班组按部门归集；⑤ UoM 换算 ← `createUomConversion` + `uom-conversion` resourceType 可列/读 → 计量单位换算主从。
 
+工厂结构中的工作中心可下钻到按工作中心筛选的设备台账。台账支持清除筛选，设备详情显示供应商和父设备名称。编辑工作中心可更换默认工作日历和调整日产能分钟数。设备类别在数据字典维护。
+
+产品分类可以移回顶级。分类和技能目录默认只显示启用项，可打开「包含停用」查看历史条目。物料表单找不到可用产品分类时，提供前往分类维护的入口。
+
 **重构顺序(已完成)**:① 工厂结构树(树型示范页)→ ② 数据字典(主从示范)→ ③ 组织与班组(部门多层树+班组归集+改挂)→ ④ 排班与日历(班次时段+真实月历)/ 人员技能(矩阵)/ 计量单位(换算)。全部以 typed 数据驱动,无假分页/假数据。
 
 ---

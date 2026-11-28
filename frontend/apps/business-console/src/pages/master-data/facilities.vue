@@ -35,6 +35,7 @@ const {
   detailLoading,
   editCode,
   editForm,
+  editCalendars,
   editLoading,
   editOpen,
   editPending,
@@ -173,6 +174,7 @@ const {
       :can-edit="canEdit"
       :edit-code="editCode"
       :edit-form="editForm"
+      :edit-calendars="editCalendars"
       :edit-loading="editLoading"
       :edit-pending="editPending"
       :edit-show-errors="editShowErrors"

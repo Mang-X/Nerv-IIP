@@ -92,12 +92,14 @@ const STATUS_FILTER_OPTIONS = [
 ]
 const statusFilter = ref('all')
 watch(statusFilter, (value) => {
+  page.value = 1
   filters.status = value === 'all' ? undefined : value
 })
 
 const parentSearch = computed({
   get: () => filters.parentItemCode ?? '',
   set: (value: string) => {
+    page.value = 1
     filters.parentItemCode = value.trim() ? value : undefined
   },
 })

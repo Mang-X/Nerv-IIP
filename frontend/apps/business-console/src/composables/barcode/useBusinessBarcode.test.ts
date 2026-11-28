@@ -76,6 +76,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   confirmBusinessConsoleBarcodePrintBatchMutationOptions: vi.fn(() => ({})),
   createBusinessConsoleBarcodePrintBatchMutationOptions: vi.fn(() => ({})),
   recordBusinessConsoleBarcodeScanMutationOptions: vi.fn(() => ({})),
+  resolveBusinessConsoleBarcodeMutationOptions: vi.fn(() => ({})),
 }))
 
 vi.mock('@pinia/colada', () => ({

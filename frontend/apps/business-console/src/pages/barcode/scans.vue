@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeScanRecordItem } from '@nerv-iip/api-client'
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
@@ -14,6 +16,7 @@ import {
   NvDataTable,
   NvDialog,
   NvDialogContent,
+  NvDialogBody,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
@@ -48,7 +51,7 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '扫码记录',
-    requiredPermissions: ['business.barcodes.templates.manage'],
+    requiredPermissions: ['business.barcodes.scans.write'],
   },
 })
 
@@ -65,6 +68,8 @@ const {
   filters,
   recordScan,
   recordScanPending,
+  resolveBarcode,
+  resolveBarcodePending,
   refreshScans,
   scans,
   scansError,
@@ -79,6 +84,46 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.sourceDocumentId,
   ],
 })
+
+const { can } = usePermission()
+const resolveOpen = shallowRef(false)
+const resolveInput = shallowRef('')
+const resolvedValue = shallowRef('')
+const resolvePage = shallowRef(1)
+const resolution = shallowRef<Awaited<ReturnType<typeof resolveBarcode>>>()
+const resolutionLabels: Record<string, string> = {
+  resolved: '已解析',
+  ambiguous: '有多个匹配对象',
+  unknown: '未找到匹配对象',
+  forbidden: '标签不可用',
+  unsupported: '不支持此条码',
+}
+
+const objectTypeLabels: Record<string, string> = {
+  'mes-work-order': '工单',
+  'mes-operation': '工序任务',
+  'mes-material-issue-request': '领料申请',
+  'mes-finished-goods-receipt-request': '完工入库申请',
+  'work-center': '工作中心',
+  'equipment-device': '设备',
+  personnel: '人员',
+  'inventory-batch': '库存批次',
+  'inventory-location': '库存库位',
+  'erp-purchase-receipt': '采购收货单',
+  'erp-delivery-order': '交货单',
+}
+
+async function searchBarcode(value: string, pageIndex = 1) {
+  if (!value || resolveBarcodePending.value) return
+  resolution.value = undefined
+  try {
+    resolution.value = await resolveBarcode(value, pageIndex)
+    resolvedValue.value = value
+    resolvePage.value = pageIndex
+  } catch (error) {
+    notifyOperationFailure('条码解析失败', error, '无法解析条码。')
+  }
+}
 
 const open = shallowRef(false)
 const showErrors = shallowRef(false)
@@ -408,6 +453,14 @@ function firstQuery(value: unknown) {
 
     <NvToolbar v-model:search="filters.scannedValue" search-placeholder="按扫码原文筛选">
       <template #filters>
+        <NvButton
+          v-if="can(P.barcodeScansWrite)"
+          type="button"
+          variant="outline"
+          @click="resolveOpen = true"
+        >
+          条码解析查询
+        </NvButton>
         <NvSelect v-model="workflowFilter">
           <NvSelectTrigger class="h-9 w-36" aria-label="动作来源"
             ><NvSelectValue placeholder="全部来源"
@@ -488,5 +541,64 @@ function firstQuery(value: unknown) {
         </div>
       </template>
     </NvDataTable>
+    <NvDialog v-model:open="resolveOpen">
+      <NvDialogContent scrollable>
+        <NvDialogHeader>
+          <NvDialogTitle>条码解析查询</NvDialogTitle>
+          <NvDialogDescription>输入扫码原文，查询匹配的业务对象。</NvDialogDescription>
+        </NvDialogHeader>
+        <NvDialogBody class="grid gap-3">
+          <form class="flex gap-2" @submit.prevent="searchBarcode(resolveInput.trim())">
+            <NvInput
+              v-model="resolveInput"
+              aria-label="扫码原文"
+              :disabled="resolveBarcodePending"
+              required
+            />
+            <NvButton type="submit" :disabled="resolveBarcodePending || !resolveInput.trim()"
+              >查询</NvButton
+            >
+          </form>
+          <div v-if="resolution" class="grid gap-3" role="status">
+            <p>
+              {{ resolutionLabels[resolution.status ?? ''] ?? resolution.status }} ·
+              {{ resolvedValue }}
+            </p>
+            <ul class="grid gap-2">
+              <li
+                v-for="(candidate, index) in resolution.candidates"
+                :key="index"
+                class="rounded-md border p-2"
+              >
+                <p class="font-medium">
+                  {{ objectTypeLabels[candidate.objectType ?? ''] ?? candidate.objectType }}
+                </p>
+                <p
+                  v-for="(value, name) in candidate.strongIds"
+                  :key="name"
+                  class="break-all text-sm"
+                >
+                  标识 · {{ value }}
+                </p>
+              </li>
+            </ul>
+            <div v-if="(resolution.total ?? 0) > 20" class="flex gap-2">
+              <NvButton
+                variant="outline"
+                :disabled="resolvePage === 1"
+                @click="searchBarcode(resolvedValue, resolvePage - 1)"
+                >上一页</NvButton
+              >
+              <NvButton
+                variant="outline"
+                :disabled="resolvePage * 20 >= (resolution.total ?? 0)"
+                @click="searchBarcode(resolvedValue, resolvePage + 1)"
+                >下一页</NvButton
+              >
+            </div>
+          </div>
+        </NvDialogBody>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

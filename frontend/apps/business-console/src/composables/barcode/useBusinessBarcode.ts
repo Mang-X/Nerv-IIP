@@ -11,6 +11,8 @@ import {
   listBusinessConsoleBarcodeScansQueryOptions,
   listBusinessConsoleBarcodeTemplatesQueryOptions,
   recordBusinessConsoleBarcodeScanMutationOptions,
+  previewBusinessConsoleBarcodePrintBatch,
+  resolveBusinessConsoleBarcodeMutationOptions,
   type BusinessConsoleBarcodePrinterItem,
   type BusinessConsoleBarcodePrintBatchDetail,
   type BusinessConsoleBarcodePrintBatchEnvelope,
@@ -325,6 +327,16 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
       }),
     confirmPrintBatchPending: confirmPrintBatchMutation.isLoading,
+    async previewPrintBatch(printBatchId: string) {
+      const { organizationId, environmentId } = filters
+      const { data } = await previewBusinessConsoleBarcodePrintBatch({
+        path: { printBatchId },
+        query: { organizationId, environmentId },
+        throwOnError: true,
+      })
+      if (!data.success || !data.data?.labels) throw new Error(data.message || '无法预览打印批次。')
+      return data.data.labels
+    },
     dispatchPrintBatch,
     dispatchPrintBatchPending: dispatchPrintBatchMutation.isLoading,
     createPrintBatch: (body: CreateBusinessConsoleBarcodePrintBatchData['body']) =>
@@ -360,6 +372,7 @@ export function useBarcodeScans(initialFilters: Partial<BarcodeScanFilters> = {}
       void refetchWithBusinessContext(filters, scansQuery)
     },
   })
+  const resolveBarcodeMutation = useMutation(resolveBusinessConsoleBarcodeMutationOptions())
 
   return {
     filters,
@@ -370,6 +383,15 @@ export function useBarcodeScans(initialFilters: Partial<BarcodeScanFilters> = {}
     refreshScans: () => refetchWithBusinessContext(filters, scansQuery),
     recordScan: (body: RecordBusinessConsoleBarcodeScanData['body']) =>
       recordScanMutation.mutateAsync({ body }),
+    async resolveBarcode(scannedValue: string, pageIndex: number) {
+      const { organizationId, environmentId } = filters
+      const response = await resolveBarcodeMutation.mutateAsync({
+        body: { organizationId, environmentId, scannedValue, pageIndex },
+      })
+      if (!response.success || !response.data) throw new Error(response.message || '无法解析条码。')
+      return response.data
+    },
+    resolveBarcodePending: resolveBarcodeMutation.isLoading,
     recordScanPending: recordScanMutation.isLoading,
     recordScanError: recordScanMutation.error,
   }

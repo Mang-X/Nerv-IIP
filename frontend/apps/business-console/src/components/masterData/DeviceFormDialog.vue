@@ -177,9 +177,16 @@ const supplierOptions = computed(() =>
 
 // 父设备来自设备台账本身，且必须排除正在编辑的这台——设备不能挂在自己名下。
 const parentDeviceOptions = computed(() =>
-  codeOptions(
-    devices.resources.value.filter((row) => row.code !== editingCode),
-    form.parentDeviceId,
+  devices.resources.value.flatMap((row) =>
+    row.deviceAssetId && row.code !== editingCode
+      ? [
+          {
+            value: row.deviceAssetId,
+            label: row.displayName ?? row.code ?? '',
+            hint: row.code ?? undefined,
+          },
+        ]
+      : [],
   ),
 )
 

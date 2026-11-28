@@ -19,6 +19,8 @@ const barcode = vi.hoisted(() => ({
   createPrintBatch: vi.fn(),
   confirmPrintBatch: vi.fn(),
   dispatchPrintBatch: vi.fn(),
+  previewPrintBatch: vi.fn(),
+  resolveBarcode: vi.fn(),
   dispatchPrintBatchPending: false,
   permissionCodes: ['business.barcodes.print'],
   uploadTemplateAsset: vi.fn(),
@@ -219,6 +221,7 @@ vi.mock('@/composables/barcode/useBusinessBarcode', () => ({
       refreshPrintBatches: vi.fn(),
       refreshPrintBatchDetail: vi.fn(),
       dispatchPrintBatch: barcode.dispatchPrintBatch,
+      previewPrintBatch: barcode.previewPrintBatch,
       dispatchPrintBatchPending: shallowRef(barcode.dispatchPrintBatchPending),
       confirmPrintBatch: barcode.confirmPrintBatch,
       confirmPrintBatchPending: shallowRef(barcode.confirmPrintBatchPending),
@@ -277,6 +280,8 @@ vi.mock('@/composables/barcode/useBusinessBarcode', () => ({
       scansTotal: computed(() => 3),
       refreshScans: vi.fn(),
       recordScan: barcode.recordScan,
+      resolveBarcode: barcode.resolveBarcode,
+      resolveBarcodePending: shallowRef(false),
       recordScanPending: shallowRef(false),
       recordScanError: shallowRef(undefined),
     }
@@ -428,6 +433,8 @@ const resetFixture = () => {
   barcode.printBatchFileId = 'file-label-1'
   barcode.confirmPrintBatchPending = false
   barcode.dispatchPrintBatchPending = false
+  barcode.previewPrintBatch.mockReset()
+  barcode.resolveBarcode.mockReset()
   barcode.dispatchPrintBatch.mockResolvedValue({ acknowledged: true })
   barcode.templateId = 'tpl-1'
   barcode.extraRules = []

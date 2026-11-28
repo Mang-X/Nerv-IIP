@@ -52,17 +52,6 @@ import {
 import { PencilIcon, PlusIcon, RefreshCwIcon, Trash2Icon, UploadIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, useTemplateRef, watch } from 'vue'
 
-const TEMPLATE_EXAMPLE = {
-  format: 'nerv-iip.label-template',
-  version: 1,
-  media: { dpi: 203, widthDots: 812, heightDots: 406 },
-  fields: [
-    { kind: 'text', x: 40, y: 30, fontHeight: 30, fontWidth: 30, variable: 'skuCode' },
-    { kind: 'barcode', x: 40, y: 90, moduleWidth: 2, height: 100, variable: 'label.value' },
-  ],
-}
-const templateExampleUrl = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(TEMPLATE_EXAMPLE, null, 2))}`
-
 definePage({
   meta: {
     requiresAuth: true,
@@ -162,6 +151,41 @@ const canSubmit = computed(
     !uploadPending.value &&
     !variableError.value,
 )
+const standardTemplateJson = computed(() => {
+  const fields = variableRows.value
+    .filter((row) => row.name.trim())
+    .map((row, index) => ({
+      kind: 'text',
+      x: 40,
+      y: 160 + index * 34,
+      fontHeight: 26,
+      fontWidth: 18,
+      variable: row.name.trim(),
+    }))
+  return JSON.stringify(
+    {
+      format: 'nerv-iip.label-template',
+      version: 1,
+      media: { dpi: 203, widthDots: 812, heightDots: Math.max(406, 190 + fields.length * 34) },
+      fields: [
+        { kind: 'barcode', x: 40, y: 40, moduleWidth: 2, height: 100, variable: 'label.value' },
+        ...fields,
+      ],
+    },
+    null,
+    2,
+  )
+})
+const standardTemplateUrl = computed(
+  () => `data:application/json;charset=utf-8,${encodeURIComponent(standardTemplateJson.value)}`,
+)
+
+function uploadStandardTemplate() {
+  return uploadFile(
+    new File([standardTemplateJson.value], 'label-template.json', { type: 'application/json' }),
+  )
+}
+
 const variableError = computed(() => variableRowsError(variableRows.value))
 
 // 每行的数据项选项：平台目录 + 本行已存的目录外数据项（只显示它的中文名称）。
@@ -245,7 +269,10 @@ async function onFileSelected(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!file) return
+  if (file) await uploadFile(file)
+}
+
+async function uploadFile(file: File) {
   uploadPending.value = true
   uploadError.value = ''
   // 上传期间模板编码输入框是锁住的；这里再按上传所用的编码核对一次，防止文件绑到别的编码上。
@@ -421,9 +448,18 @@ async function submitTemplate() {
                       <UploadIcon v-else aria-hidden="true" />
                       {{ form.templateFileId ? '重新上传' : '上传模板文件' }}
                     </NvButton>
-                    <NvButton as-child variant="outline" size="sm">
-                      <a :href="templateExampleUrl" download="label-template.json"
-                        >下载 JSON 样例</a
+                    <NvButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      :disabled="uploadPending || !form.templateCode.trim() || !!variableError"
+                      @click="uploadStandardTemplate"
+                    >
+                      生成并上传标准模板
+                    </NvButton>
+                    <NvButton v-if="!variableError" as-child variant="outline" size="sm">
+                      <a :href="standardTemplateUrl" download="label-template.json"
+                        >下载标准模板 JSON</a
                       >
                     </NvButton>
                     <span

@@ -77,6 +77,7 @@ export const BUSINESS_PERMISSION_CODES = {
   maintenanceDowntimeReasonsRead: 'business.maintenance.downtime-reasons.read',
   barcodeTemplatesManage: 'business.barcodes.templates.manage',
   barcodePrint: 'business.barcodes.print',
+  barcodeScansWrite: 'business.barcodes.scans.write',
   barcodeTemplateAssetsRetire: 'business.barcodes.template-assets.retire',
   approvalsRead: 'business.approvals.read',
   approvalsManage: 'business.approvals.manage',
@@ -164,7 +165,7 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
     P.maintenancePlansManage,
     P.maintenanceDowntimeReasonsRead,
   ],
-  barcode: [P.barcodeTemplatesManage, P.barcodePrint],
+  barcode: [P.barcodeTemplatesManage, P.barcodePrint, P.barcodeScansWrite],
   approval: [P.approvalsRead, P.approvalsManage],
   ops: [P.deadLettersRead, P.deadLettersManage],
 } as const satisfies Record<string, readonly BusinessPermissionCode[]>

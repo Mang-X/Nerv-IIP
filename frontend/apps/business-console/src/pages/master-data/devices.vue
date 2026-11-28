@@ -18,6 +18,7 @@ import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPa
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvDataTable, NvPageHeader, NvStatusBadge, NvToolbar } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { useRoute, useRouter } from 'vue-router'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { inlineErrorMessage } from '@/utils/notify'
@@ -32,6 +33,8 @@ definePage({
   },
 })
 
+const route = useRoute()
+const router = useRouter()
 const devices = useMasterDataResource('device-asset')
 const sites = useMasterDataResource('site', { all: true })
 const workshops = useBusinessWorkshops(true)
@@ -41,7 +44,7 @@ const deviceActions = useMasterDataResourceActions('device-asset')
 // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
 const lifecycle = useMasterDataLifecycleConfirm()
 
-const { resolvePartnerLabel } = useBusinessPartnerNames()
+const { resolvePartner, resolvePartnerLabel } = useBusinessPartnerNames()
 
 // 列表回传的是 lineCode/workCenterCode（编码）；解析成名称显示（取自产线/工作中心实体，找不到回退编码）。
 const siteNameByCode = computed(
@@ -76,6 +79,23 @@ function wcName(code?: string | null) {
 
 const keyword = ref('')
 const page = ref(1)
+const deviceCatalog = useMasterDataResource('device-asset', { all: true })
+deviceCatalog.filters.includeDisabled = true
+const workCenterCode = computed(() =>
+  typeof route.query.workCenterCode === 'string' ? route.query.workCenterCode : undefined,
+)
+watch(
+  workCenterCode,
+  (code) => {
+    page.value = 1
+    devices.filters.workCenterCode = code
+  },
+  { immediate: true },
+)
+
+function clearWorkCenter() {
+  void router.replace({ query: { ...route.query, workCenterCode: undefined } })
+}
 // 停用后的行默认不在列表里，「启用」入口就永远够不到（#1594）。
 const includeDisabled = useIncludeDisabledFilter([devices.filters], () => {
   page.value = 1
@@ -157,8 +177,19 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
     { label: '购置日期', value: formatDate(row.purchaseDate) },
     { label: '购置成本', value: formatMoney(row.purchaseCost, row.purchaseCurrencyCode) },
     { label: '保修到期', value: formatDate(row.warrantyExpiresOn) },
-    { label: '供应商', value: row.supplierPartnerCode ?? '' },
-    { label: '父设备', value: row.parentDeviceId ?? '' },
+    {
+      label: '供应商',
+      value: row.supplierPartnerCode
+        ? (resolvePartner(row.supplierPartnerCode) ?? '未找到供应商')
+        : '无',
+    },
+    {
+      label: '父设备',
+      value: row.parentDeviceId
+        ? (deviceCatalog.items.value.find((device) => device.deviceAssetId === row.parentDeviceId)
+            ?.displayName ?? '未找到父设备')
+        : '无',
+    },
     { label: '退役日期', value: formatDate(row.retiredOn) },
   ]
 }
@@ -245,6 +276,9 @@ function openEdit(row: BusinessConsoleResourceItem) {
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索设备编码、名称">
       <template #filters>
+        <NvButton v-if="workCenterCode" variant="outline" @click="clearWorkCenter">
+          工作中心：{{ wcName(workCenterCode) }} · 清除
+        </NvButton>
         <IncludeDisabledFilter v-model="includeDisabled" />
       </template>
     </NvToolbar>

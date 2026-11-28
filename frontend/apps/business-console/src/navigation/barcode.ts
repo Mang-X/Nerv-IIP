@@ -27,7 +27,7 @@ export const barcodeSideNav: SideNav = [
         title: '扫码记录',
         icon: ScanLineIcon,
         to: { path: '/barcode/scans' },
-        requiredPermissions: [P.barcodeTemplatesManage],
+        requiredPermissions: [P.barcodeScansWrite],
       },
     ],
   },

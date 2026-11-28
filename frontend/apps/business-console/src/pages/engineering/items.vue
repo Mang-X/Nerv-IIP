@@ -4,14 +4,12 @@ import type {
   BusinessConsoleCreateEngineeringItemRevisionRequest,
   BusinessConsoleEngineeringItemRevisionItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
 import { useBomItemCatalog, useEngineeringItems } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
-  NvCheckbox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -27,7 +25,6 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
-  NvMetricCard,
   NvPageHeader,
   NvSelect,
   NvSelectContent,
@@ -85,12 +82,14 @@ const STATUS_FILTER_OPTIONS = [
 ]
 const statusFilter = ref('all')
 watch(statusFilter, (value) => {
+  page.value = 1
   filters.status = value === 'all' ? undefined : value
 })
 
 const itemSearch = computed({
   get: () => filters.itemCode ?? '',
   set: (value: string) => {
+    page.value = 1
     filters.itemCode = value.trim() ? value : undefined
   },
 })
@@ -115,24 +114,6 @@ function engStatus(status?: string | null): { label: string; tone: StatusTone } 
   return { label: status || '未知', tone: 'neutral' }
 }
 
-const publishedCount = computed(
-  () => items.value.filter((i) => (i.status ?? '').toLowerCase() === 'published').length,
-)
-const draftCount = computed(
-  () => items.value.filter((i) => (i.status ?? '').toLowerCase() === 'draft').length,
-)
-// 一张构成卡表达「物料修订里有多少已发布、多少还是草稿」；未取回的行补齐，分母守恒。
-const itemSegments = computed(() => {
-  const others = items.value.length - publishedCount.value - draftCount.value
-  const segments: NvMetricSegment[] = [
-    { key: 'published', label: '已发布', value: publishedCount.value, tone: 'success' },
-    { key: 'draft', label: '草稿', value: draftCount.value, tone: 'warning' },
-  ]
-  if (others > 0)
-    segments.push({ key: 'others', label: '已归档等', value: others, tone: 'neutral' })
-  return pagedBreakdownSegments(itemsTotal.value, segments)
-})
-
 const listErrorMessage = computed(() => inlineErrorMessage(itemsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringItemRevisionItem>[] = [
@@ -146,16 +127,15 @@ const columns: NvDataTableColumn<BusinessConsoleEngineeringItemRevisionItem>[] =
 
 // ── 新建修订向导 ──────────────────────────────────────────────
 // 工程数据语义：物料不是直接改，而是派生新修订。targetMode='new' 建全新物料（编码自动），
-// 'existing' 在已有物料编码上派生新修订。release 决定新修订是否立即发布。
+// 'existing' 在已有物料编码上派生新修订。
 interface ItemForm {
   targetMode: 'new' | 'existing' | 'sku'
   itemCode: string
   revision: string
   name: string
-  release: boolean
 }
 function blankForm(): ItemForm {
-  return { targetMode: 'new', itemCode: '', revision: '', name: '', release: false }
+  return { targetMode: 'new', itemCode: '', revision: '', name: '' }
 }
 
 const formOpen = shallowRef(false)
@@ -233,15 +213,11 @@ async function submitForm() {
     itemCode: form.targetMode === 'new' ? undefined : form.itemCode.trim(),
     revision: form.revision.trim(),
     name: form.name.trim(),
-    release: form.release,
+    release: true,
   }
   try {
     await createItemRevision(body)
-    notifySuccess(
-      form.release
-        ? `已发布物料「${form.name.trim()}」修订 ${form.revision.trim()}。`
-        : `已创建物料「${form.name.trim()}」修订 ${form.revision.trim()}（草稿）。`,
-    )
+    notifySuccess(`已发布物料「${form.name.trim()}」修订 ${form.revision.trim()}。`)
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
@@ -408,23 +384,11 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
                 </NvField>
               </NvFieldGroup>
 
-              <NvField>
-                <NvFieldLabel>发布</NvFieldLabel>
-                <label
-                  for="item-release"
-                  class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
-                >
-                  <span>创建后立即发布该修订</span>
-                  <NvCheckbox id="item-release" v-model="form.release" />
-                </label>
-                <NvFieldDescription>发布后该修订不可变。</NvFieldDescription>
-              </NvField>
-
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending">
                   <NvSpinner v-if="createPending" aria-hidden="true" />
-                  {{ form.release ? '创建并发布' : '创建草稿' }}
+                  创建并发布
                 </NvButton>
               </NvDialogFooter>
             </form>
@@ -432,31 +396,6 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
         </NvDialog>
       </template>
     </NvPageHeader>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <NvMetricCard
-        variant="breakdown"
-        label="物料修订"
-        :value="itemsTotal"
-        unit="个"
-        :segments="itemSegments"
-      />
-      <NvMetricCard
-        variant="alert"
-        label="草稿待发布"
-        :value="draftCount"
-        unit="个"
-        :tone="draftCount > 0 ? 'warning' : 'neutral'"
-        :status="
-          draftCount > 0
-            ? { label: '待评审', tone: 'warning' }
-            : { label: '无待办', tone: 'success' }
-        "
-        :foot-start="
-          draftCount > 0 ? '确认物料属性后发布，供 BOM 与工艺引用。' : '当前没有待发布的物料修订。'
-        "
-      />
-    </div>
 
     <NvToolbar v-model:search="itemSearch" search-placeholder="按物料编码筛选">
       <template #filters>

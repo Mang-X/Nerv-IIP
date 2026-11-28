@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import { usePermission } from '@/composables/usePermission'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
@@ -97,6 +98,15 @@ const search = computed({
 })
 
 const page = ref(1)
+const includeDisabled = ref(false)
+watch(
+  includeDisabled,
+  (include) => {
+    page.value = 1
+    filters.enabled = include ? undefined : true
+  },
+  { immediate: true },
+)
 const pageSize = ref('10')
 watch(pageSize, () => {
   page.value = 1
@@ -306,11 +316,17 @@ async function confirmArchive() {
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="cat-parent">上级分类</NvFieldLabel>
-                  <NvSelect v-model="form.parentCode">
+                  <NvSelect
+                    :model-value="form.parentCode || 'top-level'"
+                    @update:model-value="
+                      form.parentCode = $event === 'top-level' ? '' : String($event)
+                    "
+                  >
                     <NvSelectTrigger id="cat-parent"
                       ><NvSelectValue placeholder="顶级分类（可空）"
                     /></NvSelectTrigger>
                     <NvSelectContent>
+                      <NvSelectItem value="top-level">顶级分类</NvSelectItem>
                       <NvSelectItem v-for="o in parentOptions" :key="o.value" :value="o.value">{{
                         o.label
                       }}</NvSelectItem>
@@ -344,7 +360,11 @@ async function confirmArchive() {
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="search" search-placeholder="按分类名或编码筛选" />
+    <NvToolbar v-model:search="search" search-placeholder="按分类名或编码筛选">
+      <template #filters>
+        <IncludeDisabledFilter v-model="includeDisabled" />
+      </template>
+    </NvToolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
       {{ listErrorMessage }}
