@@ -21930,6 +21930,15 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
         return Task.FromResult("reopened");
     }
 
+    public Task<BusinessConsoleErpGLAccountListResponse> ListGLAccountsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleErpGLAccountListResponse([]));
+    }
+
     public Task<BusinessConsoleErpFinanceSummaryResponse> GetFinanceSummaryAsync(
         string internalBearerToken,
         BusinessConsoleErpContextRequest request,

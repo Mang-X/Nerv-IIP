@@ -43,10 +43,13 @@ public sealed class ErpSalesFinanceEndpointContractTests
 
         var list = await new ListQuotationsQueryHandler(dbContext).Handle(
             new ListQuotationsQuery("org-001", "env-dev"), CancellationToken.None);
-        Assert.Equal(opportunityId, Assert.Single(list.Items).OpportunityId);
+        var listed = Assert.Single(list.Items);
+        Assert.Equal(opportunityId, listed.OpportunityId);
+        Assert.Equal("OPP-SOURCE", listed.OpportunityNo);
         var detail = new GetQuotationQueryHandler(dbContext);
         var found = await detail.Handle(new GetQuotationQuery("org-001", "env-dev", "QUO-SOURCE"), CancellationToken.None);
         Assert.Equal(opportunityId, found?.OpportunityId);
+        Assert.Equal("OPP-SOURCE", found?.OpportunityNo);
         Assert.Null(await detail.Handle(new GetQuotationQuery("org-001", "env-other", "QUO-SOURCE"), CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             command with { CustomerCode = "CUST-002" }, CancellationToken.None));
@@ -88,7 +91,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(33, contracts.Length);
+        Assert.Equal(34, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ManagePolicyName && x.OperationId == "reconcileErpWorkCenterMachineOverhead");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.AuthorizationPolicy == MachineOverheadInternalCallerAuthorization.ReadPolicyName && x.OperationId == "listErpWorkCenterMachineOverheadReconciliations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
@@ -108,6 +111,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/trial-balance" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpTrialBalance");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/month-end-checklist" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpMonthEndChecklist");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/summary" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpFinanceSummary");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/gl-accounts" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpGLAccounts");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountPayables");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountReceivables");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cost-candidates" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpCostCandidates");
@@ -780,7 +784,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
             new ListAccountReceivablesQuery(" org-001 ", " env-dev ", "open", " CUS-001 ", 0, 10),
             CancellationToken.None);
         var costs = await new ListCostCandidatesQueryHandler(dbContext).Handle(
-            new ListCostCandidatesQuery(" org-001 ", " env-dev ", "pending", " production ", 0, 10),
+            new ListCostCandidatesQuery(" org-001 ", " env-dev ", "posted", " production ", 0, 10),
             CancellationToken.None);
 
         Assert.Equal(1, payables.Total);
@@ -788,7 +792,18 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Equal(1, receivables.Total);
         Assert.Equal("AR-001", Assert.Single(receivables.Items).ReceivableNo);
         Assert.Equal(1, costs.Total);
-        Assert.Equal("COST-001", Assert.Single(costs.Items).CandidateNo);
+        var cost = Assert.Single(costs.Items);
+        Assert.Equal("COST-001", cost.CandidateNo);
+        Assert.Equal("posted", cost.Status);
+        Assert.Equal(
+            dbContext.JournalVouchers.Single(voucher => voucher.SourceNo == cost.CandidateNo).VoucherNo,
+            cost.VoucherNo);
+        var accounts = await new ListGLAccountsQueryHandler(dbContext).Handle(
+            new ListGLAccountsQuery("org-001", "env-dev"), CancellationToken.None);
+        Assert.Contains(accounts.Items, account => account.Code == "5001");
+        var otherAccounts = await new ListGLAccountsQueryHandler(dbContext).Handle(
+            new ListGLAccountsQuery("org-001", "env-other"), CancellationToken.None);
+        Assert.Empty(otherAccounts.Items);
     }
 
     [Fact]

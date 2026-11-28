@@ -136,6 +136,7 @@ export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpLi
           environmentId: list.environmentId.value,
           purchaseRequisitionNos,
           rfqSupplierCodes: options.rfqSupplierCodes ?? [],
+          ...(options.rfqId && { rfqId: options.rfqId }),
           ...(options.supplierQuotationId && { supplierQuotationId: options.supplierQuotationId }),
           currencyCode: 'CNY',
           idempotencyKey: makeIdempotencyKey(),
@@ -279,11 +280,14 @@ export function useErpSupplierQuotations(
   }
 }
 
-export function useErpPurchaseOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
+export function useErpPurchaseOrders(
+  initialFilters: Partial<BusinessErpListFilters> = {},
+  enabled?: () => boolean,
+) {
   const list = useErpDocumentList<
     BusinessConsoleErpPurchaseOrderItem,
     BusinessConsoleErpPurchaseOrderListEnvelope
-  >((query) => listBusinessConsoleErpPurchaseOrdersQueryOptions({ query }), initialFilters)
+  >((query) => listBusinessConsoleErpPurchaseOrdersQueryOptions({ query }), initialFilters, enabled)
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpPurchaseOrderMutationOptions(),

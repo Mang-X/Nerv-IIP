@@ -43,6 +43,10 @@ const receiptFilters = reactive<{ status?: string; keyword?: string; skip: numbe
 })
 
 vi.mock('@/composables/erp/useBusinessErp', () => ({
+  useErpRequestsForQuotation: () => ({
+    filters: reactive({}),
+    items: computed(() => [{ rfqNo: 'RFQ-001', rfqId: 'rfq-1' }]),
+  }),
   useErpSupplierQuotations: () => ({
     filters: reactive({}),
     items: computed(() => [
@@ -377,6 +381,7 @@ describe('ERP procurement purchase requisition page', () => {
 
     expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'], {
       supplierQuotationId: 'quotation-1',
+      rfqId: 'rfq-1',
     })
   })
 

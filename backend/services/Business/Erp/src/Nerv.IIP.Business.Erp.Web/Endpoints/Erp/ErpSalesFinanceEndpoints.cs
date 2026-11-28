@@ -100,6 +100,7 @@ public sealed record OpenAccountingPeriodResponse(AccountingPeriodId AccountingP
 public sealed record CloseAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, string ClosedBy, string Reason);
 public sealed record ReopenAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, string ReopenedBy, string Reason);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListGLAccountsRequest(string OrganizationId, string EnvironmentId);
 public sealed record GetFinancePeriodRequest(string OrganizationId, string EnvironmentId, DateOnly PeriodStartDate, DateOnly PeriodEndDate);
 public sealed record ListFinanceDocumentsRequest(
     string OrganizationId,
@@ -484,6 +485,17 @@ public sealed class GetFinanceSummaryEndpoint(ISender sender) : ErpEndpoint<GetF
     }
 }
 
+public sealed class ListGLAccountsEndpoint(ISender sender) : ErpEndpoint<ListGLAccountsRequest, ResponseData<GLAccountListResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ListGLAccountsEndpoint>());
+
+    public override async Task HandleAsync(ListGLAccountsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListGLAccountsQuery(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class GetTrialBalanceEndpoint(ISender sender) : ErpEndpoint<GetFinancePeriodRequest, ResponseData<TrialBalanceResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetTrialBalanceEndpoint>());
@@ -626,6 +638,7 @@ public static class ErpFinanceEndpointContracts
         new(typeof(GetTrialBalanceEndpoint), "GET", "/api/business/v1/erp/finance/trial-balance", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpTrialBalance"),
         new(typeof(GetMonthEndChecklistEndpoint), "GET", "/api/business/v1/erp/finance/month-end-checklist", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpMonthEndChecklist"),
         new(typeof(GetFinanceSummaryEndpoint), "GET", "/api/business/v1/erp/finance/summary", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpFinanceSummary"),
+        new(typeof(ListGLAccountsEndpoint), "GET", "/api/business/v1/erp/finance/gl-accounts", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpGLAccounts"),
         new(typeof(ListAccountPayablesEndpoint), "GET", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountPayables"),
         new(typeof(ListAccountReceivablesEndpoint), "GET", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountReceivables"),
         new(typeof(ListCostCandidatesEndpoint), "GET", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpCostCandidates"),

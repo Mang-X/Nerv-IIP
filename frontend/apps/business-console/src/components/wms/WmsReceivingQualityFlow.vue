@@ -304,6 +304,18 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
         第 {{ line.gate.lineNo }} 行 · {{ skuLabel(line.gate.skuCode) }}
       </span>
       <NvStatusBadge :value="line.gate.qualityGateStatus" :label="gateLabel(line.gate)" />
+      <NvButton
+        v-if="inboundOrderStatus === 'Completed' && !putawayDisabled && line.gate.lineNo"
+        size="sm"
+        variant="link"
+        as-child
+      >
+        <RouterLink
+          :to="{ ...putawayRoute, query: { ...putawayRoute.query, lineNo: line.gate.lineNo } }"
+        >
+          去创建上架任务
+        </RouterLink>
+      </NvButton>
       <span
         v-if="gateCategory(line.gate.qualityGateStatus) === 'rejected'"
         class="text-destructive"

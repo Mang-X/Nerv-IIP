@@ -71,6 +71,7 @@ const { resolvePartnerLabel } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(rfqs.filters, { resetOn: [() => rfqs.filters.keyword] })
 
 const columns: NvDataTableColumn<BusinessConsoleErpRequestForQuotationItem>[] = [
+  { key: 'actions', header: '操作' },
   { key: 'rfqNo', header: 'RFQ', cellClass: 'font-medium', accessor: (r) => r.rfqNo ?? '-' },
   {
     key: 'supplierCodes',
@@ -292,6 +293,38 @@ async function submit() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-actions="{ row }">
+        <NvButton
+          v-if="can(P.erpProcurementManage) && row.status === 'Open'"
+          size="sm"
+          variant="outline"
+          as-child
+        >
+          <RouterLink
+            :to="{ path: '/erp/procurement/supplier-quotations', query: { rfqNo: row.rfqNo } }"
+            >录入回价</RouterLink
+          >
+        </NvButton>
+        <details v-if="can(P.erpProcurementManage) && row.status === 'Open' && row.lines?.length">
+          <summary class="cursor-pointer text-sm">询价明细</summary>
+          <ul>
+            <li v-for="line in row.lines" :key="line.lineNo">
+              <NvButton size="sm" variant="link" as-child>
+                <RouterLink
+                  :to="{
+                    path: '/erp/procurement/supplier-quotations',
+                    query: {
+                      rfqNo: row.rfqNo,
+                      lineNo: line.lineNo,
+                    },
+                  }"
+                  >第 {{ line.lineNo }} 行 · {{ line.skuCode }} · 录入回价</RouterLink
+                >
+              </NvButton>
+            </li>
+          </ul>
+        </details>
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 

@@ -105,6 +105,7 @@ const {
   mrpRunsPending,
   mrpSuggestionSeries,
   navigateToSuggestion,
+  carryDemandIntoMps,
   newMpsBucket,
   openBomContext,
   openPeggingSource,
@@ -352,6 +353,7 @@ const {
       :can-read-demands="canReadDemands"
       :can-read-mrp="canReadMrp"
       :demand-columns="demandColumns"
+      :carry-demand-into-mps="carryDemandIntoMps"
       :demand-coverage-for-row="demandCoverageForRow"
       :demand-filter-active="demandFilterActive"
       :demand-type-filter-options="demandTypeFilterOptions"

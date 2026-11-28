@@ -37,6 +37,7 @@ import {
 } from '@/data/wmsReference'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import DirectorySuggestInput from '@/components/business/DirectorySuggestInput.vue'
+import { useErpPurchaseOrders } from '@/composables/erp/useErpProcurement'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -165,6 +166,7 @@ const DEFAULT_RECEIVING_QUALITY_STATUS = WMS_RECEIVING_QUALITY_OPTIONS.find(
 )!.value
 const OWNER_OPTIONS = WMS_LINE_OWNER_TYPE_OPTIONS
 interface InboundLine {
+  lineNo: string
   skuCode: string
   uomCode: string
   receivedQuantity: string
@@ -175,6 +177,7 @@ interface InboundLine {
 }
 function emptyLine(): InboundLine {
   return {
+    lineNo: '',
     skuCode: '',
     uomCode: '',
     receivedQuantity: '',
@@ -196,6 +199,44 @@ const createForm = reactive({
   lines: [emptyLine()] as InboundLine[],
 })
 
+const inboundSourceTypes = computed(() =>
+  WMS_INBOUND_SOURCE_TYPE_OPTIONS.filter(
+    (option) =>
+      option.value !== 'purchase-order' || permissionCodes.value.includes(P.erpProcurementRead),
+  ),
+)
+const purchaseSource = computed(() => createForm.sourceDocumentType === 'purchase-order')
+const purchaseOrders = useErpPurchaseOrders(
+  { take: 30 },
+  () =>
+    createOpen.value &&
+    purchaseSource.value &&
+    permissionCodes.value.includes(P.erpProcurementRead),
+)
+const purchaseOrderOptions = computed(() =>
+  purchaseOrders.items.value.map((order) => ({
+    value: order.purchaseOrderNo!,
+    label: order.purchaseOrderNo!,
+  })),
+)
+watch(
+  () => createForm.sourceDocumentId,
+  (number) => {
+    if (!purchaseSource.value) return
+    const order = purchaseOrders.items.value.find((item) => item.purchaseOrderNo === number)
+    createForm.siteCode = order?.siteCode ?? ''
+    createForm.lines = (order?.lines ?? [])
+      .filter((line) => (line.openQuantity ?? 0) > 0)
+      .map((line) => ({
+        ...emptyLine(),
+        lineNo: line.lineNo!,
+        skuCode: line.skuCode!,
+        uomCode: line.uomCode!,
+        receivedQuantity: String(line.openQuantity),
+      }))
+  },
+)
+
 function openCreate() {
   createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.sourceDocumentType = ''
@@ -207,8 +248,11 @@ function openCreate() {
 }
 // 换了来源类型，已选的来源单据就不属于这一类了。
 function changeSourceDocumentType(value: string) {
+  const wasPurchaseSource = purchaseSource.value
   createForm.sourceDocumentType = value
   createForm.sourceDocumentId = ''
+  if (purchaseSource.value) createForm.lines = []
+  else if (wasPurchaseSource) createForm.lines = [emptyLine()]
 }
 function addLine() {
   createForm.lines.push(emptyLine())
@@ -245,7 +289,7 @@ async function submitCreate() {
     }
   }
   const lines = filled.map((l, i) => ({
-    lineNo: String(i + 1),
+    lineNo: purchaseSource.value ? l.lineNo : String(i + 1),
     skuCode: l.skuCode.trim(),
     uomCode: l.uomCode.trim(),
     receivedQuantity: Number(l.receivedQuantity),
@@ -444,6 +488,7 @@ const statusFilter = computed({
 // 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。
 // 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
 watchEffect(() => {
+  if (purchaseSource.value) return
   for (const line of createForm.lines) line.uomCode = resolveUomCode(line.skuCode)
 })
 /** 网关明确回「还没给够条件」时才引导选物料；其余情况按拿到的上下文照常呈现。 */
@@ -819,7 +864,7 @@ function formatDateTime(value?: string | null) {
               <NvSearchSelect
                 id="wms-in-srctype"
                 :model-value="createForm.sourceDocumentType"
-                :options="WMS_INBOUND_SOURCE_TYPE_OPTIONS"
+                :options="inboundSourceTypes"
                 placeholder="选择来源类型"
                 aria-label="来源类型"
                 @update:model-value="changeSourceDocumentType"
@@ -827,14 +872,37 @@ function formatDateTime(value?: string | null) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-in-srcid">来源单据</NvFieldLabel>
-              <SourceDocumentPicker id="wms-in-srcid" v-model="createForm.sourceDocumentId" />
+              <NvEntityPicker
+                v-if="purchaseSource"
+                id="wms-in-srcid"
+                v-model="createForm.sourceDocumentId"
+                :options="purchaseOrderOptions"
+                server-search
+                :search="purchaseOrders.filters.keyword"
+                :total-count="purchaseOrders.total.value"
+                @update:search="purchaseOrders.filters.keyword = $event"
+                :loading="purchaseOrders.pending.value"
+                title="选择采购订单"
+                placeholder="选择采购订单"
+              />
+              <SourceDocumentPicker
+                v-else
+                id="wms-in-srcid"
+                v-model="createForm.sourceDocumentId"
+              />
             </NvField>
           </NvFieldGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">收货明细</span>
-              <NvButton type="button" size="sm" variant="outline" @click="addLine">
+              <NvButton
+                v-if="!purchaseSource"
+                type="button"
+                size="sm"
+                variant="outline"
+                @click="addLine"
+              >
                 <PlusIcon aria-hidden="true" />
                 添加行
               </NvButton>
@@ -847,11 +915,14 @@ function formatDateTime(value?: string | null) {
               class="min-w-0 space-y-3 rounded-md border p-3"
             >
               <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-medium">第 {{ index + 1 }} 行</span>
+                <span class="text-sm font-medium"
+                  >第 {{ purchaseSource ? line.lineNo : index + 1 }} 行</span
+                >
                 <NvButton
                   type="button"
                   size="sm"
                   variant="ghost"
+                  :disabled="purchaseSource && createForm.lines.length === 1"
                   :aria-label="`删除第 ${index + 1} 行`"
                   @click="removeLine(index)"
                 >
@@ -862,7 +933,11 @@ function formatDateTime(value?: string | null) {
               <div class="grid min-w-0 grid-cols-2 items-start gap-3 sm:grid-cols-4">
                 <NvField class="col-span-2 min-w-0 gap-1.5">
                   <NvFieldLabel :for="`wms-in-${index}-sku`">物料</NvFieldLabel>
+                  <output v-if="purchaseSource" :id="`wms-in-${index}-sku`">{{
+                    line.skuCode
+                  }}</output>
                   <DirectoryPicker
+                    v-else
                     :id="`wms-in-${index}-sku`"
                     v-model="line.skuCode"
                     class="w-full min-w-0"

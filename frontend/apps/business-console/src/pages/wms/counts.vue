@@ -71,7 +71,7 @@ import {
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, UsersRoundIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -95,6 +95,7 @@ const {
   filters,
 } = useWmsCountExecutions({ workScopeRequired: true })
 const auth = useAuthStore()
+const router = useRouter()
 const canManageCounts = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.inventoryCountsManage),
 )
@@ -425,6 +426,27 @@ function closeSettledCount() {
   completeFrozenPayload.value = undefined
 }
 
+function countInventoryRoute(row: CountRow) {
+  return {
+    path: '/inventory/availability',
+    query: {
+      skuCode: row.skuCode,
+      siteCode: row.siteCode,
+      locationCode: row.locationCode,
+      lotNo: row.lotNo,
+    },
+  }
+}
+
+function notifyCountCompleted(row: CountRow) {
+  notifySuccess(`盘点单 ${row.countNo ?? MISSING_COUNT_NO} 已完成`, {
+    label: '查看盘点库存',
+    onClick: () => {
+      void router.push(countInventoryRoute(row))
+    },
+  })
+}
+
 async function verifyCompletion() {
   const id = completeTarget.value?.countExecutionId
   const payload = completeFrozenPayload.value
@@ -446,7 +468,7 @@ async function verifyCompletion() {
       if (postingFailed) {
         notifyError(row.inventoryPostingFailureMessage || '盘点库存过账失败，请刷新后处理。')
       } else if (row.status === 'Completed') {
-        notifySuccess(message)
+        notifyCountCompleted(row)
       } else {
         notifyWarning(message)
       }
@@ -489,7 +511,7 @@ async function submitComplete() {
       },
     )
     closeSettledCount()
-    notifySuccess(`盘点单 ${target.countNo ?? MISSING_COUNT_NO} 已完成`)
+    notifyCountCompleted(target)
   } catch (error) {
     if (
       error instanceof BusinessOperationPendingError ||
@@ -661,6 +683,9 @@ function refreshAll() {
         }}</span>
       </template>
       <template #cell-inventoryContext="{ row }">
+        <NvButton v-if="row.status === 'Completed'" size="sm" variant="link" as-child>
+          <RouterLink :to="countInventoryRoute(row)">查看盘点库存</RouterLink>
+        </NvButton>
         <WmsInventoryContextPanel
           compact
           :sku-code="row.skuCode"

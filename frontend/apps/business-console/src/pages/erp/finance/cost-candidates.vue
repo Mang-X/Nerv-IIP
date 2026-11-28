@@ -57,6 +57,7 @@ const costs = useErpCostCandidates()
 const { page, pageSize } = usePagedList(costs.filters, { resetOn: [() => costs.filters.keyword] })
 
 const columns: NvDataTableColumn<BusinessConsoleErpCostCandidateItem>[] = [
+  { key: 'voucherNo', header: '关联凭证', accessor: (row) => row.voucherNo ?? '—' },
   {
     key: 'candidateNo',
     header: '候选编号',
@@ -106,7 +107,7 @@ const readState = computed(() =>
     error: costs.error.value,
     total: costs.total.value,
     filtered: Boolean(costs.filters.keyword || costs.filters.status),
-    emptyHint: '还没有成本候选。生产、采购或维护成本归集后会在这里等待入账。',
+    emptyHint: '还没有成本候选。生产、采购或维护成本归集后会在这里显示。',
   }),
 )
 
@@ -127,16 +128,16 @@ const costCells = computed<NvMetricStripCell[]>(() => [
     label: '本页待入账候选',
     value: readCount(readState.value, pendingCount.value),
     unit: readState.value.trustworthy ? '条' : '',
-    meta: readState.value.trustworthy
-      ? '仅统计当前页；等待生成凭证或结转成本'
-      : readState.value.emptyMessage,
+    meta: readState.value.trustworthy ? '仅统计当前页' : readState.value.emptyMessage,
   },
   {
     key: 'amount',
-    label: '待入账成本',
+    label: '成本候选金额',
     // 取不到数时显 `—`，不显 ¥0.00——「零待入账成本」是会被当真的结论。
     value: summaryTrustworthy.value
-      ? formatAmount(summary.value?.costCandidateAmount)
+      ? (summary.value?.costCandidatesByCurrency ?? [])
+          .map((row) => formatAmount(row.openAmount, row.currencyCode))
+          .join(' · ') || UNAVAILABLE_TEXT
       : UNAVAILABLE_TEXT,
     meta: summaryTrustworthy.value
       ? '全库口径 · 不随下方筛选与分页变化'
@@ -287,7 +288,11 @@ async function submit() {
           formatAmount(row.amount, row.currencyCode ?? 'CNY')
         }}</span></template
       >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge
+          :value="row.status ?? '-'"
+          :label="row.status === 'posted' ? '已过账' : '未过账'"
+      /></template>
     </NvDataTable>
 
     <NvDialog v-if="canManage" v-model:open="open">

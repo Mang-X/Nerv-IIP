@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { usePermission } from '@/composables/usePermission'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import type { BusinessConsoleErpJournalVoucherItem } from '@nerv-iip/api-client'
+import { useQuery } from '@pinia/colada'
+import {
+  listBusinessConsoleErpGlAccountsQueryOptions,
+  type BusinessConsoleErpJournalVoucherItem,
+} from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import { unwrapData } from '@/composables/erp/erpDocumentList'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useErpJournalVouchers } from '@/composables/erp/useBusinessErp'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -161,24 +167,51 @@ function openLines(voucher: BusinessConsoleErpJournalVoucherItem) {
   linesOpen.value = true
 }
 
+let lineSequence = 0
+function newEntry(side: 'debit' | 'credit') {
+  return { id: ++lineSequence, side, accountCode: '', amount: '', memo: '' }
+}
+
 const open = shallowRef(false)
+const businessContext = useBusinessContextStore()
+const accounts = useQuery(() => ({
+  ...listBusinessConsoleErpGlAccountsQueryOptions({
+    query: {
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
+    },
+  }),
+  enabled: open.value && Boolean(businessContext.organizationId && businessContext.environmentId),
+}))
+const accountOptions = computed(() => unwrapData(accounts.data.value)?.items ?? [])
 const form = reactive({
   postingDate: '',
-  debitAccount: '',
-  creditAccount: '',
-  amount: '0',
-  memo: '',
+  lines: [newEntry('debit'), newEntry('credit')],
 })
-// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
-const invalid = computed(() => ({
-  postingDate: !form.postingDate,
-  debitAccount: !form.debitAccount.trim(),
-  creditAccount: !form.creditAccount.trim(),
-  memo: !form.memo.trim(),
-  amount: !(Number(form.amount) > 0),
-}))
-const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
+const entryInvalid = (line: ReturnType<typeof newEntry>) =>
+  !line.accountCode.trim() || !(Number(line.amount) > 0) || !line.memo.trim()
+const postingLines = computed(() =>
+  form.lines.map((line) => ({
+    accountCode: line.accountCode.trim(),
+    debitAmount: line.side === 'debit' ? Number(line.amount) : 0,
+    creditAmount: line.side === 'credit' ? Number(line.amount) : 0,
+    memo: line.memo.trim(),
+  })),
+)
+const balanceInCents = computed(() =>
+  postingLines.value.reduce(
+    (sum, line) => sum + Math.round(line.debitAmount * 100) - Math.round(line.creditAmount * 100),
+    0,
+  ),
+)
+const canSubmit = computed(
+  () =>
+    Boolean(form.postingDate) &&
+    form.lines.length >= 2 &&
+    !form.lines.some(entryInvalid) &&
+    balanceInCents.value === 0,
+)
 
 /** 本地当天，作为过账日期默认值（凭证绝大多数当天过账）。 */
 function todayInputValue() {
@@ -188,10 +221,7 @@ function todayInputValue() {
 
 function openDialog() {
   form.postingDate = todayInputValue()
-  form.debitAccount = ''
-  form.creditAccount = ''
-  form.amount = '0'
-  form.memo = ''
+  form.lines = [newEntry('debit'), newEntry('credit')]
   showErrors.value = false
   open.value = true
 }
@@ -200,24 +230,10 @@ async function submit() {
   if (!can(P.erpFinanceManage)) return
   showErrors.value = true
   if (!canSubmit.value) return
-  const amount = Number(form.amount)
   try {
     await vouchers.postVoucher({
       postingDate: form.postingDate,
-      lines: [
-        {
-          accountCode: form.debitAccount.trim(),
-          debitAmount: amount,
-          creditAmount: 0,
-          memo: form.memo.trim(),
-        },
-        {
-          accountCode: form.creditAccount.trim(),
-          debitAmount: 0,
-          creditAmount: amount,
-          memo: form.memo.trim(),
-        },
-      ],
+      lines: postingLines.value,
     })
     open.value = false
     notifySuccess('会计凭证已过账')
@@ -325,14 +341,20 @@ async function submit() {
     </NvDialog>
 
     <NvDialog v-if="can(P.erpFinanceManage)" v-model:open="open">
-      <NvDialogContent>
+      <NvDialogContent class="max-h-[90vh] overflow-y-auto">
         <NvDialogHeader
           ><NvDialogTitle>过账会计凭证</NvDialogTitle
-          ><NvDialogDescription class="sr-only"
-            >登记一借一贷分录。</NvDialogDescription
-          ></NvDialogHeader
+          ><NvDialogDescription class="sr-only">登记借贷分录。</NvDialogDescription></NvDialogHeader
         >
         <form class="grid gap-4" @submit.prevent="submit">
+          <datalist id="voucher-account-catalog">
+            <option
+              v-for="account in accountOptions"
+              :key="account.code"
+              :value="account.code"
+              :label="account.name"
+            />
+          </datalist>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="erp-jv-date">
@@ -343,56 +365,55 @@ async function submit() {
                 v-model="form.postingDate"
                 :locale="locale"
                 clearable
-                :aria-invalid="showErrors && invalid.postingDate"
-                :class="pickerInvalidClass(showErrors && invalid.postingDate)"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-jv-amount">
-                金额（元） <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvInput
-                id="erp-jv-amount"
-                v-model="form.amount"
-                type="number"
-                min="0"
-                step="0.01"
-                :data-invalid="showErrors && invalid.amount ? '' : undefined"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-jv-debit">
-                借方科目 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvInput
-                id="erp-jv-debit"
-                v-model="form.debitAccount"
-                :data-invalid="showErrors && invalid.debitAccount ? '' : undefined"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-jv-credit">
-                贷方科目 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvInput
-                id="erp-jv-credit"
-                v-model="form.creditAccount"
-                :data-invalid="showErrors && invalid.creditAccount ? '' : undefined"
-              />
-            </NvField>
-            <NvField class="sm:col-span-2">
-              <NvFieldLabel for="erp-jv-memo">
-                摘要 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvInput
-                id="erp-jv-memo"
-                v-model="form.memo"
-                :data-invalid="showErrors && invalid.memo ? '' : undefined"
+                :aria-invalid="showErrors && !form.postingDate"
+                :class="pickerInvalidClass(showErrors && !form.postingDate)"
               />
             </NvField>
           </NvFieldGroup>
+          <div
+            v-for="(line, index) in form.lines"
+            :key="line.id"
+            class="grid gap-2 rounded-md border p-3"
+          >
+            <div class="flex items-center justify-between">
+              <span>{{ index + 1 }} · {{ line.side === 'debit' ? '借方' : '贷方' }}</span>
+              <NvButton type="button" size="sm" variant="ghost" @click="form.lines.splice(index, 1)"
+                >删除分录</NvButton
+              >
+            </div>
+            <NvField>
+              <NvFieldLabel :for="'erp-jv-account-' + line.id">科目</NvFieldLabel>
+              <NvInput
+                :id="'erp-jv-account-' + line.id"
+                v-model="line.accountCode"
+                list="voucher-account-catalog"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel :for="'erp-jv-amount-' + line.id">金额</NvFieldLabel>
+              <NvInput
+                :id="'erp-jv-amount-' + line.id"
+                v-model="line.amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel :for="'erp-jv-memo-' + line.id">摘要</NvFieldLabel>
+              <NvInput :id="'erp-jv-memo-' + line.id" v-model="line.memo" />
+            </NvField>
+          </div>
+          <div class="flex gap-2">
+            <NvButton type="button" variant="outline" @click="form.lines.push(newEntry('debit'))"
+              >新增借方</NvButton
+            >
+            <NvButton type="button" variant="outline" @click="form.lines.push(newEntry('credit'))"
+              >新增贷方</NvButton
+            >
+          </div>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写过账日期、借贷科目、摘要，并给出正数金额。
+            请填写过账日期及各行科目、摘要与正数金额，并确认借贷合计相等。
           </p>
           <NvDialogFooter
             ><NvDialogClose as-child

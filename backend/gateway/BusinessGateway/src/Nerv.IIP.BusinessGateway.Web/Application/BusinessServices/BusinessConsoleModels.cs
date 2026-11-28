@@ -4018,7 +4018,8 @@ public sealed record BusinessConsoleErpQuotationItem(
     IReadOnlyCollection<BusinessConsoleErpQuotationLineItem> Lines,
     DateTime CreatedAtUtc,
     string? ConvertedSalesOrderNo,
-    Guid? OpportunityId = null);
+    Guid? OpportunityId = null,
+    string? OpportunityNo = null);
 
 public sealed record BusinessConsoleErpQuotationLineItem(
     string LineNo,
@@ -4170,11 +4171,22 @@ public sealed record BusinessConsoleErpJournalVoucherLineItem(
     decimal CreditAmount,
     string Memo);
 
+public sealed record BusinessConsoleErpGLAccountListResponse(IReadOnlyCollection<BusinessConsoleErpGLAccountListItem> Items);
+public sealed record BusinessConsoleErpGLAccountListItem(string Code, string Name);
+
 public sealed record BusinessConsoleErpFinanceSummaryResponse(
     decimal OpenPayableAmount,
     decimal OpenReceivableAmount,
     decimal CostCandidateAmount,
-    int PostedVoucherCount);
+    int PostedVoucherCount,
+    IReadOnlyCollection<BusinessConsoleErpCurrencyAmountSummary>? PayablesByCurrency = null,
+    IReadOnlyCollection<BusinessConsoleErpCurrencyAmountSummary>? ReceivablesByCurrency = null,
+    IReadOnlyCollection<BusinessConsoleErpCurrencyAmountSummary>? CostCandidatesByCurrency = null);
+
+public sealed record BusinessConsoleErpCurrencyAmountSummary(
+    string CurrencyCode,
+    decimal OpenAmount,
+    decimal LocalOpenAmount);
 
 public sealed record BusinessConsoleErpPeriodRequest(
     string OrganizationId,
@@ -4302,7 +4314,8 @@ public sealed record BusinessConsoleErpCostCandidateItem(
     decimal Amount,
     string CurrencyCode,
     string Status,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? VoucherNo = null);
 
 public sealed record BusinessConsoleErpPayableSourceDocumentResponse(
     string PayableNo,

@@ -613,6 +613,28 @@ public sealed class GetBusinessConsoleErpFinanceSummaryEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/gl-accounts")]
+[BusinessGatewayOperationId("listBusinessConsoleErpGLAccounts")]
+public sealed class ListBusinessConsoleErpGLAccountsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpContextRequest, BusinessConsoleErpGLAccountListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpContextRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpContextRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpGLAccountListResponse> ForwardAsync(
+        BusinessConsoleErpContextRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListGLAccountsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpGet("/api/business-console/v1/erp/finance/payables")]
 [BusinessGatewayOperationId("listBusinessConsoleErpPayables")]
 public sealed class ListBusinessConsoleErpPayablesEndpoint(

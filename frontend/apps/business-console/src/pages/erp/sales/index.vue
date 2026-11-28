@@ -71,6 +71,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpOpportunityItem>[] = [
     width: 'w-40',
     accessor: (r) => formatDateTime(r.openedAtUtc),
   },
+  { key: 'actions', header: '操作' },
 ]
 
 const activeCount = computed(
@@ -233,6 +234,26 @@ async function submit() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-actions="{ row }">
+        <NvButton
+          v-if="can(P.erpSalesManage) && row.opportunityId && row.customerCode"
+          size="sm"
+          variant="outline"
+          as-child
+        >
+          <RouterLink
+            :to="{
+              path: '/erp/sales/quotations',
+              query: {
+                opportunityId: row.opportunityId,
+                opportunityNo: row.opportunityNo,
+                customerCode: row.customerCode,
+              },
+            }"
+            >生成报价</RouterLink
+          >
+        </NvButton>
+      </template>
       <template #cell-customerCode="{ row }">
         <PartnerNameCell :code="row.customerCode" />
       </template>

@@ -16,7 +16,11 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { WMS_LINE_OWNER_TYPE_OPTIONS, wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
-import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/wms'
+import {
+  createWmsIdempotencyKey,
+  useWmsOutboundOrders,
+  useWmsPickingTasks,
+} from '@/composables/wms'
 import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import { useWmsPostingRetry } from '@/composables/wms/useWmsPostingRetry'
@@ -283,6 +287,25 @@ function openAssign(row: OutboundRow) {
   assignOpen.value = true
 }
 
+const pickingForOrder = useWmsPickingTasks({ take: 200, workScopeRequired: true })
+watch(
+  () => [filters.scopeKind, filters.scopeId] as const,
+  ([scopeKind, scopeId]) => {
+    pickingForOrder.filters.scopeKind = scopeKind
+    pickingForOrder.filters.scopeId = scopeId
+  },
+  { immediate: true },
+)
+
+function pickingTasksFor(row: OutboundRow, lineNo: string | null | undefined) {
+  return pickingForOrder.pickingTasks.value.filter(
+    (task) =>
+      task.sourceOrderNo === row.outboundOrderNo &&
+      task.sourceOrderLineNo === lineNo &&
+      task.status !== 'Cancelled',
+  )
+}
+
 const reviewOpen = shallowRef(false)
 const pendingOrder = shallowRef<OutboundRow>()
 const reviewIntentKey = shallowRef('')
@@ -321,6 +344,7 @@ function canComplete(row: OutboundRow) {
 }
 function openReview(row: OutboundRow) {
   pendingOrder.value = row
+  pickingForOrder.filters.keyword = row.outboundOrderNo
   reviewIntentKey.value = createWmsIdempotencyKey()
   reviewIntentAttempted.value = false
   reviewIntentLocked.value = false
@@ -386,6 +410,27 @@ async function submitReview() {
     formError.value = reviewIntentLocked.value
       ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
       : inlineErrorMessage(error, '提交出库复核失败，请稍后重试。', reasonContext)
+    if (
+      formError.value.includes('拣货') &&
+      pendingOrder.value &&
+      !pickingForOrder.pickingTasksPending.value &&
+      !pickingForOrder.pickingTasksError.value &&
+      pickingForOrder.pickingTasksTotal.value === pickingForOrder.pickingTasks.value.length
+    ) {
+      const order = pendingOrder.value
+      const blockedLines = order.lines?.filter((line) => {
+        const tasks = pickingTasksFor(order, line.lineNo)
+        return (
+          !tasks.length ||
+          tasks.some(
+            (task) => task.status !== 'Completed' && task.status !== 'CompletedWithDifference',
+          )
+        )
+      })
+      if (blockedLines?.length) {
+        formError.value += ` 缺少已完成拣货：${blockedLines.map((line) => `第 ${line.lineNo} 行 · ${line.skuCode}`).join('、')}。`
+      }
+    }
     notifyOperationFailure(
       '提交出库复核失败',
       error,
@@ -602,6 +647,28 @@ function refreshAll() {
         </template>
       </template>
       <template #cell-actions="{ row }">
+        <NvButton
+          v-for="line in canManageShipments && canComplete(row) ? row.lines : []"
+          :key="line.lineNo"
+          size="sm"
+          variant="outline"
+          as-child
+        >
+          <RouterLink
+            :to="{
+              path: '/wms/picking',
+              query: {
+                create: '1',
+                outboundOrderId: row.outboundOrderId,
+                lineNo: line.lineNo,
+                quantity: (line.requestedQuantity ?? 0) - (line.issuedQuantity ?? 0),
+                locationCode: line.locationCode,
+                siteCode: row.siteCode,
+              },
+            }"
+            >第 {{ line.lineNo }} 行 · 去创建拣货任务</RouterLink
+          >
+        </NvButton>
         <div class="flex justify-end gap-2">
           <NvButton
             v-if="

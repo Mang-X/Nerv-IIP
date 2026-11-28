@@ -8,6 +8,7 @@ import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import {
   useErpPurchaseRequisitions,
   useErpSupplierQuotations,
+  useErpRequestsForQuotation,
 } from '@/composables/erp/useBusinessErp'
 import { useBusinessPartners } from '@/composables/master-data'
 import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
@@ -74,6 +75,17 @@ const matchingQuotations = computed(() =>
           line.uomCode === conversionRow.value?.uomCode,
       ),
   ),
+)
+const conversionRfqs = useErpRequestsForQuotation()
+const selectedQuotation = computed(() =>
+  matchingQuotations.value.find((item) => item.supplierQuotationId === selectedQuotationId.value),
+)
+watch(selectedQuotation, (quotation) => {
+  conversionRfqs.filters.keyword = quotation?.rfqNo
+})
+const selectedRfqId = computed(
+  () =>
+    conversionRfqs.items.value.find((rfq) => rfq.rfqNo === selectedQuotation.value?.rfqNo)?.rfqId,
 )
 // 物料列显中文名、单位列显「件 (pcs)」：读面只回编码，名称在主数据里。
 const { resolveSkuName } = useSkuNames()
@@ -246,14 +258,21 @@ function openConversion(row: BusinessConsoleErpPurchaseRequisitionItem) {
 
 async function convertToPurchaseOrder() {
   const row = conversionRow.value
-  const quotation = matchingQuotations.value.find(
-    (item) => item.supplierQuotationId === selectedQuotationId.value,
+  const quotation = selectedQuotation.value
+  const rfqId = selectedRfqId.value
+  if (
+    !can(P.erpProcurementManage) ||
+    !row ||
+    !canConvert(row) ||
+    !quotation?.supplierQuotationId ||
+    !rfqId
   )
-  if (!can(P.erpProcurementManage) || !row || !canConvert(row) || !quotation) return
+    return
 
   try {
     const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!], {
-      supplierQuotationId: selectedQuotationId.value,
+      supplierQuotationId: quotation.supplierQuotationId,
+      rfqId,
     })
     const data = response?.success ? response.data : undefined
     if (data?.status === 'PurchaseOrderCreated' || data?.status === 'AlreadyConverted') {
@@ -499,7 +518,7 @@ async function submitRfq() {
         <NvDialogFooter>
           <NvButton
             type="button"
-            :disabled="!selectedQuotationId || requisitions.convertToPurchaseOrderPending.value"
+            :disabled="!selectedRfqId || requisitions.convertToPurchaseOrderPending.value"
             @click="convertToPurchaseOrder"
           >
             确认转单

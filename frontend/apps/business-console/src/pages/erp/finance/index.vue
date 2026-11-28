@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpJournalVoucherItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import type { BuildKpiTrendOptions } from '@/utils/kpiTrend'
 import { useErpFinanceSummary, useErpJournalVouchers } from '@/composables/erp/useBusinessErp'
-import { buildKpiTrend } from '@/utils/kpiTrend'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -40,21 +38,6 @@ const trustworthy = computed(
   () => ready.value && summaryError.value == null && summary.value !== undefined,
 )
 
-/** 缺值传 `undefined` 给 formatAmount，由它统一输出 `—`；绝不用 0 顶。 */
-function amountOf(value: number | null | undefined) {
-  return trustworthy.value ? value : undefined
-}
-
-/**
- * 趋势与 `—` 同一把闸：读数不可信时连线带幅度一起不给。
- *
- * 摘要接口只回当前值、没有历史读面，所以这四条线都是由当前真值反推的形状
- * （末点恒等于卡片数字）；一旦读数本身不可信，画出来的就是一条凭空的线。
- */
-function trendOf(key: string, value: number | null | undefined, options: BuildKpiTrendOptions) {
-  return trustworthy.value ? buildKpiTrend(key, value, options) : undefined
-}
-
 /** 页头与摘要卡的状态说明：只说「为什么没有数字」，不说任何"暂无 / 正常"式结论。 */
 const summaryStateNote = computed(() => {
   if (!ready.value) return '尚未选择业务范围，还没有发起查询。'
@@ -63,65 +46,27 @@ const summaryStateNote = computed(() => {
   return ''
 })
 
-// 原来的「范围」列并进卡片副行——四个数字只出现一次（#1418 B3：下方表格曾逐行复读
-// 同样四个数，无增量信息；那张表已换成「最近凭证」流水）。
 const summaryCells = computed<NvMetricStripCell[]>(() => {
-  // 应收/应付本身无好坏（欠款多不等于经营差），交给财务判断，只报方向不配色；
-  // 待入账成本涨了是坏事，lower-better 让升箭头读作告警。
-  const receivable = trendOf('erp.finance.receivable', summary.value?.openReceivableAmount, {
-    kind: 'amount',
-    polarity: 'neutral',
-  })
-  const payable = trendOf('erp.finance.payable', summary.value?.openPayableAmount, {
-    kind: 'amount',
-    polarity: 'neutral',
-  })
-  const cost = trendOf('erp.finance.costCandidate', summary.value?.costCandidateAmount, {
-    kind: 'amount',
-    polarity: 'lower-better',
-  })
-  const vouchers = trendOf('erp.finance.vouchers', summary.value?.postedVoucherCount, {
-    kind: 'count',
-  })
-
+  const groups = [
+    { key: 'receivable', label: '应收未结', balances: summary.value?.receivablesByCurrency },
+    { key: 'payable', label: '应付未结', balances: summary.value?.payablesByCurrency },
+    { key: 'cost', label: '成本候选金额', balances: summary.value?.costCandidatesByCurrency },
+  ]
   return [
-    {
-      key: 'receivable',
-      label: '应收未结',
-      value: formatAmount(amountOf(summary.value?.openReceivableAmount)),
-      meta: trustworthy.value ? '客户应收 · 全库口径' : summaryStateNote.value,
-      delta: receivable?.delta,
-      series: receivable?.series,
-      seriesLabels: receivable?.seriesLabels,
-    },
-    {
-      key: 'payable',
-      label: '应付未结',
-      value: formatAmount(amountOf(summary.value?.openPayableAmount)),
-      meta: trustworthy.value ? '供应商应付 · 全库口径' : summaryStateNote.value,
-      delta: payable?.delta,
-      series: payable?.series,
-      seriesLabels: payable?.seriesLabels,
-    },
-    {
-      key: 'cost',
-      label: '待入账成本',
-      value: formatAmount(amountOf(summary.value?.costCandidateAmount)),
-      meta: trustworthy.value ? '成本候选 · 等待生成凭证' : summaryStateNote.value,
-      delta: cost?.delta,
-      series: cost?.series,
-      seriesLabels: cost?.seriesLabels,
-    },
+    ...groups.flatMap(({ key, label, balances }) =>
+      trustworthy.value && balances?.length
+        ? balances.map((balance) => ({
+            key: `${key}-${balance.currencyCode}`,
+            label: `${label} (${balance.currencyCode})`,
+            value: formatAmount(balance.openAmount, balance.currencyCode),
+          }))
+        : [{ key, label, value: UNAVAILABLE_TEXT, meta: summaryStateNote.value }],
+    ),
     {
       key: 'vouchers',
       label: '已过账凭证',
       value: trustworthy.value ? (summary.value?.postedVoucherCount ?? 0) : UNAVAILABLE_TEXT,
-      unit: trustworthy.value ? '张' : '',
-      meta: trustworthy.value ? '已记账、可用于对账的凭证' : summaryStateNote.value,
-      delta: vouchers?.delta,
-      series: vouchers?.series,
-      seriesLabels: vouchers?.seriesLabels,
-      seriesUnit: '张',
+      unit: '张',
     },
   ]
 })

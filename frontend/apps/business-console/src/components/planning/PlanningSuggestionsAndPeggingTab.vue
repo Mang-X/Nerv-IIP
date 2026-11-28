@@ -258,7 +258,10 @@ function restoreEvidenceFocus(event: Event) {
           <div class="grid gap-1">
             <span>{{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·</span>
             <NvButton
-              v-if="suggestionWorkOrderId(row) && canReadWorkOrders"
+              v-if="
+                (suggestionWorkOrderId(row) && canReadWorkOrders) ||
+                (row.suggestionType === 'planned-purchase' && hasPermission(P.erpProcurementRead))
+              "
               size="sm"
               type="button"
               variant="ghost"

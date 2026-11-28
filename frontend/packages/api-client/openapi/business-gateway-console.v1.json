@@ -33755,6 +33755,66 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/finance/gl-accounts": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpGLAccounts",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpGLAccountListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/finance/payables/by-source": {
       "get": {
         "tags": [
@@ -71155,6 +71215,10 @@
             "type": "string",
             "format": "guid",
             "nullable": true
+          },
+          "opportunityNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -72366,12 +72430,95 @@
           "postedVoucherCount": {
             "type": "integer",
             "format": "int32"
+          },
+          "payablesByCurrency": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary"
+            }
+          },
+          "receivablesByCurrency": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary"
+            }
+          },
+          "costCandidatesByCurrency": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCurrencyAmountSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "currencyCode": {
+            "type": "string"
+          },
+          "openAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "localOpenAmount": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpContextRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpGLAccountListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpGLAccountListItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPayableListResponse": {
         "allOf": [
@@ -72576,6 +72723,10 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "voucherNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
