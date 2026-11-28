@@ -220,7 +220,9 @@ const tableEmptyMessage = computed(() => {
   if (nearExpiryOnly.value) return '当前范围没有已过期或未来30天内到期的批次。'
   if (showSiteOverview.value) {
     if (siteStockTotalSkuCount.value === 0) return '暂无物料主数据，请先在基础数据维护物料。'
-    return '已扫描的物料在本厂没有批次或序列号记录。可继续扫描其余物料，或换一个工厂。'
+    if (siteStockHasMore.value) return '已成功读取的物料暂无批次记录，可继续扫描其余物料。'
+    if (siteStockFailedCount.value > 0) return '已扫描全部物料，成功读取的物料暂无批次记录。'
+    return '已扫描全部物料，暂无批次记录。'
   }
   return '这个物料在当前工厂没有批次记录。换个物料、库位或质量状态再查一次。'
 })

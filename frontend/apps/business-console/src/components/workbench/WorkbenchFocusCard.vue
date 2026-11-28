@@ -187,7 +187,9 @@ const unavailableText = computed(
           :key="item.key"
           class="flex min-w-0 items-baseline justify-between gap-3 px-5 py-2.5"
         >
-          <span class="truncate text-sm font-medium text-foreground">{{ item.primary }}</span>
+          <span class="truncate text-sm font-medium text-foreground" :title="item.primary">{{
+            item.primary
+          }}</span>
           <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{{
             item.secondary
           }}</span>

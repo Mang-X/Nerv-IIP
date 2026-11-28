@@ -8,6 +8,16 @@ import CountsPage from './counts.vue'
 describe('WMS operate actions', () => {
   beforeEach(resetFixture)
 
+  it('空列表不作账实一致的判断', async () => {
+    wms.countRows = []
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('暂无盘点单')
+    expect(wrapper.text()).not.toContain('本页账实一致')
+    expect(wrapper.text()).not.toContain('取不到数据')
+  })
+
   // 合同：#3943 已批准范围，断言请求身份而非页面内部状态。
   it.each([
     ['确定性拒绝', { status: 400 }, false],

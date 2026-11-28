@@ -168,6 +168,20 @@ describe('MES index page', () => {
     expect(blockerCard!.text()).toContain('查看异常与产能')
   })
 
+  it('以中文展示阻塞来源与原因，未知来源和原因使用通用标签', () => {
+    overviewState.blockers = [
+      { areaCode: 'capacity-schedule', code: 'SCHEDULE_INVALIDATED', count: 1 },
+      { areaCode: 'new-area', code: 'NEW_BLOCKER', count: 1 },
+    ]
+
+    const text = mountPage().text()
+    expect(text).toContain('产能与排程')
+    expect(text).toContain('排程已失效')
+    expect(text).toContain('其他来源')
+    expect(text).toContain('其他阻塞')
+    expect(text).not.toMatch(/capacity-schedule|SCHEDULE_INVALIDATED|new-area|NEW_BLOCKER/)
+  })
+
   // 读面取不到数据时，页面绝不能替现场下「没有阻塞 / 可以继续推进」的结论。
   const SAFETY_CLAIMS = ['没有汇总阻塞', '没有阻塞', '没有生产阻塞', '暂无阻塞', '一切正常']
 

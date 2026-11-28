@@ -119,29 +119,36 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   {
     key: 'purchaseOrderNo',
     header: '采购单',
-    width: 'w-56',
+    width: 'w-40',
     cellClass: 'font-medium whitespace-normal break-all',
   },
+  { key: 'status', header: '订单状态', width: 'w-24' },
+  { key: 'receiptReadiness', header: '收货状态', width: 'w-24' },
   {
     key: 'supplierCode',
     header: '供应商',
-    width: 'w-64',
+    width: 'w-40',
     cellClass: 'whitespace-normal break-all',
   },
-  { key: 'skuCode', header: '物料', width: 'w-56', cellClass: 'whitespace-normal break-all' },
+  { key: 'skuCode', header: '物料', width: 'w-40', cellClass: 'whitespace-normal break-all' },
   {
     key: 'sourceRequisitions',
     header: '来源申请',
-    width: 'w-40',
+    width: 'w-28',
     cellClass: 'whitespace-normal break-all',
   },
   { key: 'orderedQuantity', header: '订单数量', align: 'end', width: 'w-28' },
   { key: 'receivedQuantity', header: '已收数量', align: 'end', width: 'w-28' },
   { key: 'openQuantity', header: '未到数量', align: 'end', width: 'w-28' },
-  { key: 'status', header: '订单状态', width: 'w-28' },
-  { key: 'receiptReadiness', header: '收货状态', width: 'w-28' },
   { key: 'amount', header: '金额', align: 'end', width: 'w-32' },
-  { key: 'actions', header: '审批', align: 'end' },
+  {
+    key: 'actions',
+    header: '审批',
+    align: 'end',
+    width: 'w-44',
+    headerClass: 'sticky right-0 z-20 bg-card shadow-[-1px_0_0_0_var(--border)]',
+    cellClass: 'sticky right-0 z-10 bg-card shadow-[-1px_0_0_0_var(--border)]',
+  },
 ]
 
 const readState = computed(() =>

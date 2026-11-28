@@ -3,6 +3,7 @@ import type { BusinessConsoleMesReceiptRequestRow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesReceiptInventorySource } from '@/composables/mes'
 import { receiptStatusLabel } from '@/composables/mes/useMesReferenceLabels'
+import { formatDateTime } from '@/utils/format'
 import { inlineErrorMessage } from '@/utils/notify'
 import {
   NvButton,
@@ -58,6 +59,7 @@ const movementColumns: NvDataTableColumn<Movement>[] = [
     width: 'w-48',
     cellClass: 'whitespace-normal break-all',
     header: '过账时间',
+    accessor: (row) => formatDateTime(row.postedAtUtc),
   },
 ]
 const balanceColumns: NvDataTableColumn<Balance>[] = [

@@ -12,7 +12,7 @@ describe('计划销售单侧栏', () => {
       {
         assignmentId: 'a1',
         orderId: 'WO-03008',
-        operationId: 'OP-10',
+        operationId: 'WO-20261127-000004-OP-10',
         operationSequence: 10,
         startUtc: '2026-08-01T00:00:00Z',
         endUtc: '2026-08-01T03:00:00Z',
@@ -51,7 +51,7 @@ describe('计划销售单侧栏', () => {
               salesOrders: [{ salesOrderNo: 'SO-08001' }, { salesOrderNo: 'SO-08002' }],
             },
             operationTasks: [
-              { operationTaskNo: 'OP-10', status: 'Completed' },
+              { operationTaskNo: 'WO-20261127-000004-OP-10', status: 'Completed' },
               { operationTaskNo: 'OP-20', status: 'InProgress' },
             ],
           },
@@ -62,6 +62,9 @@ describe('计划销售单侧栏', () => {
     expect(wrapper.text()).toContain('SO-08001')
     expect(wrapper.text()).toContain('SO-08002')
     expect(wrapper.text()).toContain('30 / 100')
+    const operation = wrapper.get('button[data-operation="a1"]')
+    expect(operation.text()).toBe('WO-20261127-000004-OP-10')
+    expect(operation.attributes('title')).toBe(operation.text())
     expect(wrapper.text()).toContain('已完成')
     expect(wrapper.text()).toContain('执行中')
     expect(wrapper.text()).toContain('无权读取销售订单')

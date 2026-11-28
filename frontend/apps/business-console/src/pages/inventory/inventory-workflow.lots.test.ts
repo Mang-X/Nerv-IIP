@@ -1,10 +1,34 @@
-import { inventoryState, mountInventoryPage, resetFixture } from './inventory-workflow.fixture'
+import {
+  inventoryState,
+  mountInventoryPage,
+  resetFixture,
+  siteStockState,
+} from './inventory-workflow.fixture'
 import { beforeEach, describe, expect, it } from 'vitest'
 import AvailabilityPage from './availability.vue'
 import LotsPage from './lots.vue'
 
 describe('inventory workflow pages', () => {
   beforeEach(resetFixture)
+
+  it('全厂扫描完成且无批次时收起继续扫描入口', async () => {
+    inventoryState.initialSkuCode = ''
+    siteStockState.noTrackedLines = true
+    const wrapper = mountInventoryPage(LotsPage)
+    const table = wrapper.get('[data-ui-table]')
+    expect(table.attributes('data-empty-message')).toContain('可继续扫描其余物料')
+    expect(wrapper.findAll('button').some((button) => button.text() === '继续扫描其余物料')).toBe(
+      true,
+    )
+
+    siteStockState.hasMore!.value = false
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('已扫描 48/48 个物料')
+    expect(table.attributes('data-empty-message')).toBe('已扫描全部物料，暂无批次记录。')
+    expect(wrapper.findAll('button').some((button) => button.text() === '继续扫描其余物料')).toBe(
+      false,
+    )
+  })
 
   it('links inventory lot context to barcode scan records', async () => {
     const wrapper = mountInventoryPage(AvailabilityPage)

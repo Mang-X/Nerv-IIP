@@ -422,9 +422,7 @@ const headerCount = computed(() => {
   if (outboundOrdersPending.value) return '加载中'
   return `${outboundOrdersTotal.value} 张出库单`
 })
-const pageOpenCount = computed(
-  () => outboundOrders.value.filter((r) => (r.status ?? '').toLowerCase() !== 'completed').length,
-)
+const pageOpenCount = computed(() => outboundOrders.value.filter(canComplete).length)
 const metricCells = computed<NvMetricStripCell[]>(() => {
   if (!listReady.value) {
     return [
@@ -445,7 +443,7 @@ const metricCells = computed<NvMetricStripCell[]>(() => {
     {
       key: 'completed',
       label: '本页已完成',
-      value: outboundOrders.value.length - pageOpenCount.value,
+      value: outboundOrders.value.filter((r) => r.status?.toLowerCase() === 'completed').length,
       unit: '张',
       valueTone: 'success',
     },

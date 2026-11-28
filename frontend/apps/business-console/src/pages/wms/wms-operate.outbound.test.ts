@@ -16,6 +16,9 @@ describe('WMS operate actions', () => {
     wms.permissionCodes = ['business.wms.shipments.read']
     const readOnly = mount(OutboundPage, { global: { stubs: layoutStub } })
     expect(readOnly.find(label).exists()).toBe(false)
+    const metrics = readOnly.get('[data-slot="nv-metric-strip"]').text()
+    expect(metrics).toMatch(/本页待拣货复核发运\s*0\s*张/)
+    expect(metrics).toMatch(/本页已完成\s*0\s*张/)
     readOnly.unmount()
 
     wms.permissionCodes.push('business.wms.shipments.manage')

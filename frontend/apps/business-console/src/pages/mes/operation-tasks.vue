@@ -251,16 +251,23 @@ const columns: NvDataTableColumn<Row>[] = [
   {
     key: 'operationTaskId',
     header: '工序任务',
-    width: 'w-64',
+    width: 'w-44',
     cellClass: 'font-medium whitespace-normal break-all',
     accessor: (r) => operationTaskLabel(r),
   },
   {
     key: 'workOrderId',
     header: '工单',
-    width: 'w-56',
+    width: 'w-40',
     cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无',
+  },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => deviceText(r),
   },
   { key: 'status', header: '执行状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程', width: 'w-40' },
@@ -274,17 +281,10 @@ const columns: NvDataTableColumn<Row>[] = [
   {
     key: 'workCenterId',
     header: '工作中心',
-    width: 'w-48',
+    width: 'w-32',
     cellClass: 'whitespace-normal break-all',
     accessor: (r) =>
       r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无',
-  },
-  {
-    key: 'deviceAssetId',
-    header: '设备',
-    width: 'w-64',
-    cellClass: 'whitespace-normal break-all',
-    accessor: (r) => deviceText(r),
   },
   {
     key: 'shiftId',
@@ -305,11 +305,18 @@ const columns: NvDataTableColumn<Row>[] = [
   {
     key: 'qualityStatus',
     header: '质量状态',
-    width: 'w-56',
+    width: 'w-32',
     cellClass: 'whitespace-normal break-all',
   },
   { key: 'sop', header: 'SOP', align: 'end', width: 'w-20' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
+  {
+    key: 'actions',
+    header: '操作',
+    align: 'end',
+    width: 'w-40',
+    headerClass: 'sticky right-0 z-20 bg-card shadow-[-1px_0_0_0_var(--border)]',
+    cellClass: 'sticky right-0 z-10 bg-card shadow-[-1px_0_0_0_var(--border)]',
+  },
 ]
 
 function rowKey(task: Row) {

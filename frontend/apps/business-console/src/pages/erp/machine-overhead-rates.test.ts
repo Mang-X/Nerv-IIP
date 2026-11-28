@@ -136,6 +136,24 @@ describe('机器制造费用率', () => {
     expect(data.accountingPeriodCode.value).toBe('2026-10')
   })
 
+  it('拒绝非法月份，修正后恢复本期查询', async () => {
+    const wrapper = render()
+    const period = wrapper.get('input[aria-label="会计期间"]')
+    await period.setValue('2026-13')
+    await period.trigger('change')
+
+    expect(data.accountingPeriodCode.value).toBe('')
+    expect(period.attributes('aria-invalid')).toBe('true')
+    expect(wrapper.text()).toContain('月份需在 01-12 之间')
+    expect(wrapper.findComponent(NvMetricStrip).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('还没有机器制造费用率')
+
+    await period.setValue('2026-12')
+    await period.trigger('change')
+    expect(data.accountingPeriodCode.value).toBe('2026-12')
+    expect(period.attributes('aria-invalid')).toBe('false')
+  })
+
   it('以本期最高版本为当前费率，其余修订显示已被取代', async () => {
     const wrapper = render()
     await flushPromises()
