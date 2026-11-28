@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 
 using Nerv.IIP.Contracts.Erp;
 
@@ -63,7 +64,8 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         string siteCode,
         string currencyCode,
         IEnumerable<PurchaseOrderLineDraft> lineDrafts,
-        PurchaseReceiptInventoryPostingRoute receivingAuthority)
+        PurchaseReceiptInventoryPostingRoute receivingAuthority,
+        SupplierQuotationId? supplierQuotationId)
     {
         OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
@@ -72,6 +74,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         SiteCode = ErpText.Required(siteCode, nameof(siteCode));
         CurrencyCode = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
         ReceivingAuthority = receivingAuthority;
+        SupplierQuotationId = supplierQuotationId;
         Status = PurchaseOrderStatus.PendingApproval;
         Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
@@ -87,6 +90,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string PurchaseOrderNo { get; private set; } = string.Empty;
+    public SupplierQuotationId? SupplierQuotationId { get; private set; }
     public string SupplierCode { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
     public PurchaseReceiptInventoryPostingRoute ReceivingAuthority { get; private set; }
@@ -118,9 +122,10 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         string siteCode,
         string currencyCode,
         IEnumerable<PurchaseOrderLineDraft> lines,
-        PurchaseReceiptInventoryPostingRoute receivingAuthority = PurchaseReceiptInventoryPostingRoute.Direct)
+        PurchaseReceiptInventoryPostingRoute receivingAuthority = PurchaseReceiptInventoryPostingRoute.Direct,
+        SupplierQuotationId? supplierQuotationId = null)
     {
-        return new PurchaseOrder(organizationId, environmentId, purchaseOrderNo, supplierCode, siteCode, currencyCode, lines, receivingAuthority);
+        return new PurchaseOrder(organizationId, environmentId, purchaseOrderNo, supplierCode, siteCode, currencyCode, lines, receivingAuthority, supplierQuotationId);
     }
 
     public void MarkApprovalRequested(string approvalChainId)

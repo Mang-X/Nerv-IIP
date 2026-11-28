@@ -73,6 +73,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/composables/erp/useBusinessErp', () => ({
+  useErpSupplierQuotations: () => ({ filters: reactive({}), items: computed(() => []) }),
   useErpPurchaseRequisitions: () => ({
     filters,
     items: computed(() => [

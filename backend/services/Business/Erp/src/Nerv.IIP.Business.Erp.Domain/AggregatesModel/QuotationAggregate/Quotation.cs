@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 
 namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 
@@ -29,13 +30,15 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
         string quotationNo,
         string customerCode,
         DateOnly expiresOn,
-        IEnumerable<QuotationLineDraft> lineDrafts)
+        IEnumerable<QuotationLineDraft> lineDrafts,
+        OpportunityId? opportunityId)
     {
         OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
         QuotationNo = ErpText.Required(quotationNo, nameof(quotationNo));
         CustomerCode = ErpText.Required(customerCode, nameof(customerCode));
         ExpiresOn = expiresOn;
+        OpportunityId = opportunityId;
         Status = QuotationStatus.Draft;
         CreatedAtUtc = DateTime.UtcNow;
         lines.AddRange(lineDrafts.Select(QuotationLine.Create));
@@ -51,6 +54,7 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
     public string EnvironmentId { get; private set; } = string.Empty;
     public string QuotationNo { get; private set; } = string.Empty;
     public string CustomerCode { get; private set; } = string.Empty;
+    public OpportunityId? OpportunityId { get; private set; }
     public DateOnly ExpiresOn { get; private set; }
     public QuotationStatus Status { get; private set; }
     public decimal TotalAmount { get; private set; }
@@ -71,9 +75,10 @@ public sealed class Quotation : Entity<QuotationId>, IAggregateRoot
         string quotationNo,
         string customerCode,
         DateOnly expiresOn,
-        IEnumerable<QuotationLineDraft> lines)
+        IEnumerable<QuotationLineDraft> lines,
+        OpportunityId? opportunityId = null)
     {
-        return new Quotation(organizationId, environmentId, quotationNo, customerCode, expiresOn, lines);
+        return new Quotation(organizationId, environmentId, quotationNo, customerCode, expiresOn, lines, opportunityId);
     }
 
     public void Approve()

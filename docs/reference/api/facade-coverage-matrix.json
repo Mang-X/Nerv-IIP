@@ -1398,6 +1398,19 @@
     },
     {
       "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/quotations/{quotationNo}",
+      "operationId": "getErpQuotation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpQuotation"
+      ]
+    },
+    {
+      "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/quotations",
       "operationId": "createErpQuotation",

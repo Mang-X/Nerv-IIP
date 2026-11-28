@@ -54,7 +54,8 @@ public sealed record CreateQuotationCommand(
     string CustomerCode,
     DateOnly ExpiresOn,
     IReadOnlyCollection<QuotationCommandLine> Lines,
-    string? IdempotencyKey = null) : ICommand<QuotationId>;
+    string? IdempotencyKey = null,
+    OpportunityId? OpportunityId = null) : ICommand<QuotationId>;
 
 public sealed class CreateQuotationCommandValidator : AbstractValidator<CreateQuotationCommand>
 {
@@ -84,7 +85,17 @@ public sealed class CreateQuotationCommandHandler(ApplicationDbContext dbContext
 
     public async Task<QuotationId> Handle(CreateQuotationCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "quotation", request.QuotationNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.CustomerCode, request.ExpiresOn, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.RequiredDate}")), cancellationToken);
+        if (request.OpportunityId is not null && !await dbContext.Opportunities.AnyAsync(x =>
+                x.Id == request.OpportunityId
+                && x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.CustomerCode == request.CustomerCode,
+                cancellationToken))
+        {
+            throw new KnownException("指定商机不存在或不属于当前客户。");
+        }
+
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "quotation", request.QuotationNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.CustomerCode, request.OpportunityId, request.ExpiresOn, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.RequiredDate}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.Quotations.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.QuotationNo == allocation.Code, cancellationToken)).Id;
@@ -96,7 +107,8 @@ public sealed class CreateQuotationCommandHandler(ApplicationDbContext dbContext
             allocation.Code,
             request.CustomerCode,
             request.ExpiresOn,
-            request.Lines.Select(x => new QuotationLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.RequiredDate)));
+            request.Lines.Select(x => new QuotationLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.RequiredDate)),
+            request.OpportunityId);
         dbContext.Quotations.Add(quotation);
         return quotation.Id;
     }

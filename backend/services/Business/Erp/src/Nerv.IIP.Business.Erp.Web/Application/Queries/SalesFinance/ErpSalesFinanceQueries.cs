@@ -1,7 +1,9 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -32,7 +34,8 @@ public sealed record OpportunityListItem(
     string CustomerCode,
     string Topic,
     string Status,
-    DateTime OpenedAtUtc);
+    DateTime OpenedAtUtc,
+    OpportunityId? OpportunityId = null);
 
 public sealed class ListOpportunitiesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListOpportunitiesQuery, ListOpportunitiesResponse>
@@ -68,7 +71,7 @@ public sealed class ListOpportunitiesQueryHandler(ApplicationDbContext dbContext
             .OrderByDescending(x => x.OpenedAtUtc)
             .Skip(page.Skip)
             .Take(page.Take)
-            .Select(x => new OpportunityListItem(x.OpportunityNo, x.CustomerCode, x.Topic, x.Status, x.OpenedAtUtc))
+            .Select(x => new OpportunityListItem(x.OpportunityNo, x.CustomerCode, x.Topic, x.Status, x.OpenedAtUtc, x.Id))
             .ToArrayAsync(cancellationToken);
 
         return new ListOpportunitiesResponse(items, total);
@@ -101,7 +104,8 @@ public sealed record QuotationListItem(
     decimal TotalAmount,
     IReadOnlyCollection<QuotationLineListItem> Lines,
     DateTime CreatedAtUtc,
-    string? ConvertedSalesOrderNo);
+    string? ConvertedSalesOrderNo,
+    OpportunityId? OpportunityId = null);
 
 public sealed record QuotationLineListItem(
     string LineNo,
@@ -146,28 +150,62 @@ public sealed class ListQuotationsQueryHandler(ApplicationDbContext dbContext)
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(page.Skip)
             .Take(page.Take)
-            .Select(x => new QuotationListItem(
-                x.QuotationNo,
-                x.CustomerCode,
-                x.ExpiresOn,
-                x.Status.ToString(),
-                x.TotalAmount,
-                x.Lines
-                    .OrderBy(line => line.LineNo)
-                    .Select(line => new QuotationLineListItem(
-                        line.LineNo,
-                        line.SkuCode,
-                        line.UomCode,
-                        line.Quantity,
-                        line.UnitPrice,
-                        line.RequiredDate))
-                    .ToArray(),
-                x.CreatedAtUtc,
-                x.ConvertedSalesOrderNo))
+            .Select(QuotationProjection.Item)
             .ToArrayAsync(cancellationToken);
 
         return new ListQuotationsResponse(items, total);
     }
+}
+
+public sealed record GetQuotationQuery(string OrganizationId, string EnvironmentId, string QuotationNo)
+    : IQuery<QuotationListItem?>;
+
+public sealed class GetQuotationQueryValidator : AbstractValidator<GetQuotationQuery>
+{
+    public GetQuotationQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+        RuleFor(query => query.QuotationNo).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class GetQuotationQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetQuotationQuery, QuotationListItem?>
+{
+    public Task<QuotationListItem?> Handle(GetQuotationQuery request, CancellationToken cancellationToken)
+    {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        return dbContext.Quotations.AsNoTracking()
+            .Where(x => x.OrganizationId == tenant.OrganizationId
+                && x.EnvironmentId == tenant.EnvironmentId
+                && x.QuotationNo == request.QuotationNo)
+            .Select(QuotationProjection.Item)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+}
+
+internal static class QuotationProjection
+{
+    internal static readonly Expression<Func<Quotation, QuotationListItem>> Item =
+        x => new QuotationListItem(
+            x.QuotationNo,
+            x.CustomerCode,
+            x.ExpiresOn,
+            x.Status.ToString(),
+            x.TotalAmount,
+            x.Lines
+                .OrderBy(line => line.LineNo)
+                .Select(line => new QuotationLineListItem(
+                    line.LineNo,
+                    line.SkuCode,
+                    line.UomCode,
+                    line.Quantity,
+                    line.UnitPrice,
+                    line.RequiredDate))
+                .ToArray(),
+            x.CreatedAtUtc,
+            x.ConvertedSalesOrderNo,
+            x.OpportunityId);
 }
 
 public sealed record ListSalesOrdersQuery(

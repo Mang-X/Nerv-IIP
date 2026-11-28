@@ -32291,6 +32291,64 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/sales/quotations/{quotationNo}": {
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleErpQuotation",
+        "parameters": [
+          {
+            "name": "quotationNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/sales/quotations/{quotationNo}/approve": {
       "post": {
         "tags": [
@@ -37936,7 +37994,8 @@
         "additionalProperties": false,
         "properties": {
           "lineNo": {
-            "type": "string"
+            "type": "string",
+            "description": "For purchase-order inbound, use the original purchase order line number."
           },
           "skuCode": {
             "type": "string"
@@ -69813,6 +69872,11 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "rfqId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -69905,6 +69969,11 @@
           "receivedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "supplierQuotationId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -70394,6 +70463,16 @@
             "maxLength": 10,
             "minLength": 0,
             "nullable": false
+          },
+          "supplierQuotationId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "rfqId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -70934,6 +71013,11 @@
           "openedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "opportunityId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -71066,6 +71150,11 @@
           "convertedSalesOrderNo": {
             "type": "string",
             "nullable": true
+          },
+          "opportunityId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
           }
         }
       },
@@ -71095,6 +71184,31 @@
             "format": "date"
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpQuotationItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpQuotationItem"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGetErpQuotationRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpQuotationResponse": {
         "allOf": [
@@ -71157,6 +71271,11 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
+            "nullable": true
+          },
+          "opportunityId": {
+            "type": "string",
+            "format": "guid",
             "nullable": true
           }
         }

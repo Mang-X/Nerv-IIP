@@ -35,6 +35,7 @@ interface ErpListQuery {
 
 export interface ConvertPurchaseRequisitionOptions {
   rfqSupplierCodes?: string[]
+  supplierQuotationId?: string
 }
 
 export function unwrapItems<T>(

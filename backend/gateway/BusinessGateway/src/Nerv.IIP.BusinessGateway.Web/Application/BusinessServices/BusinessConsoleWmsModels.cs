@@ -7,6 +7,7 @@ using FastEndpoints;
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public sealed record BusinessConsoleWmsInboundLineInput(
+    [property: System.ComponentModel.Description("For purchase-order inbound, use the original purchase order line number.")]
     string LineNo,
     string SkuCode,
     string UomCode,

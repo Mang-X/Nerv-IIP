@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
@@ -22,6 +23,39 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class ErpSalesFinanceEndpointContractTests
 {
     [Fact]
+    public async Task Create_quotation_returns_its_opportunity_and_rejects_an_unrelated_opportunity()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var opportunityId = await new OpenOpportunityCommandHandler(dbContext).Handle(
+            new OpenOpportunityCommand("org-001", "env-dev", "OPP-SOURCE", "CUST-001", "Source"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var command = new CreateQuotationCommand(
+            "org-001", "env-dev", "QUO-SOURCE", "CUST-001", new DateOnly(2026, 12, 31),
+            [new QuotationCommandLine("10", "SKU-1", "kg", 2m, 10m, new DateOnly(2026, 12, 30))],
+            OpportunityId: opportunityId);
+        var handler = new CreateQuotationCommandHandler(dbContext);
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var list = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(opportunityId, Assert.Single(list.Items).OpportunityId);
+        var detail = new GetQuotationQueryHandler(dbContext);
+        var found = await detail.Handle(new GetQuotationQuery("org-001", "env-dev", "QUO-SOURCE"), CancellationToken.None);
+        Assert.Equal(opportunityId, found?.OpportunityId);
+        Assert.Null(await detail.Handle(new GetQuotationQuery("org-001", "env-other", "QUO-SOURCE"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with { CustomerCode = "CUST-002" }, CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with { OpportunityId = new(Guid.NewGuid()) }, CancellationToken.None));
+        Assert.Single(dbContext.Quotations);
+    }
+
+    [Fact]
     public void Create_sales_order_contract_exposes_required_site_fact()
     {
         Assert.NotNull(typeof(CreateSalesOrderRequest).GetProperty("SiteCode"));
@@ -33,7 +67,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpSalesEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(14, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "openErpOpportunity");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpOpportunities");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.OperationId == "createErpQuotation");

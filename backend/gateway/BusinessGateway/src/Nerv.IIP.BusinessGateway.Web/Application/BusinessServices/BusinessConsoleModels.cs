@@ -3741,7 +3741,9 @@ public sealed record BusinessConsoleConvertErpPurchaseRequisitionsRequest(
     IReadOnlyCollection<string>? RfqSupplierCodes = null,
     string? RfqNo = null,
     string? IdempotencyKey = null,
-    string CurrencyCode = "CNY");
+    string CurrencyCode = "CNY",
+    Guid? SupplierQuotationId = null,
+    Guid? RfqId = null);
 
 public sealed record BusinessConsoleConvertErpPurchaseRequisitionsResponse(
     string Status,
@@ -3830,7 +3832,8 @@ public sealed record BusinessConsoleErpRequestForQuotationItem(
     string Status,
     IReadOnlyCollection<string> SupplierCodes,
     IReadOnlyCollection<BusinessConsoleErpRequestForQuotationLineItem> Lines,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    Guid? RfqId = null);
 
 public sealed record BusinessConsoleErpRequestForQuotationLineItem(
     string LineNo,
@@ -3859,7 +3862,8 @@ public sealed record BusinessConsoleErpSupplierQuotationItem(
     string SupplierCode,
     decimal TotalAmount,
     IReadOnlyCollection<BusinessConsoleErpSupplierQuotationLineItem> Lines,
-    DateTime ReceivedAtUtc);
+    DateTime ReceivedAtUtc,
+    Guid? SupplierQuotationId = null);
 
 public sealed record BusinessConsoleErpSupplierQuotationLineItem(
     string LineNo,
@@ -3963,7 +3967,8 @@ public sealed record BusinessConsoleErpOpportunityItem(
     string CustomerCode,
     string Topic,
     string Status,
-    DateTime OpenedAtUtc);
+    DateTime OpenedAtUtc,
+    Guid? OpportunityId = null);
 
 public sealed record BusinessConsoleOpenErpOpportunityRequest(
     string OrganizationId,
@@ -3982,7 +3987,8 @@ public sealed record BusinessConsoleCreateErpQuotationRequest(
     string CustomerCode,
     DateOnly ExpiresOn,
     IReadOnlyCollection<BusinessConsoleErpQuotationLine> Lines,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    Guid? OpportunityId = null);
 
 public sealed record BusinessConsoleErpQuotationLine(
     string LineNo,
@@ -3993,6 +3999,11 @@ public sealed record BusinessConsoleErpQuotationLine(
     DateOnly RequiredDate);
 
 public sealed record BusinessConsoleCreateErpQuotationResponse(string QuotationId);
+
+public sealed record BusinessConsoleGetErpQuotationRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: RouteParam] string QuotationNo);
 
 public sealed record BusinessConsoleErpQuotationListResponse(
     IReadOnlyCollection<BusinessConsoleErpQuotationItem> Items,
@@ -4006,7 +4017,8 @@ public sealed record BusinessConsoleErpQuotationItem(
     decimal TotalAmount,
     IReadOnlyCollection<BusinessConsoleErpQuotationLineItem> Lines,
     DateTime CreatedAtUtc,
-    string? ConvertedSalesOrderNo);
+    string? ConvertedSalesOrderNo,
+    Guid? OpportunityId = null);
 
 public sealed record BusinessConsoleErpQuotationLineItem(
     string LineNo,

@@ -73,7 +73,9 @@ public sealed record ConvertPurchaseRequisitionsToPurchaseOrderRequest(
     string? RfqNo = null,
     string? IdempotencyKey = null,
     string CurrencyCode = "CNY",
-    string StartedBy = "");
+    string StartedBy = "",
+    SupplierQuotationId? SupplierQuotationId = null,
+    RequestForQuotationId? RfqId = null);
 
 public sealed record ConvertPurchaseRequisitionsToPurchaseOrderResponse(
     string Status,
@@ -258,7 +260,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderEndpoint(ISender s
             req.RfqSupplierCodes,
             req.RfqNo,
             req.IdempotencyKey,
-            req.CurrencyCode, req.StartedBy), ct);
+            req.CurrencyCode, req.StartedBy, req.SupplierQuotationId, req.RfqId), ct);
         await Send.OkAsync(new ConvertPurchaseRequisitionsToPurchaseOrderResponse(
             result.Status.ToString(),
             result.PurchaseOrderId,

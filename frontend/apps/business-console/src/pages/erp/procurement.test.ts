@@ -43,6 +43,18 @@ const receiptFilters = reactive<{ status?: string; keyword?: string; skip: numbe
 })
 
 vi.mock('@/composables/erp/useBusinessErp', () => ({
+  useErpSupplierQuotations: () => ({
+    filters: reactive({}),
+    items: computed(() => [
+      {
+        supplierQuotationId: 'quotation-1',
+        quotationNo: 'SQ-001',
+        rfqNo: 'RFQ-001',
+        supplierCode: 'SUP-001',
+        lines: [{ skuCode: 'SKU-RM-001', uomCode: 'EA' }],
+      },
+    ]),
+  }),
   useErpPurchaseRequisitions: () => ({
     filters: purchaseOrderFilters,
     items: computed(() => state.purchaseRequisitions),
@@ -355,7 +367,17 @@ describe('ERP procurement purchase requisition page', () => {
     await enabled[0]!.trigger('click')
     await flushPromises()
 
-    expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'])
+    const quotationSelect = wrapper
+      .findAll('select')
+      .find((select) => select.find('option[value="quotation-1"]').exists())
+    await quotationSelect!.setValue('quotation-1')
+    const confirm = wrapper.findAll('button').find((button) => button.text() === '确认转单')
+    await confirm!.trigger('click')
+    await flushPromises()
+
+    expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'], {
+      supplierQuotationId: 'quotation-1',
+    })
   })
 
   it('starts RFQ conversion from selected supplier candidates', async () => {

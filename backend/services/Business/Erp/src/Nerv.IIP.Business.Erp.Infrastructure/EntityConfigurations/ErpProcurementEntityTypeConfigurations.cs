@@ -130,6 +130,7 @@ public sealed class PurchaseOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Purchase order aggregate id.");
         PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.PurchaseOrderNo).HasColumnName("purchase_order_no").IsRequired().HasMaxLength(100).HasComment("Purchase order number.");
+        builder.Property(x => x.SupplierQuotationId).HasColumnName("supplier_quotation_id").HasComment("Selected supplier quotation for requisition conversion.");
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Purchase order currency code.");

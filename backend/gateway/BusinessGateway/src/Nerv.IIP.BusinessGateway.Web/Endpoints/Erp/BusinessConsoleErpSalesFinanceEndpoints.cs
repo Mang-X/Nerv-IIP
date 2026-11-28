@@ -101,6 +101,28 @@ public sealed class ListBusinessConsoleErpQuotationsEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/sales/quotations/{quotationNo}")]
+[BusinessGatewayOperationId("getBusinessConsoleErpQuotation")]
+public sealed class GetBusinessConsoleErpQuotationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGetErpQuotationRequest, BusinessConsoleErpQuotationItem>(
+        auth,
+        BusinessGatewayPermissions.ErpSalesRead)
+{
+    protected override string OrganizationId(BusinessConsoleGetErpQuotationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGetErpQuotationRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpQuotationItem> ForwardAsync(
+        BusinessConsoleGetErpQuotationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.GetQuotationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/sales/quotations")]
 [BusinessGatewayOperationId("createBusinessConsoleErpQuotation")]
 public sealed class CreateBusinessConsoleErpQuotationEndpoint(

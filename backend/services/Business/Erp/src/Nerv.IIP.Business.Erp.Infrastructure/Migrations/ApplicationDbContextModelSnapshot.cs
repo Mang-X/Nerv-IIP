@@ -1631,6 +1631,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("supplier_code")
                         .HasComment("MasterData supplier code.");
 
+                    b.Property<Guid?>("SupplierQuotationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supplier_quotation_id")
+                        .HasComment("Selected supplier quotation for requisition conversion.");
+
                     b.Property<decimal>("TotalAmount")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -2363,6 +2368,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("expires_on")
                         .HasComment("Quotation expiration date.");
+
+                    b.Property<Guid?>("OpportunityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("opportunity_id")
+                        .HasComment("Source sales opportunity.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()

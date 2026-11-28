@@ -118,7 +118,9 @@ public sealed record ConvertPurchaseRequisitionsToPurchaseOrderCommand(
     string? RfqNo = null,
     string? IdempotencyKey = null,
     string CurrencyCode = "CNY",
-    string StartedBy = "system:erp") : ICommand<ConvertPurchaseRequisitionsToPurchaseOrderResult>;
+    string StartedBy = "system:erp",
+    SupplierQuotationId? SupplierQuotationId = null,
+    RequestForQuotationId? RfqId = null) : ICommand<ConvertPurchaseRequisitionsToPurchaseOrderResult>;
 
 public sealed record ConvertPurchaseRequisitionsToPurchaseOrderResult(
     PurchaseRequisitionConversionStatus Status,
@@ -213,6 +215,42 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             throw new KnownException($"采购申请未找到：{string.Join(", ", missing)}。");
         }
 
+        if (request.RfqSupplierCodes is { Count: > 0 })
+        {
+            if (request.SupplierQuotationId is not null || request.RfqId is not null || request.PurchaseOrderNo is not null)
+            {
+                throw new KnownException("发起询价时不能同时指定转单报价或采购订单。");
+            }
+
+            if (requisitions.Any(x => x.Status == PurchaseRequisitionStatus.Converted))
+            {
+                throw new KnownException("采购申请已转单，不能再次发起询价。");
+            }
+
+            var rfqNo = await CreateRfqFromRequisitionsAsync(request, requisitions, cancellationToken);
+            return new ConvertPurchaseRequisitionsToPurchaseOrderResult(PurchaseRequisitionConversionStatus.RfqCreated, RfqNo: rfqNo);
+        }
+
+        if (request.SupplierQuotationId is null)
+        {
+            return new ConvertPurchaseRequisitionsToPurchaseOrderResult(PurchaseRequisitionConversionStatus.RfqRequired);
+        }
+
+        var quotation = await dbContext.SupplierQuotations.Include(x => x.Lines).SingleOrDefaultAsync(x =>
+            x.Id == request.SupplierQuotationId
+            && x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && (request.SupplierCode == null || x.SupplierCode == request.SupplierCode),
+            cancellationToken) ?? throw new KnownException("选定的供应商回价不存在或不属于当前供应商。");
+
+        var rfq = await dbContext.RequestForQuotations.Include(x => x.Lines).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.RfqNo == quotation.RfqNo
+            && (request.RfqId == null || x.Id == request.RfqId)
+            && x.Suppliers.Any(supplier => supplier.SupplierCode == quotation.SupplierCode),
+            cancellationToken) ?? throw new KnownException("选定回价不属于指定询价单及其供应商。");
+
         var convertedPurchaseOrderNos = requisitions
             .Where(x => x.Status == PurchaseRequisitionStatus.Converted)
             .Select(x => x.ConvertedPurchaseOrderNo)
@@ -229,42 +267,26 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                     && x.EnvironmentId == request.EnvironmentId
                     && x.PurchaseOrderNo == convertedOrderNo,
                     cancellationToken);
+                if (convertedOrder is null || convertedOrder.SupplierQuotationId != quotation.Id)
+                {
+                    throw new KnownException("采购申请已使用其他回价转单。");
+                }
+
                 return new ConvertPurchaseRequisitionsToPurchaseOrderResult(
                     PurchaseRequisitionConversionStatus.AlreadyConverted,
-                    convertedOrder?.Id,
+                    convertedOrder.Id,
                     convertedOrderNo,
-                    SupplierCode: convertedOrder?.SupplierCode);
+                    SupplierCode: convertedOrder.SupplierCode);
             }
 
             throw new KnownException("采购申请已转单，不能与其他申请混合转换。");
         }
 
-        var priceSources = await ResolvePriceSourcesAsync(request, requisitions, cancellationToken);
-        var missingPriceSources = requisitions
-            .Where(x => !priceSources.ContainsKey(x.RequisitionNo))
-            .OrderBy(x => x.RequisitionNo, StringComparer.Ordinal)
-            .ToArray();
-        if (missingPriceSources.Length > 0)
-        {
-            if (request.RfqSupplierCodes is { Count: > 0 })
-            {
-                var rfqNo = await CreateRfqForMissingPricesAsync(request, missingPriceSources, cancellationToken);
-                return new ConvertPurchaseRequisitionsToPurchaseOrderResult(PurchaseRequisitionConversionStatus.RfqCreated, RfqNo: rfqNo);
-            }
-
-            return new ConvertPurchaseRequisitionsToPurchaseOrderResult(PurchaseRequisitionConversionStatus.RfqRequired);
-        }
-
-        var supplierCodes = priceSources.Values
-            .Select(x => x.SupplierCode)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (supplierCodes.Length != 1)
-        {
-            throw new KnownException("采购申请涉及多个供应商，请分开转换。");
-        }
-
-        var supplierCode = supplierCodes[0];
+        var supplierCode = quotation.SupplierCode;
+        var priceSources = requisitions.ToDictionary(
+            requisition => requisition.RequisitionNo,
+            requisition => ResolvePriceSource(requisition, quotation, rfq),
+            StringComparer.Ordinal);
         var siteCodes = requisitions
             .Select(x => x.SiteCode)
             .Distinct(StringComparer.Ordinal)
@@ -276,9 +298,9 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
 
         var lineDrafts = BuildPurchaseOrderLines(requisitions, priceSources);
         var conversionIdempotencyKey = request.PurchaseOrderNo is null
-            ? StableIdempotencyKey("pr-to-po", supplierCode, request.CurrencyCode, requisitionNos)
+            ? StableIdempotencyKey("pr-to-po", requisitionNos)
             : request.IdempotencyKey;
-        var fingerprint = ErpCodingService.Fingerprint(supplierCode, request.CurrencyCode, requisitionNos);
+        var fingerprint = ErpCodingService.Fingerprint(quotation.Id, request.CurrencyCode, requisitionNos);
         var replay = await _codingService.TryPeekReplayAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -325,6 +347,11 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             cancellationToken);
         if (existingOrder is not null)
         {
+            if (existingOrder.SupplierQuotationId != quotation.Id)
+            {
+                throw new KnownException("采购订单已使用其他回价。");
+            }
+
             return new ConvertPurchaseRequisitionsToPurchaseOrderResult(
                 PurchaseRequisitionConversionStatus.AlreadyConverted,
                 existingOrder.Id,
@@ -341,7 +368,8 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             request.CurrencyCode,
             lineDrafts,
             receiving?.Value.Resolve(request.OrganizationId, request.EnvironmentId, siteCodes[0])
-                ?? PurchaseReceiptInventoryPostingRoute.Direct);
+                ?? PurchaseReceiptInventoryPostingRoute.Direct,
+            quotation.Id);
         var approvalResult = await _approvalClient.StartApprovalAsync(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
@@ -370,64 +398,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             Lines: order.Lines.Select(ToResultLine).ToArray());
     }
 
-    private async Task<Dictionary<string, ProcurementPriceSource>> ResolvePriceSourcesAsync(
-        ConvertPurchaseRequisitionsToPurchaseOrderCommand request,
-        IReadOnlyCollection<PurchaseRequisition> requisitions,
-        CancellationToken cancellationToken)
-    {
-        var skuCodes = requisitions.Select(x => x.SkuCode).Distinct(StringComparer.Ordinal).ToArray();
-        var uomCodes = requisitions.Select(x => x.UomCode).Distinct(StringComparer.Ordinal).ToArray();
-        var siteCodes = requisitions.Select(x => x.SiteCode).Distinct(StringComparer.Ordinal).ToArray();
-        var quotations = await dbContext.SupplierQuotations
-            .Include(x => x.Lines.Where(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && (request.SupplierCode == null || x.SupplierCode == request.SupplierCode)
-                && x.Lines.Any(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
-            .OrderByDescending(x => x.ReceivedAtUtc)
-            .ToListAsync(cancellationToken);
-        var purchaseOrders = await dbContext.PurchaseOrders
-            .Include(x => x.Lines.Where(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && (request.SupplierCode == null || x.SupplierCode == request.SupplierCode)
-                && siteCodes.Contains(x.SiteCode)
-                && x.Lines.Any(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .ToListAsync(cancellationToken);
-
-        var result = new Dictionary<string, ProcurementPriceSource>(StringComparer.Ordinal);
-        foreach (var requisition in requisitions)
-        {
-            var quotationSource = quotations
-                .SelectMany(quotation => quotation.Lines
-                    .Where(line => Matches(line.SkuCode, line.UomCode, requisition))
-                    .Select(line => new ProcurementPriceSource(quotation.SupplierCode, line.UnitPrice, line.PromisedDate)))
-                .FirstOrDefault();
-            if (quotationSource is not null)
-            {
-                result[requisition.RequisitionNo] = quotationSource;
-                continue;
-            }
-
-            var purchaseOrderSource = purchaseOrders
-                .Where(order => order.SiteCode == requisition.SiteCode)
-                .SelectMany(order => order.Lines
-                    .Where(line => Matches(line.SkuCode, line.UomCode, requisition))
-                    .Select(line => new ProcurementPriceSource(order.SupplierCode, line.UnitPrice, line.PromisedDate)))
-                .FirstOrDefault();
-            if (purchaseOrderSource is not null)
-            {
-                result[requisition.RequisitionNo] = purchaseOrderSource;
-            }
-        }
-
-        return result;
-    }
-
-    private async Task<string> CreateRfqForMissingPricesAsync(
+    private async Task<string> CreateRfqFromRequisitionsAsync(
         ConvertPurchaseRequisitionsToPurchaseOrderCommand request,
         IReadOnlyCollection<PurchaseRequisition> requisitions,
         CancellationToken cancellationToken)
@@ -481,7 +452,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
 
     private static IReadOnlyCollection<PurchaseOrderLineDraft> BuildPurchaseOrderLines(
         IReadOnlyCollection<PurchaseRequisition> requisitions,
-        IReadOnlyDictionary<string, ProcurementPriceSource> priceSources)
+        IReadOnlyDictionary<string, SupplierQuotationLine> priceSources)
     {
         var lineNo = 10;
         return requisitions
@@ -518,10 +489,26 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             .ToArray();
     }
 
-    private static bool Matches(string skuCode, string uomCode, PurchaseRequisition requisition)
+    private static SupplierQuotationLine ResolvePriceSource(
+        PurchaseRequisition requisition,
+        SupplierQuotation quotation,
+        RequestForQuotation rfq)
     {
-        return string.Equals(skuCode, requisition.SkuCode, StringComparison.Ordinal)
-            && string.Equals(uomCode, requisition.UomCode, StringComparison.Ordinal);
+        var matchingLines = quotation.Lines.Where(line =>
+            line.SkuCode == requisition.SkuCode
+            && line.UomCode == requisition.UomCode
+            && rfq.Lines.Any(rfqLine =>
+                rfqLine.LineNo == line.LineNo
+                && rfqLine.SkuCode == line.SkuCode
+                && rfqLine.UomCode == line.UomCode
+                && rfqLine.SiteCode == requisition.SiteCode))
+            .ToArray();
+        if (matchingLines.Length != 1)
+        {
+            throw new KnownException($"选定回价必须包含采购申请『{requisition.RequisitionNo}』唯一匹配的询价行。");
+        }
+
+        return matchingLines[0];
     }
 
     private static ConvertedPurchaseOrderLineResult ToResultLine(PurchaseOrderLine line)
@@ -538,8 +525,6 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                 .Select(x => new ConvertedPurchaseOrderLineSourceResult(x.PurchaseRequisitionNo, x.PurchaseRequisitionLineNo, x.Quantity))
                 .ToArray());
     }
-
-    private sealed record ProcurementPriceSource(string SupplierCode, decimal UnitPrice, DateOnly PromisedDate);
 
     private static string StableIdempotencyKey(string prefix, params object?[] parts)
     {

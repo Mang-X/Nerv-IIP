@@ -136,6 +136,7 @@ export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpLi
           environmentId: list.environmentId.value,
           purchaseRequisitionNos,
           rfqSupplierCodes: options.rfqSupplierCodes ?? [],
+          ...(options.supplierQuotationId && { supplierQuotationId: options.supplierQuotationId }),
           currencyCode: 'CNY',
           idempotencyKey: makeIdempotencyKey(),
         },
