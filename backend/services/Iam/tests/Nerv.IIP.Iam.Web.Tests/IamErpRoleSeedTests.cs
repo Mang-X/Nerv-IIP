@@ -22,6 +22,46 @@ namespace Nerv.IIP.Iam.Web.Tests;
 /// </summary>
 public sealed class IamErpRoleSeedTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Startup_synchronizes_existing_administrator_permissions_and_session_version(bool bootstrap)
+    {
+        const string newPermission = "business.quality.measuring-devices.manage";
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+
+        var roleId = new RoleId("role-platform-admin");
+        var role = await dbContext.Roles.Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == roleId);
+        var admin = await dbContext.Users.SingleAsync(user => user.LoginName == "admin");
+        var previousVersion = admin.PermissionVersion;
+        role.ReplacePermissions(role.Permissions.Select(permission => permission.PermissionCode)
+            .Where(code => code != newPermission).ToArray());
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        if (bootstrap) await seed.BootstrapAsync();
+        else await seed.SeedAsync();
+        dbContext.ChangeTracker.Clear();
+
+        role = await dbContext.Roles.Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == roleId);
+        var permissions = role.Permissions.Select(permission => permission.PermissionCode).ToArray();
+        Assert.Contains(newPermission, permissions);
+        Assert.Equal(NervIipSeedPermissions.All.Order(StringComparer.Ordinal), permissions.Order(StringComparer.Ordinal));
+        Assert.Equal(previousVersion + 1,
+            (await dbContext.Users.SingleAsync(user => user.LoginName == "admin")).PermissionVersion);
+
+        if (bootstrap) await seed.BootstrapAsync();
+        else await seed.SeedAsync();
+        dbContext.ChangeTracker.Clear();
+
+        Assert.Equal(previousVersion + 1,
+            (await dbContext.Users.SingleAsync(user => user.LoginName == "admin")).PermissionVersion);
+    }
+
     // #4440：岗位只授予停机接力所需动作；具体工作中心由成员范围单独配置。
     [Theory]
     [InlineData(false)]

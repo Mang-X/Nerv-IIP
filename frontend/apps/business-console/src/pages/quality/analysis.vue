@@ -334,6 +334,15 @@ const spcCapabilityFacets = computed<NvMetricFacet[]>(() => [
   },
   { key: 'samples', label: '实测值', value: spc.capability.value?.sampleCount ?? 0 },
 ])
+const spcViolationStatus = computed(() => {
+  if (spcXbarSeries.value.length === 0) {
+    return { label: '暂无样本', tone: 'neutral' } as const
+  }
+
+  return spc.spcViolations.value.length > 0
+    ? ({ label: '过程失控', tone: 'danger' } as const)
+    : ({ label: '受控', tone: 'success' } as const)
+})
 const spcControlLimitHint = computed(() => {
   if (spc.spcWarmup.value) {
     return '实测值不足一个完整子组'
@@ -634,11 +643,7 @@ function spcViolationKey(row: QualitySpcViolation) {
           :value="spc.spcViolations.value.length"
           unit="处"
           :tone="spc.spcViolations.value.length > 0 ? 'danger' : 'neutral'"
-          :status="
-            spc.spcViolations.value.length > 0
-              ? { label: '过程失控', tone: 'danger' }
-              : { label: '受控', tone: 'success' }
-          "
+          :status="spcViolationStatus"
           foot-start="判异属于质量过程预警，不计入设备报警。"
         />
       </div>

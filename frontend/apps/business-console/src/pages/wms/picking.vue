@@ -450,7 +450,7 @@ const columns: NvDataTableColumn<PickingRow>[] = [
   {
     key: 'taskNo',
     header: '任务号',
-    width: 'w-40',
+    width: 'w-30',
     cellClass: 'font-medium',
     // warehouseTaskId 是系统 GUID，不上屏；没有人读任务号就如实留空。
     accessor: (r) => r.taskNo ?? '无任务号',
@@ -459,52 +459,46 @@ const columns: NvDataTableColumn<PickingRow>[] = [
   {
     key: 'sourceOrderNo',
     header: '来源单据',
-    width: 'w-40',
+    width: 'w-30',
     accessor: (r) => r.sourceOrderNo ?? '—',
   },
   {
     key: 'skuCode',
     header: '物料',
-    width: 'w-32',
+    width: 'w-28',
     accessor: (r) => skuText(r.skuCode),
   },
   { key: 'inventoryContext', header: '库存上下文', width: 'w-52' },
   {
     key: 'location',
     header: '起讫库位',
-    width: 'w-40',
+    width: 'w-26',
     accessor: (r) => `${locationLabel(r.fromLocationCode)} → ${locationLabel(r.toLocationCode)}`,
   },
   {
     key: 'plannedQuantity',
     header: '计划数量',
-    width: 'w-28',
+    width: 'w-20',
     align: 'end',
     accessor: (r) => formatQuantity(r.plannedQuantity),
   },
   {
     key: 'executedQuantity',
     header: '已执行数量',
-    width: 'w-28',
+    width: 'w-22',
     align: 'end',
     accessor: (r) => formatQuantity(r.executedQuantity),
   },
   {
     key: 'uomCode',
     header: '单位',
-    width: 'w-16',
+    width: 'w-14',
     accessor: (r) => r.uomCode ?? '—',
-  },
-  {
-    key: 'createdAtUtc',
-    header: '创建时间',
-    width: 'w-48',
-    accessor: (r) => formatDateTime(r.createdAtUtc),
   },
   {
     key: 'actions',
     header: '操作',
-    width: 'w-52',
+    width: 'w-32',
     headerClass: 'sticky end-0 z-20 border-l bg-card',
     cellClass: 'sticky end-0 z-10 border-l bg-card',
     // 不可操作时这一列要说「为什么」，导出/排序取阻断原因而不是空串。
@@ -517,11 +511,6 @@ function rowKey(row: PickingRow) {
 }
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
-}
-function formatDateTime(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function refreshAll() {
   void refreshWorkScopes()
@@ -637,7 +626,7 @@ function firstQuery(value: unknown) {
         <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" fallback="—" />
       </template>
       <template #cell-location="{ row }">
-        <span class="grid leading-tight">
+        <span class="grid leading-tight whitespace-normal wrap-anywhere">
           <span>
             {{ locationLabel(row.fromLocationCode) }} → {{ locationLabel(row.toLocationCode) }}
           </span>

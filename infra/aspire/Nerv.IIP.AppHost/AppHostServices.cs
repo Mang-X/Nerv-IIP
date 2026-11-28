@@ -70,7 +70,6 @@ internal sealed partial class AppHostComposition
             .WithEnvironment("Iam__Seed__Enabled", developmentOnlyEnabledValue)
             .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
             .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
-            .WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)
             .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
             .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
             .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
@@ -79,6 +78,24 @@ internal sealed partial class AppHostComposition
             .WithReference(redis)
             .WaitFor(iamDatabase)
             .WaitFor(redis);
+
+        if (localDevelopmentAppHost)
+        {
+            const string demoWorkerPasswordKey = "Iam__Seed__DemoWorkerPassword";
+            if (iamSeedDemoWorkerPassword is not null)
+            {
+                iam.WithEnvironment(demoWorkerPasswordKey, iamSeedDemoWorkerPassword);
+            }
+            else
+            {
+                var demoWorkerPassword = builder.AddParameter(
+                    "iam-local-demo-worker-password",
+                    new GenerateParameterDefault { MinLength = 32 },
+                    secret: true,
+                    persist: true);
+                iam.WithEnvironment(demoWorkerPasswordKey, demoWorkerPassword);
+            }
+        }
 
         var ops = infrastructure.WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops")))
             .WithHttpEndpoint(port: fullStackEphemeral ? null : 5103, name: "http")

@@ -1,4 +1,5 @@
 import { configureApiClient } from '@nerv-iip/api-client'
+import { NvMetricCard } from '@nerv-iip/ui'
 import { PiniaColada } from '@pinia/colada'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
@@ -54,6 +55,11 @@ describe('质量分析 NCR 读取失败', () => {
     ]
     expect(wrapper.get('[role="alert"]').text()).toContain('NCR 数据加载失败')
     expect(wrapper.text()).toContain('控制图台账')
+    const violationCard = wrapper
+      .findAllComponents(NvMetricCard)
+      .find((card) => card.props('label') === '判异点')
+    expect(violationCard?.text()).toContain('暂无样本')
+    expect(violationCard?.props('status')).toEqual({ label: '暂无样本', tone: 'neutral' })
     for (const text of ncrSummary) expect(wrapper.text()).not.toContain(text)
 
     ncrUnavailable = false
