@@ -1,4 +1,3 @@
-import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { NavLink, SideNav } from '@nerv-iip/app-shell'
 import { workbenchSideNav } from './navigation/workbench'
 import { masterDataSideNav } from './navigation/master-data'
@@ -69,7 +68,11 @@ export function permittedBy<T extends { requiredPermissions?: string[] }>(
   )
 }
 
-export function sideNavForDomain(domainId: string, permissionCodes: string[] | undefined): SideNav {
+export function sideNavForDomain(
+  domainId: string,
+  permissionCodes: string[] | undefined,
+  roleIds: readonly string[] = [],
+): SideNav {
   // 仅有看板或检查读权限时，保留该视图的侧栏入口和原有排序。
   const foldedViews =
     domainId === 'mes'
@@ -82,7 +85,7 @@ export function sideNavForDomain(domainId: string, permissionCodes: string[] | u
     .map((group) => ({
       ...group,
       items: permittedBy(group.items, permissionCodes).filter(
-        (item) => !foldedViews.includes(item),
+        (item) => !foldedViews.includes(item) && isJobMenuPath(navPath(item), roleIds),
       ),
     }))
     .filter((group) => group.items.length > 0)
@@ -100,16 +103,79 @@ export function mesViewsForPath(path: string, permissionCodes: string[] | undefi
   )
 }
 
-const jobHomePages = [
-  [P.erpProcurementManage, P.erpProcurementRead, '/erp'],
-  [P.erpSalesManage, P.erpSalesRead, '/erp/sales'],
-  [P.erpFinanceManage, P.erpFinanceRead, '/erp/finance'],
-  ['business.planning.demands.manage', P.planningDemandsRead, '/planning'],
-  [P.mesDowntimeManage, P.mesDowntimeRead, '/mes/downtime'],
-  [P.maintenanceWorkOrdersManage, P.maintenanceWorkOrdersRead, '/maintenance/work-orders'],
-] as const
+type Job = {
+  home: string
+  includes: (path: string) => boolean
+}
 
-export function jobHomePath(canAll: (codes: readonly string[]) => boolean) {
-  const homes = jobHomePages.filter(([manage, read]) => canAll([manage, read]))
-  return homes.length === 1 ? homes[0]![2] : '/'
+function job(home: string, includes: (path: string) => boolean): Job {
+  return { home, includes }
+}
+
+function domainJob(home: string, ...bases: string[]): Job {
+  return job(home, (path) => bases.some((base) => isUnder(path, base)))
+}
+
+const jobs = new Map<string, Job>([
+  [
+    'role-erp-procurement',
+    job('/erp', (path) => path === '/erp' || isUnder(path, '/erp/procurement')),
+  ],
+  ['role-erp-sales', domainJob('/erp/sales', '/erp/sales')],
+  ['role-erp-finance', domainJob('/erp/finance', '/erp/finance')],
+  ['role-production-planner', domainJob('/planning', '/planning', '/scheduling')],
+  ['role-pda-warehouse', domainJob('/wms/inbound', '/wms', '/inventory')],
+  ['role-pda-operator', domainJob('/mes/operation-tasks', '/mes')],
+  ['role-mes-downtime-team-leader', job('/mes/downtime', (path) => path === '/mes/downtime')],
+  [
+    'role-pda-inspector',
+    job('/quality/inspection-tasks', (path) =>
+      ['/quality/inspection-tasks', '/quality/inspections'].includes(path),
+    ),
+  ],
+  ['role-quality-manager', domainJob('/quality/ncrs', '/quality')],
+  ['role-maintenance-technician', domainJob('/maintenance/work-orders', '/maintenance')],
+  ['role-masterdata-admin', domainJob('/master-data/skus', '/master-data')],
+])
+
+function activeJobs(roleIds: readonly string[]) {
+  return [...new Set(roleIds)].flatMap((id) => {
+    const assignment = jobs.get(id)
+    return assignment ? [assignment] : []
+  })
+}
+
+function navPath({ to }: NavLink): string | undefined {
+  if (typeof to === 'string') return to
+  return 'path' in to ? to.path : undefined
+}
+
+function isJobMenuPath(path: string | undefined, roleIds: readonly string[]) {
+  if (roleIds.includes('role-platform-admin')) return true
+  const assignments = activeJobs(roleIds)
+  if (path === '/' && assignments.length > 1) return true
+  return (
+    assignments.length === 0 ||
+    (path !== undefined && assignments.some((assignment) => assignment.includes(path)))
+  )
+}
+
+export function resolveBusinessEntry(
+  roleIds: readonly string[] = [],
+  permissionCodes?: string[],
+  domainId?: string,
+  canOpen: (path: string) => boolean = () => true,
+): string | undefined {
+  const assignments = activeJobs(roleIds)
+  const preferred =
+    !roleIds.includes('role-platform-admin') && assignments.length === 1
+      ? assignments[0]?.home
+      : undefined
+  const domain = domainId ?? (preferred ? resolveDomainId(preferred) : 'workbench')
+  const paths = sideNavForDomain(domain, permissionCodes, roleIds)
+    .flatMap(({ items }) => items.map(navPath))
+    .filter((path): path is string => path !== undefined && canOpen(path))
+  if (preferred && paths.includes(preferred)) return preferred
+  if (!domainId && !preferred) return '/'
+  return paths[0]
 }

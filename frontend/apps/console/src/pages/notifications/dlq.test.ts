@@ -24,6 +24,8 @@ const deadLetterState = vi.hoisted(() => ({
 
 const toastState = vi.hoisted(() => ({
   success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
 }))
 
 vi.mock('@nerv-iip/ui', async () => {
@@ -32,10 +34,12 @@ vi.mock('@nerv-iip/ui', async () => {
   return {
     ...actual,
     toast: {
-      success: toastState.success,
+      ...toastState,
     },
   }
 })
+
+vi.mock('@/composables/usePermissions', () => ({ useHasPermission: () => computed(() => true) }))
 
 const rows = [
   {
@@ -123,7 +127,19 @@ describe('Notification DLQ page', () => {
     expect(wrapper.text()).not.toContain('Pending')
     expect(wrapper.text()).toContain('ops.OperationTaskFailed')
     expect(wrapper.text()).toContain('notification.operation-task-failed')
-    expect(wrapper.text()).toContain('{"eventId":"event-001"}')
+    expect(wrapper.text()).toContain('"eventId": "event-001"')
+  })
+
+  it('renders a placeholder for an invalid dead-letter timestamp', () => {
+    const previous = rows[0].deadLetteredAtUtc
+    rows[0].deadLetteredAtUtc = 'invalid-date'
+    try {
+      const wrapper = mountPage()
+      expect(wrapper.get('tbody tr').text()).toContain('-')
+      expect(wrapper.text()).not.toContain('invalid-date')
+    } finally {
+      rows[0].deadLetteredAtUtc = previous
+    }
   })
 
   it('runs single and filtered replay actions', async () => {
@@ -134,11 +150,13 @@ describe('Notification DLQ page', () => {
 
     expect(deadLetterState.replay).toHaveBeenCalledWith(rows[0].id)
 
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
     await wrapper.find('button[aria-label="重放当前筛选死信"]').trigger('click')
+    confirm.mockRestore()
     await flushPromises()
 
     expect(deadLetterState.replayFiltered).toHaveBeenCalled()
-    expect(toastState.success).toHaveBeenCalledWith('已提交 1 条匹配死信重放')
+    expect(toastState.info).toHaveBeenCalledWith('成功 1 条，失败 0 条，跳过 0 条')
   })
 
   it('requires an ignore reason before ignoring the selected dead letter', async () => {

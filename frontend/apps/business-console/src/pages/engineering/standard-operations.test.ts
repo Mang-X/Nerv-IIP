@@ -3,6 +3,12 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { reactive, shallowRef } from 'vue'
 import StandardOperationsPage from './standard-operations.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: { permissionCodes: ['business.engineering.standard-operations.manage'] },
+  }),
+}))
+
 const { create, update } = vi.hoisted(() => ({
   create: vi.fn().mockResolvedValue(undefined),
   update: vi.fn().mockResolvedValue(undefined),

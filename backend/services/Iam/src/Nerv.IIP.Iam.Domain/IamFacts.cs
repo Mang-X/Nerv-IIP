@@ -18,7 +18,7 @@ public sealed record UserFact(
     DateTimeOffset? PasswordExpiresAtUtc = null,
     bool PasswordChangeRequired = false,
     IReadOnlyList<string>? PasswordHistoryHashes = null);
-public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes);
+public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes, int ScopeVersion = 0);
 public sealed record MembershipFact(string UserId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> RoleIds);
 public sealed record UserSessionFact(
     string SessionId,
@@ -87,6 +87,31 @@ public static class NervIipSeedRoles
             "business.maintenance.downtime-reasons.read",
             "business.masterdata.resources.read",
             "business.masterdata.products.read",
+        ]);
+
+    public static readonly SeedRoleDefinition QualityManager = new(
+        "role-quality-manager",
+        "质检主管",
+        [
+            "business.quality.inspection-plans.manage",
+            "business.quality.inspection-records.read",
+            "business.quality.ncr.read",
+            "business.quality.ncr.manage",
+            "business.quality.measuring-devices.manage",
+            "business.masterdata.products.read",
+            "business.masterdata.resources.read",
+        ]);
+
+    public static readonly SeedRoleDefinition MasterDataAdministrator = new(
+        "role-masterdata-admin",
+        "主数据管理员",
+        [
+            "business.masterdata.products.read",
+            "business.masterdata.products.manage",
+            "business.masterdata.partners.read",
+            "business.masterdata.partners.manage",
+            "business.masterdata.resources.read",
+            "business.masterdata.resources.manage",
         ]);
 
     public static readonly SeedRoleDefinition[] ErpJobRoles =

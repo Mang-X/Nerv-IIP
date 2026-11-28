@@ -16,6 +16,12 @@ describe('business console auth route guard', () => {
       routes: [
         { path: '/', component: { template: '<div />' }, meta: { requiresAuth: true } },
         ...[
+          ['/erp', { requiredPermissions: ['business.erp.procurement.read'] }],
+          ['/erp/finance', { requiredPermissions: ['business.erp.finance.read'] }],
+          [
+            '/erp/procurement/purchase-orders',
+            { requiredPermissions: ['business.erp.procurement.read'] },
+          ],
           ['/wms', { domainIndex: true }],
           ['/wms/inbound', { requiredPermissions: ['business.wms.receipts.read'] }],
           ['/wms/picking', { requiredPermissions: ['business.wms.shipments.read'] }],
@@ -133,6 +139,28 @@ describe('business console auth route guard', () => {
 
     expect(router.currentRoute.value.path).toBe(expected)
   })
+
+  it.each(['/', '/login', '/erp'])(
+    'opens finance from %s even with procurement reads',
+    async (path) => {
+      const router = createGuardedRouter()
+      useAuthStore().$patch({
+        accessToken: 'token',
+        principal: {
+          roleIds: ['role-erp-finance'],
+          permissionCodes: ['business.erp.finance.read', 'business.erp.procurement.read'],
+        },
+      })
+
+      await router.push(path)
+      expect(router.currentRoute.value.path).toBe('/erp/finance')
+      await router.push('/erp/procurement/purchase-orders')
+      expect(router.currentRoute.value.path).toBe('/erp/procurement/purchase-orders')
+      await router.push('/erp?keyword=PR-001')
+      expect(router.currentRoute.value.path).toBe('/erp')
+      expect(router.currentRoute.value.query.keyword).toBe('PR-001')
+    },
+  )
 
   it('sanitizes guest redirect targets', async () => {
     const router = createGuardedRouter()

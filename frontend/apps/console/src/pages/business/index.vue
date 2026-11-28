@@ -1,108 +1,160 @@
 <script setup lang="ts">
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { instanceStatusLabel, instanceTone } from '@/components/console/instanceStatus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  NvDataTable,
-  NvPageHeader,
-  NvSectionCard,
-  NvSectionCards,
-  NvStatusBadge,
-} from '@nerv-iip/ui'
+import { consolePagePermissions } from '@/router/access'
+import { useAuthStore } from '@/stores/auth'
+import { listConsoleInstances, type InstanceListItem } from '@nerv-iip/api-client'
+import { Button, NvPageHeader, NvStatusBadge } from '@nerv-iip/ui'
+import { useQuery } from '@pinia/colada'
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 
 definePage({
   meta: {
     requiresAuth: true,
+    requiredPermissions: consolePagePermissions['/business'],
     title: 'routes.business',
   },
 })
 
-interface BusinessService {
-  name: string
-  scope: string
+// Keys match the deployed Docker images reported to AppHub by the connector.
+const serviceNames = {
+  'business-master-data': '基础主数据',
+  'business-product-engineering': '产品工程',
+  'business-inventory': '库存',
+  'business-quality': '质量',
+  'business-mes': '生产执行',
+  'business-demand-planning': '需求计划',
+  'business-barcode-label': '条码标签',
+  'business-approval': '业务审批',
+  'business-wms': '仓储',
+  'business-industrial-telemetry': '工业遥测',
+  'business-maintenance': '设备维保',
+  'business-erp': 'ERP',
 }
 
-// 已交付的业务后端服务快照（平台视角）。仅展示服务与能力范围，不暴露工程内部追踪号。
-const businessServices: BusinessService[] = [
-  { name: 'BusinessMasterData', scope: '基础主数据（Layer 0）' },
-  { name: 'BusinessProductEngineering', scope: '工程文档、物料、BOM、工艺路线与变更' },
-  { name: 'BusinessInventory', scope: '库位、台账、移动与盘点' },
-  { name: 'BusinessQuality', scope: '检验计划、记录与不良事实' },
-  { name: 'BusinessMES', scope: '工单、工序任务与执行报工' },
-  { name: 'BusinessDemandPlanning', scope: '需求来源、MPS、MRP 与挂账' },
-  { name: 'BarcodeLabel', scope: '条码规则、标签模板、打印批次与扫描' },
-  { name: 'BusinessApproval', scope: '业务审批模板、审批链、步骤与决策' },
-  { name: 'WMS', scope: '入库、出库、仓库任务与 WCS 边界' },
-  { name: 'BusinessIndustrialTelemetry', scope: '遥测点位、设备快照、告警与汇总' },
-  { name: 'BusinessMaintenance', scope: '工单、PM 计划、点检、停机与备件' },
-  { name: 'BusinessERP', scope: '采购、销售与财务 MVP 事实' },
-]
+const auth = useAuthStore()
+const { data, error, isLoading, refetch } = useQuery(() => {
+  const principal = auth.principal
+  const organizationId = principal?.organizationId ?? ''
+  const environmentId = principal?.environmentId ?? ''
+  return {
+    key: [
+      'business-service-instances',
+      principal?.principalId ?? '',
+      organizationId,
+      environmentId,
+    ],
+    enabled: Boolean(organizationId && environmentId),
+    async query({ signal }) {
+      const pageSize = 100
+      const maxPages = 5
+      const { data: firstEnvelope } = await listConsoleInstances({
+        query: { organizationId, environmentId, pageIndex: 1, pageSize },
+        signal,
+        throwOnError: true,
+      })
+      if (!firstEnvelope?.success || !firstEnvelope.data) {
+        throw new Error('无法读取当前组织环境的实例。')
+      }
+      const firstPage = firstEnvelope.data.items ?? []
+      const byKey = new Map<string, InstanceListItem>()
+      for (const item of firstPage) {
+        if (item.instanceKey) byKey.set(item.instanceKey, item)
+      }
+      const totalCount = firstEnvelope.data.totalCount ?? firstPage.length
+      const effectivePageSize = firstPage.length > 0 ? firstPage.length : pageSize
+      const totalPages = Math.min(Math.ceil(totalCount / effectivePageSize), maxPages)
+      if (totalPages > 1) {
+        const extraEnvelopes = await Promise.all(
+          Array.from({ length: totalPages - 1 }, (_, i) =>
+            listConsoleInstances({
+              query: { organizationId, environmentId, pageIndex: i + 2, pageSize },
+              signal,
+              throwOnError: true,
+            }),
+          ),
+        )
+        for (const { data: envelope } of extraEnvelopes) {
+          for (const item of envelope?.data?.items ?? []) {
+            if (item.instanceKey) byKey.set(item.instanceKey, item)
+          }
+        }
+      }
+      return Array.from(byKey.values())
+    },
+  }
+})
+const services = computed(() => {
+  const byService = Map.groupBy(data.value ?? [], (row) => row.applicationKey)
+  return Object.entries(serviceNames).map(([key, name]) => ({
+    key,
+    name,
+    instances: byService.get(key) ?? [],
+  }))
+})
+const businessConsoleUrl = import.meta.env.VITE_NERV_IIP_BUSINESS_CONSOLE_URL?.trim()
 
-const columns: NvDataTableColumn<BusinessService>[] = [
-  { key: 'name', header: '服务', cellClass: 'font-medium' },
-  { key: 'scope', header: '能力范围', cellClass: 'text-muted-foreground' },
-  { key: 'status', header: '状态', align: 'end', width: 'w-24' },
-]
+function refresh() {
+  void refetch().catch(() => {})
+}
 </script>
 
 <template>
   <DefaultLayout>
-    <section class="grid gap-6">
-      <NvPageHeader
-        title="业务平台状态"
-        :breadcrumbs="[{ label: '平台' }]"
-        :count="`${businessServices.length} 项服务`"
-      />
-
-      <NvSectionCards :columns="3">
-        <NvSectionCard
-          description="已交付服务"
-          :value="businessServices.length"
-          hint="业务后端能力层"
-        />
-        <NvSectionCard description="就绪状态" value="已交付" hint="后端能力可用" />
-        <NvSectionCard description="覆盖范围" value="主线 MVP" hint="跨服务全链路验收推进中" />
-      </NvSectionCards>
-
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div class="grid min-w-0 content-start gap-2">
-          <p class="text-sm text-muted-foreground">
-            业务平台 MVP 已交付的后端能力与当前范围边界快照。
-          </p>
-          <NvDataTable
-            :pagination="false"
-            :searchable="false"
-            :column-settings="false"
-            :columns="columns"
-            :rows="businessServices"
-            row-key="name"
-            empty-message="暂无已交付的业务服务。"
+    <section class="grid min-w-0 gap-4">
+      <NvPageHeader title="业务平台状态" :breadcrumbs="[{ label: '平台' }]">
+        <template #actions>
+          <Button type="button" variant="outline" :disabled="isLoading" @click="refresh"
+            >刷新</Button
           >
-            <template #cell-status>
-              <NvStatusBadge label="已交付" tone="success" />
-            </template>
-          </NvDataTable>
+          <Button v-if="businessConsoleUrl" as-child>
+            <a :href="businessConsoleUrl">进入业务控制台</a>
+          </Button>
+        </template>
+      </NvPageHeader>
+      <p class="text-sm text-muted-foreground">
+        {{ auth.principal?.organizationId }} · {{ auth.principal?.environmentId }}
+      </p>
+      <p v-if="error" role="alert" class="text-sm text-destructive">无法读取业务服务实例。</p>
+      <p v-else-if="isLoading" role="status" class="text-sm">正在读取业务服务实例。</p>
+      <dl v-else-if="data" class="divide-y rounded-md border">
+        <div
+          v-for="service in services"
+          :key="service.key"
+          class="grid gap-2 p-3 sm:grid-cols-[12rem_minmax(0,1fr)]"
+        >
+          <dt class="text-sm font-medium">{{ service.name }}</dt>
+          <dd v-if="!service.instances.length"><NvStatusBadge label="未观测" tone="neutral" /></dd>
+          <dd v-else class="grid gap-2">
+            <div
+              v-for="instance in service.instances"
+              :key="instance.instanceKey"
+              class="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <RouterLink
+                v-if="instance.instanceKey"
+                :to="{ path: '/', query: { instance: instance.instanceKey } }"
+                class="break-all text-primary underline"
+              >
+                {{ instance.instanceName || instance.instanceKey }}
+              </RouterLink>
+              <NvStatusBadge
+                :label="
+                  instance.reportedStatus ? instanceStatusLabel(instance.reportedStatus) : '未观测'
+                "
+                :tone="instanceTone(instance.reportedStatus)"
+              />
+              <NvStatusBadge
+                :label="
+                  instance.healthStatus ? instanceStatusLabel(instance.healthStatus) : '未观测'
+                "
+                :tone="instanceTone(instance.healthStatus)"
+              />
+            </div>
+          </dd>
         </div>
-
-        <Card class="content-start">
-          <CardHeader>
-            <CardTitle>范围说明</CardTitle>
-            <CardDescription>业务平台在本控制台的能力边界。</CardDescription>
-          </CardHeader>
-          <CardContent class="grid gap-2 text-sm text-muted-foreground">
-            <p>
-              下一步聚焦打通各业务服务的全链路验收路径，将已交付的 MVP 事实串成可验证的跨服务链路。
-            </p>
-            <p>
-              甘特图 / RFC 等排程编辑能力不在本控制台 MVP 范围，此处不引入时间线编辑器或排程工作流。
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      </dl>
     </section>
   </DefaultLayout>
 </template>

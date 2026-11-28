@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleCreateUnitOfMeasureRequest,
   BusinessConsoleCreateUomConversionRequest,
@@ -62,6 +63,9 @@ import {
   offsetNumber,
 } from './unitFormValues'
 import UnitConversionDialog from './components/UnitConversionDialog.vue'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.masterdata.products.manage'))
 
 definePage({
   meta: {
@@ -372,12 +376,14 @@ function resetCreateForm() {
   })
 }
 function openCreate() {
+  if (!canManage.value) return
   editingCode.value = null
   resetCreateForm()
   createShowErrors.value = false
   createOpen.value = true
 }
 async function openEdit(row: BusinessConsoleResourceItem) {
+  if (!canManage.value) return
   if (!row.code) return
   editingCode.value = row.code
   createShowErrors.value = false
@@ -399,6 +405,7 @@ async function openEdit(row: BusinessConsoleResourceItem) {
   }
 }
 async function submitUom() {
+  if (!canManage.value) return
   if (!canCreateUom.value) {
     createShowErrors.value = true
     return
@@ -449,11 +456,13 @@ function resetConversionForm() {
   })
 }
 function openCreateConversion() {
+  if (!canManage.value) return
   resetConversionForm()
   conversionShowErrors.value = false
   conversionOpen.value = true
 }
 async function submitConversion() {
+  if (!canManage.value) return
   if (!canCreateConversion.value) {
     conversionShowErrors.value = true
     return
@@ -518,7 +527,7 @@ async function submitConversion() {
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>
           <template #actions>
-            <NvDialog v-model:open="createOpen">
+            <NvDialog v-if="canManage" v-model:open="createOpen">
               <NvDialogTrigger as-child>
                 <NvButton size="sm" type="button" @click="openCreate">
                   <PlusIcon aria-hidden="true" />
@@ -662,6 +671,7 @@ async function submitConversion() {
           </template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions
+              :read-only="!canManage"
               :row="row"
               entity-label="计量单位"
               :detail-fields="uomDetailFields(row)"
@@ -684,6 +694,7 @@ async function submitConversion() {
           </template>
           <template #actions>
             <UnitConversionDialog
+              v-if="canManage"
               v-model:conversion-open="conversionOpen"
               v-model:from-uom="conversionForm.fromUom"
               v-model:to-uom="conversionForm.toUom"
@@ -726,6 +737,7 @@ async function submitConversion() {
           </template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions
+              :read-only="!canManage"
               :row="row"
               entity-label="换算关系"
               :detail-fields="conversionDetailFields(row)"
@@ -735,6 +747,6 @@ async function submitConversion() {
         </NvDataTable>
       </NvTabsContent>
     </NvTabs>
-    <MasterDataLifecycleDialog :controller="lifecycle" />
+    <MasterDataLifecycleDialog v-if="canManage" :controller="lifecycle" />
   </BusinessLayout>
 </template>

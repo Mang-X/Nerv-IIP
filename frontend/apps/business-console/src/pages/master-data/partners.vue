@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type {
   BusinessConsoleCreateBusinessPartnerRequest,
   BusinessConsoleResourceItem,
@@ -45,6 +46,9 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.masterdata.partners.manage'))
 
 definePage({
   meta: {
@@ -244,6 +248,7 @@ function resetCreateForm() {
   for (const key of Object.keys(extraRoleState)) extraRoleState[key] = false
 }
 function openCreate() {
+  if (!canManage.value) return
   editingCode.value = null
   resetCreateForm()
   createShowErrors.value = false
@@ -252,6 +257,7 @@ function openCreate() {
   createOpen.value = true
 }
 async function openEdit(row: BusinessConsoleResourceItem) {
+  if (!canManage.value) return
   if (!row.code) return
   editingCode.value = row.code
   createShowErrors.value = false
@@ -280,6 +286,7 @@ async function openEdit(row: BusinessConsoleResourceItem) {
   }
 }
 async function submitPartner() {
+  if (!canManage.value) return
   if (!canCreatePartner.value) {
     createShowErrors.value = true
     return
@@ -372,7 +379,7 @@ function formatCreditLimit(
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="createOpen" @update:open="syncContextFromFilters">
+        <NvDialog v-if="canManage" v-model:open="createOpen" @update:open="syncContextFromFilters">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
@@ -571,6 +578,7 @@ function formatCreditLimit(
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions
+          :read-only="!canManage"
           :row="row"
           entity-label="伙伴"
           :detail-fields="partnerDetailFields(row)"
@@ -579,6 +587,6 @@ function formatCreditLimit(
         />
       </template>
     </NvDataTable>
-    <MasterDataLifecycleDialog :controller="lifecycle" />
+    <MasterDataLifecycleDialog v-if="canManage" :controller="lifecycle" />
   </BusinessLayout>
 </template>

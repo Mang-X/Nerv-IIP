@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { consolePagePermissions } from '@/router/access'
 import type {
   ConsoleCreateIamUserRequest,
   ConsoleIamUserResponse,
@@ -6,6 +7,7 @@ import type {
   ConsoleUpdateIamUserRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import UserEffectiveAccessDialog from '@/components/iam/UserEffectiveAccessDialog.vue'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
@@ -23,6 +25,10 @@ import {
   AlertDialogTitle,
   Button,
   NvDataTable,
+  NvDropdownMenu,
+  NvDropdownMenuContent,
+  NvDropdownMenuItem,
+  NvDropdownMenuTrigger,
   NvPagination,
   NvPageHeader,
   Select,
@@ -39,6 +45,7 @@ import { computed, shallowRef, watch } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
+    requiredPermissions: consolePagePermissions['/iam/users'],
     title: 'IAM 用户',
   },
 })
@@ -81,6 +88,14 @@ type UserRow = ConsoleIamUserResponse
 const search = shallowRef('')
 const status = shallowRef<'' | 'enabled' | 'disabled'>('')
 const canManageUsers = useHasPermission('iam.users.manage')
+const canReadRoles = useHasPermission('iam.roles.read')
+const effectiveAccessUser = shallowRef<ConsoleIamUserResponse>()
+const effectiveAccessOpen = shallowRef(false)
+
+function openEffectiveAccess(row: ConsoleIamUserResponse) {
+  effectiveAccessUser.value = row
+  effectiveAccessOpen.value = true
+}
 const createDialogOpen = shallowRef(false)
 const editDialogOpen = shallowRef(false)
 const resetPasswordDialogOpen = shallowRef(false)
@@ -89,7 +104,10 @@ const disableDialogOpen = shallowRef(false)
 const selectedUser = shallowRef<ConsoleIamUserResponse>()
 const pendingDisableUser = shallowRef<ConsoleIamUserResponse>()
 
-const { roleOptions, roleOptionsError } = useIamRoleOptions()
+const { roleOptions, roleOptionsError } = useIamRoleOptions(
+  () =>
+    canManageUsers.value && canReadRoles.value && (createDialogOpen.value || rolesDialogOpen.value),
+)
 const { membership, membershipError, membershipPending } = useIamUserMembership(() =>
   rolesDialogOpen.value ? selectedUser.value?.userId : undefined,
 )
@@ -149,6 +167,7 @@ const columns: NvDataTableColumn<UserRow>[] = [
     accessor: (r) => r.loginName || '—',
   },
   { key: 'email', header: '邮箱', accessor: (r) => r.email || '—' },
+  { key: 'roleNames', header: '当前组织环境角色' },
   {
     key: 'accountExpiresAtUtc',
     header: '有效期',
@@ -160,7 +179,7 @@ const columns: NvDataTableColumn<UserRow>[] = [
     width: 'w-32',
   },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-72' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
 watch(
@@ -287,7 +306,13 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         :count="`${totalCount} 个用户`"
       >
         <template #actions>
-          <Button type="button" :disabled="!canManageUsers" @click="openCreateDialog"
+          <Button
+            type="button"
+            :disabled="!canManageUsers || !canReadRoles"
+            :title="
+              canManageUsers && !canReadRoles ? '新建用户时分配角色需要角色读取权限' : undefined
+            "
+            @click="openCreateDialog"
             >新建用户</Button
           >
         </template>
@@ -325,6 +350,11 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         :loading="tablePending"
         empty-message="没有符合当前条件的用户。"
       >
+        <template #cell-roleNames="{ row }">
+          <span class="block max-w-44 truncate text-sm" :title="row.roleNames?.join('、')">
+            {{ row.roleNames?.join('、') || '—' }}
+          </span>
+        </template>
         <template #cell-status="{ row }">
           <NvStatusBadge
             :label="row.enabled === false ? '禁用' : '启用'"
@@ -338,64 +368,61 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
           </span>
         </template>
         <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end gap-2">
-            <Button
-              size="sm"
-              type="button"
-              variant="outline"
-              :aria-label="`编辑用户 ${userLabel(row)}`"
-              :disabled="!canManageUsers"
-              @click="openEditDialog(row)"
-            >
-              编辑
-            </Button>
-            <Button
-              size="sm"
-              type="button"
-              variant="outline"
-              :aria-label="`分配角色 ${userLabel(row)}`"
-              :disabled="!canManageUsers"
-              @click="openRolesDialog(row)"
-            >
-              分配角色
-            </Button>
-            <Button
-              size="sm"
-              type="button"
-              variant="outline"
-              :aria-label="`重置密码 ${userLabel(row)}`"
-              :disabled="!canManageUsers"
-              @click="openResetPasswordDialog(row)"
-            >
-              重置密码
-            </Button>
-            <Button
-              v-if="row.enabled === false"
-              size="sm"
-              type="button"
-              variant="outline"
-              :aria-label="`启用用户 ${userLabel(row)}`"
-              :disabled="!canManageUsers"
-              @click="handleEnable(row)"
-            >
-              启用
-            </Button>
-            <Button
-              v-else
-              size="sm"
-              type="button"
-              variant="destructive"
-              :aria-label="`停用用户 ${userLabel(row)}`"
-              :disabled="!canManageUsers"
-              @click="openDisableDialog(row)"
-            >
-              禁用
-            </Button>
-          </div>
+          <NvDropdownMenu>
+            <NvDropdownMenuTrigger as-child>
+              <Button
+                size="sm"
+                type="button"
+                variant="outline"
+                :aria-label="`操作 ${userLabel(row)}`"
+                >操作</Button
+              >
+            </NvDropdownMenuTrigger>
+            <NvDropdownMenuContent align="end">
+              <NvDropdownMenuItem @select="openEffectiveAccess(row)">有效权限</NvDropdownMenuItem>
+              <template v-if="canManageUsers">
+                <NvDropdownMenuItem
+                  :aria-label="`编辑用户 ${userLabel(row)}`"
+                  @select="openEditDialog(row)"
+                  >编辑</NvDropdownMenuItem
+                >
+                <NvDropdownMenuItem
+                  v-if="canReadRoles"
+                  :aria-label="`分配角色 ${userLabel(row)}`"
+                  @select="openRolesDialog(row)"
+                  >分配角色</NvDropdownMenuItem
+                >
+                <NvDropdownMenuItem
+                  :aria-label="`重置密码 ${userLabel(row)}`"
+                  @select="openResetPasswordDialog(row)"
+                  >重置密码</NvDropdownMenuItem
+                >
+                <NvDropdownMenuItem
+                  v-if="row.enabled === false"
+                  :aria-label="`启用用户 ${userLabel(row)}`"
+                  @select="handleEnable(row)"
+                  >启用</NvDropdownMenuItem
+                >
+                <NvDropdownMenuItem
+                  v-else
+                  :aria-label="`停用用户 ${userLabel(row)}`"
+                  @select="openDisableDialog(row)"
+                  >禁用</NvDropdownMenuItem
+                >
+              </template>
+            </NvDropdownMenuContent>
+          </NvDropdownMenu>
         </template>
       </NvDataTable>
 
       <NvPagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalCount" />
+
+      <UserEffectiveAccessDialog
+        v-if="effectiveAccessUser"
+        :key="effectiveAccessUser.userId"
+        v-model:open="effectiveAccessOpen"
+        :user="effectiveAccessUser"
+      />
 
       <UserCreateDialog
         v-model:open="createDialogOpen"

@@ -96,3 +96,9 @@ export type ConsoleIamSessionsEnvelope =
   NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamSessionResponse
 export type ConsoleIamPermissionsEnvelope =
   NetCorePalExtensionsDtoResponseDataOfConsoleIamPermissionCatalogResponse
+
+export {
+  getConsoleIamUserEffectiveAccessQueryOptions,
+  patchConsoleIamRoleDataScopesMutationOptions,
+} from './generated/@pinia/colada.gen'
+export type { NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScope as ConsoleIamDataScope } from './generated/types.gen'

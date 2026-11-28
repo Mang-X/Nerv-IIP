@@ -4,6 +4,12 @@ import { computed, reactive, ref, shallowRef } from 'vue'
 
 import ProductionVersionsPage from './production-versions.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: { permissionCodes: ['business.engineering.production-versions.manage'] },
+  }),
+}))
+
 const stub = vi.hoisted(() => ({
   createProductionVersion: vi.fn().mockResolvedValue({ data: { productionVersionId: 'pv-new' } }),
   updateProductionVersion: vi.fn().mockResolvedValue({ data: { productionVersionId: 'pv-1' } }),

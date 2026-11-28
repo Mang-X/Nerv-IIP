@@ -531,7 +531,7 @@ const uiStubs = {
   },
 }
 
-function mountMesPage(component: unknown) {
+function mountMesPage(component: unknown, permissions: string[] = []) {
   const pinia = createPinia()
   const auth = useAuthStore(pinia)
   auth.$patch({
@@ -541,7 +541,7 @@ function mountMesPage(component: unknown) {
       organizationId: 'org',
       environmentId: 'dev',
       loginName: 'op',
-      permissionCodes: ['business.mes.receipts.manage'],
+      permissionCodes: ['business.mes.receipts.manage', ...permissions],
     },
   })
   return mount(component, {
@@ -591,7 +591,10 @@ describe('MES workflow copy', () => {
   })
 
   it('points formal scheduling output from work orders to the Scheduling workbench', () => {
-    const wrapper = mountMesPage(WorkOrdersPage)
+    const wrapper = mountMesPage(WorkOrdersPage, [
+      'business.mes.work-orders.manage',
+      'business.scheduling.plans.read',
+    ])
     const schedulingLink = wrapper
       .findAll('[data-router-link]')
       .find((link) => link.attributes('data-to') === '"/scheduling"')

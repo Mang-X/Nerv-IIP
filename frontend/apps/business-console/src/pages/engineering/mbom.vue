@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import { useFirstInvalidField } from '@/components/masterData/useFirstInvalidField'
 import type {
   BusinessConsoleManufacturingBomItem,
@@ -61,6 +62,9 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.engineering.boms.manage'))
 
 definePage({
   meta: {
@@ -427,6 +431,7 @@ const canSubmit = computed(
 )
 
 function openCreate() {
+  if (!canManage.value) return
   Object.assign(form, blankForm())
   form.materialLines = [blankMaterialLine()]
   form.recipeLines = []
@@ -452,6 +457,7 @@ function removeRecipeLine(index: number) {
 }
 
 async function submitForm() {
+  if (!canManage.value) return
   if (!canSubmit.value) {
     showErrors.value = true
     await focusFirstInvalidField()
@@ -548,7 +554,7 @@ function uomLabel(code?: string | null) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="formOpen">
+        <NvDialog v-if="canManage" v-model:open="formOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />

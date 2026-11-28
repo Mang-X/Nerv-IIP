@@ -84,11 +84,13 @@ const editing = shallowRef<MaintenanceDowntimeReasonRow>()
 const existingCodes = computed(() => reasons.value.map((row) => row.reasonCode))
 
 function openCreate() {
+  if (!canManage.value) return
   editing.value = undefined
   formSession.value += 1
   formOpen.value = true
 }
 function openEdit(row: MaintenanceDowntimeReasonRow) {
+  if (!canManage.value) return
   editing.value = row
   formSession.value += 1
   formOpen.value = true
@@ -98,10 +100,12 @@ function openEdit(row: MaintenanceDowntimeReasonRow) {
 const deleteTarget = shallowRef<MaintenanceDowntimeReasonRow>()
 const deleteOpen = shallowRef(false)
 function askDelete(row: MaintenanceDowntimeReasonRow) {
+  if (!canManage.value) return
   deleteTarget.value = row
   deleteOpen.value = true
 }
 async function confirmDelete() {
+  if (!canManage.value) return
   const target = deleteTarget.value
   if (!target) return
   try {
@@ -185,7 +189,7 @@ async function confirmDelete() {
         <p v-else class="text-sm text-muted-foreground">{{ message }}</p>
       </template>
       <template #cell-actions="{ row }">
-        <div class="flex justify-end gap-1">
+        <div v-if="canManage" class="flex justify-end gap-1">
           <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</NvButton>
           <NvButton type="button" variant="ghost" size="sm" @click="askDelete(row)">删除</NvButton>
         </div>
@@ -193,14 +197,14 @@ async function confirmDelete() {
     </NvDataTable>
 
     <DowntimeReasonFormSheet
-      v-if="formSession"
+      v-if="canManage && formSession"
       :key="formSession"
       v-model:open="formOpen"
       :reason="editing"
       :existing-codes="existingCodes"
     />
 
-    <NvAlertDialog v-model:open="deleteOpen">
+    <NvAlertDialog v-if="canManage" v-model:open="deleteOpen">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>删除停机原因「{{ deleteTarget?.description }}」？</NvAlertDialogTitle>

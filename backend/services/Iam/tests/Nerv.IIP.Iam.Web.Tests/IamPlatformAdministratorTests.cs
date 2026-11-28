@@ -59,13 +59,14 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
 
         var narrowScope = await _client.PatchAsJsonAsync(
             "/api/iam/v1/roles/role-platform-admin/data-scopes",
-            new { dataScopes = new[] { new { scopeType = "workshop", scopeCode = "WS-A" } } });
+            new { expectedVersion = 0, dataScopes = new[] { new { scopeType = "workshop", scopeCode = "WS-A" } } });
         Assert.Equal(HttpStatusCode.BadRequest, narrowScope.StatusCode);
 
         var widenScope = await _client.PatchAsJsonAsync(
             "/api/iam/v1/roles/role-platform-admin/data-scopes",
             new
             {
+                expectedVersion = 0,
                 dataScopes = new[]
                 {
                     new { scopeType = "organization", scopeCode = "org-001" },

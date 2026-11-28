@@ -34,6 +34,9 @@ public interface IGatewayIamAdminClient
         ConsoleResetIamUserPasswordRequest request,
         CancellationToken cancellationToken);
 
+    Task<ConsoleIamEffectiveAccess> GetEffectiveAccessAsync(string bearerToken, ConsoleIamEffectiveAccessRequest request, CancellationToken cancellationToken);
+    Task<ConsoleIamDataScopes> PatchRoleDataScopesAsync(string bearerToken, string roleId, ConsolePatchIamRoleDataScopesRequest request, CancellationToken cancellationToken);
+
     Task<ConsoleIamUserMembershipResponse> GetUserMembershipAsync(
         string bearerToken,
         string userId,
@@ -134,6 +137,23 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
             () => JsonContent.Create(request),
             HttpMethod.Post,
             $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/reset-password",
+            bearerToken,
+            cancellationToken);
+
+    public Task<ConsoleIamEffectiveAccess> GetEffectiveAccessAsync(string bearerToken, ConsoleIamEffectiveAccessRequest request, CancellationToken cancellationToken) =>
+        SendForJsonAsync<ConsoleIamEffectiveAccess>(
+            () => null,
+            HttpMethod.Get,
+            $"/api/iam/v1/users/{Uri.EscapeDataString(request.UserId)}/effective-access"
+                + QueryString.Create("orgId", request.OrgId).Add("envId", request.EnvId),
+            bearerToken,
+            cancellationToken);
+
+    public Task<ConsoleIamDataScopes> PatchRoleDataScopesAsync(string bearerToken, string roleId, ConsolePatchIamRoleDataScopesRequest request, CancellationToken cancellationToken) =>
+        SendForJsonAsync<ConsoleIamDataScopes>(
+            () => JsonContent.Create(request),
+            HttpMethod.Patch,
+            $"/api/iam/v1/roles/{Uri.EscapeDataString(roleId)}/data-scopes",
             bearerToken,
             cancellationToken);
 
@@ -335,7 +355,7 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
 
         if (includeSessionFilters)
         {
-            Add(values, "filterRevoked", request.FilterRevoked?.ToString().ToLowerInvariant());
+            Add(values, "filterStatus", request.FilterStatus);
         }
 
         return values.Count == 0 ? string.Empty : "?" + string.Join("&", values);

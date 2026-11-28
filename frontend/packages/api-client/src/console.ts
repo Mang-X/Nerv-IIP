@@ -104,3 +104,5 @@ export type NotificationMessageListEnvelope =
   NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse
 export type NotificationTaskListEnvelope =
   NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse
+
+export { listConsoleInstances } from './generated/sdk.gen'

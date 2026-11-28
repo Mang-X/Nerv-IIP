@@ -37,7 +37,8 @@ public sealed record WorkerDirectoryUserResponse(
 
 [HttpGet("/api/iam/v1/users")]
 [AllowAnonymous]
-public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
+public sealed class ListUsersEndpoint(
+    IIamPermissionAuthorizer authorizer, IIamAuthService auth, IMediator mediator, IIamEffectiveAccess effectiveAccess)
     : Endpoint<ListUsersRequest, ResponseData<PagedListResponse<UserResponse>>>
 {
     public override async Task HandleAsync(ListUsersRequest req, CancellationToken ct)
@@ -54,6 +55,12 @@ public sealed class ListUsersEndpoint(IIamPermissionAuthorizer authorizer, IMedi
             req.SortOrder,
             req.FilterSearch,
             filterEnabled: req.FilterEnabled)), ct);
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is not null)
+        {
+            users = await effectiveAccess.AddRoleNamesAsync(users, principal.OrganizationId, principal.EnvironmentId, ct);
+        }
+
         await Send.OkAsync(users.AsResponseData(), ct);
     }
 }
@@ -389,6 +396,38 @@ public sealed class ReplaceUserMembershipRolesEndpoint(
                 req.RoleIds,
                 IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
             ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+[HttpGet("/api/iam/v1/users/{userId}/effective-access")]
+[AllowAnonymous]
+public sealed class GetUserEffectiveAccessEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IIamEffectiveAccess effectiveAccess) : Endpoint<EffectiveAccessRequest, ResponseData<EffectiveAccessResponse>>
+{
+    public override async Task HandleAsync(EffectiveAccessRequest req, CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.read", ct))
+        {
+            return;
+        }
+
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is null || principal.OrganizationId != req.OrgId || principal.EnvironmentId != req.EnvId)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status403Forbidden, "Forbidden.", ct);
+            return;
+        }
+
+        var response = await effectiveAccess.ReadAsync(req, ct);
+        if (response is null)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status404NotFound, "User not found.", ct);
+            return;
+        }
+
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }

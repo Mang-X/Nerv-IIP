@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import type { DirectoryCreatedItem } from '@/components/business/directoryCreators'
@@ -17,6 +18,9 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { inlineErrorMessage } from '@/utils/notify'
 import { MATERIAL_TYPE_OPTIONS } from '@/data/masterDataReference'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.masterdata.products.manage'))
 
 definePage({
   meta: {
@@ -160,6 +164,7 @@ function rowKey(item: BusinessConsoleResourceItem) {
   return `${item.resourceType ?? 'sku'}:${item.code || item.displayName || ''}`
 }
 function openForm(row?: BusinessConsoleResourceItem) {
+  if (!canManage.value) return
   formEditing.value = row
   formSession.value += 1
   formOpen.value = true
@@ -200,7 +205,7 @@ function onCreated(item: DirectoryCreatedItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openForm()">
+        <NvButton v-if="canManage" size="sm" type="button" @click="openForm()">
           <PlusIcon aria-hidden="true" />
           新建物料
         </NvButton>
@@ -247,6 +252,7 @@ function onCreated(item: DirectoryCreatedItem) {
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions
+          :read-only="!canManage"
           :row="row"
           entity-label="物料"
           :detail-fields="skuDetailFields(row)"
@@ -255,9 +261,9 @@ function onCreated(item: DirectoryCreatedItem) {
         />
       </template>
     </NvDataTable>
-    <MasterDataLifecycleDialog :controller="lifecycle" />
+    <MasterDataLifecycleDialog v-if="canManage" :controller="lifecycle" />
     <SkuFormDialog
-      v-if="formSession"
+      v-if="canManage && formSession"
       :key="formSession"
       v-model:open="formOpen"
       :editing="formEditing"

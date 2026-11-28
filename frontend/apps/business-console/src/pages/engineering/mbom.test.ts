@@ -4,6 +4,10 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import MbomPage from './mbom.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.engineering.boms.manage'] } }),
+}))
+
 const stub = vi.hoisted(() => ({
   releaseMbom: vi.fn().mockResolvedValue({ data: {} }),
   fetchMbomDetail: vi.fn(),

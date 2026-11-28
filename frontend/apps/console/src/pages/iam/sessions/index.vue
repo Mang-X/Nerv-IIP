@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { consolePagePermissions } from '@/router/access'
 import type { ConsoleIamSessionResponse } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import RevokeSessionDialog from '@/components/iam/RevokeSessionDialog.vue'
@@ -26,6 +27,7 @@ import { computed, shallowRef, unref, watch } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
+    requiredPermissions: consolePagePermissions['/iam/sessions'],
     title: 'IAM 会话',
   },
 })
@@ -34,7 +36,7 @@ const auth = useAuthStore()
 const sessions = useIamSessions()
 
 const search = shallowRef('')
-const status = shallowRef<'' | 'active' | 'revoked'>('')
+const status = shallowRef<'' | 'active' | 'expired' | 'revoked'>('')
 const canRevokeSessions = useHasPermission('iam.sessions.revoke')
 const revokeOpen = shallowRef(false)
 const selectedSession = shallowRef<ConsoleIamSessionResponse>()
@@ -66,7 +68,7 @@ const pageSize = computed({
 const statusModel = computed({
   get: () => status.value || 'all',
   set: (value: string) => {
-    status.value = value === 'active' || value === 'revoked' ? value : ''
+    status.value = value === 'active' || value === 'expired' || value === 'revoked' ? value : ''
   },
 })
 
@@ -89,17 +91,11 @@ watch(
   [search, status],
   ([nextSearch, nextStatus]) => {
     sessions.filters.filterSearch = nextSearch.trim() || undefined
-    sessions.filters.filterRevoked = statusToRevokedFilter(nextStatus)
+    sessions.filters.filterStatus = nextStatus || undefined
     sessions.filters.pageIndex = 1
   },
   { immediate: true },
 )
-
-function statusToRevokedFilter(nextStatus: '' | 'active' | 'revoked') {
-  if (nextStatus === 'active') return false
-  if (nextStatus === 'revoked') return true
-  return undefined
-}
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
@@ -109,7 +105,7 @@ function formatDate(value?: string | null) {
 }
 
 function sessionLabel(session: ConsoleIamSessionResponse) {
-  return `会话 · ${session.sessionId?.slice(-8) || '标识缺失'}`
+  return session.loginName || session.userId || '账号已删除'
 }
 
 function isCurrentSession(session: ConsoleIamSessionResponse) {
@@ -119,7 +115,7 @@ function isCurrentSession(session: ConsoleIamSessionResponse) {
 function canRevoke(session: ConsoleIamSessionResponse) {
   return (
     Boolean(session.sessionId) &&
-    !session.revokedAtUtc &&
+    session.status === 'active' &&
     session.sessionId !== currentSessionId.value &&
     canRevokeSessions.value
   )
@@ -177,7 +173,8 @@ async function confirmRevoke(sessionId: string) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部状态</SelectItem>
-              <SelectItem value="active">活跃</SelectItem>
+              <SelectItem value="active">有效</SelectItem>
+              <SelectItem value="expired">已过期</SelectItem>
               <SelectItem value="revoked">已吊销</SelectItem>
             </SelectContent>
           </Select>
@@ -213,8 +210,12 @@ async function confirmRevoke(sessionId: string) {
         </template>
         <template #cell-status="{ row }">
           <NvStatusBadge
-            :label="row.revokedAtUtc ? '已吊销' : '活跃'"
-            :tone="row.revokedAtUtc ? 'neutral' : 'success'"
+            :label="
+              row.status === 'revoked' ? '已吊销' : row.status === 'expired' ? '已过期' : '有效'
+            "
+            :tone="
+              row.status === 'active' ? 'success' : row.status === 'expired' ? 'warning' : 'neutral'
+            "
           />
         </template>
         <template #cell-actions="{ row }">
@@ -224,7 +225,7 @@ async function confirmRevoke(sessionId: string) {
               type="button"
               variant="destructive"
               :aria-label="`吊销会话 ${sessionLabel(row)}`"
-              :disabled="!canRevoke(row)"
+              v-if="canRevoke(row)"
               @click="openRevokeDialog(row)"
             >
               吊销

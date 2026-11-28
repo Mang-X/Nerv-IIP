@@ -1,11 +1,32 @@
+import { PiniaColada } from '@pinia/colada'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { RouterView, createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { installAuthGuard } from '@/router/guards/auth'
 import { useAuthStore } from '@/stores/auth'
 import BusinessStatusPage from './index.vue'
+
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  listConsoleInstances: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: {
+        totalCount: 1,
+        items: [
+          {
+            applicationKey: 'business-mes',
+            instanceKey: 'mes-01',
+            reportedStatus: 'running',
+            healthStatus: 'healthy',
+          },
+        ],
+      },
+    },
+  })),
+}))
 
 describe('Business status page', () => {
   async function mountAuthenticatedRoute() {
@@ -34,7 +55,7 @@ describe('Business status page', () => {
 
     const wrapper = mount(RouterView, {
       global: {
-        plugins: [pinia, router],
+        plugins: [pinia, router, PiniaColada],
         stubs: {
           DefaultLayout: {
             template: '<main><slot /></main>',
@@ -51,8 +72,8 @@ describe('Business status page', () => {
     const wrapper = await mountAuthenticatedRoute()
 
     expect(wrapper.text()).toContain('业务平台状态')
-    expect(wrapper.text()).toContain('范围说明')
-    expect(wrapper.text()).toContain('已交付')
+    expect(wrapper.text()).toContain('org-business-test · env-business-test')
+    expect(wrapper.text()).not.toContain('已交付')
   })
 
   it('does not leak engineering issue numbers into the UI', async () => {
@@ -61,24 +82,13 @@ describe('Business status page', () => {
     expect(wrapper.text()).not.toMatch(/#\d+/)
   })
 
-  it('lists the delivered business backend services', async () => {
+  it('shows instance observations and marks unmatched services as unobserved', async () => {
     const wrapper = await mountAuthenticatedRoute()
 
-    for (const serviceName of [
-      'BusinessMasterData',
-      'BusinessProductEngineering',
-      'BusinessInventory',
-      'BusinessQuality',
-      'BusinessMES',
-      'BusinessDemandPlanning',
-      'BarcodeLabel',
-      'BusinessApproval',
-      'WMS',
-      'BusinessIndustrialTelemetry',
-      'BusinessMaintenance',
-      'BusinessERP',
-    ]) {
-      expect(wrapper.text()).toContain(serviceName)
-    }
+    expect(wrapper.text()).toContain('仓储')
+    expect(wrapper.text()).toContain('未观测')
+    expect(wrapper.text()).toContain('运行中')
+    expect(wrapper.text()).toContain('健康')
+    expect(wrapper.get('a[href="/?instance=mes-01"]').text()).toBe('mes-01')
   })
 })

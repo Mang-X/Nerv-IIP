@@ -5,7 +5,7 @@ using NetCorePal.Extensions.Primitives;
 namespace Nerv.IIP.Iam.Web.Application.Permissions;
 
 public sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogItemResponse> Items);
-public sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);
+public sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded, IReadOnlyList<string> JobRoles);
 
 public static class IamPermissionCatalog
 {
@@ -158,6 +158,11 @@ public static class IamPermissionCatalog
 
     private static readonly HashSet<string> SeedCodes = NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal);
 
+    private static readonly ILookup<string, string> JobRoles = NervIipSeedRoles.ErpJobRoles
+        .Concat([NervIipSeedRoles.ProductionPlanner, NervIipSeedRoles.MesDowntimeTeamLeader, NervIipSeedRoles.MaintenanceTechnician, NervIipSeedRoles.QualityManager, NervIipSeedRoles.MasterDataAdministrator])
+        .SelectMany(role => role.PermissionCodes.Select(code => (Code: code, Name: role.RoleName)))
+        .ToLookup(x => x.Code, x => x.Name, StringComparer.Ordinal);
+
     public static PermissionCatalogResponse List()
     {
         var items = NervIipSeedPermissions.All
@@ -165,7 +170,8 @@ public static class IamPermissionCatalog
                 code,
                 GetDomain(code),
                 Descriptions.GetValueOrDefault(code, code),
-                true))
+                true,
+                JobRoles[code].ToArray()))
             .ToArray();
         return new PermissionCatalogResponse(items);
     }

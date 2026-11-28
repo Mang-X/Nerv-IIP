@@ -33,7 +33,11 @@ vi.mock('@nerv-iip/ui', async () => {
 
 vi.mock('@/composables/useNotifications', () => ({
   useNotifications: () => ({
-    allError: computed(
+    canReadMessages: computed(() => true),
+    canReadTasks: computed(() => true),
+    canReadOperationTasks: computed(() => false),
+    canMarkRead: computed(() => true),
+    actionError: computed(
       () => notificationState.batchError.value ?? notificationState.markReadError.value,
     ),
     batchPending: notificationState.batchPending,
@@ -130,7 +134,7 @@ describe('Notifications page', () => {
 
     expect(notificationState.markRead).toHaveBeenCalledWith('msg-1')
 
-    await wrapper.find('button[aria-label="全部标记已读"]').trigger('click')
+    await wrapper.find('button[aria-label="标记本批已读"]').trigger('click')
     await flushPromises()
 
     expect(notificationState.markAllUnreadRead).toHaveBeenCalled()
@@ -151,14 +155,13 @@ describe('Notifications page', () => {
     notificationState.markReadPending.value = true
     const wrapper = mountPage()
 
-    expect(wrapper.find('button[aria-label="全部标记已读"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button[aria-label="标记本批已读"]').attributes('disabled')).toBeDefined()
   })
 
   it('renders notification errors', () => {
     notificationState.markReadError.value = new Error('Forbidden')
     const wrapper = mountPage()
 
-    expect(wrapper.text()).toContain('无法更新通知')
     expect(wrapper.text()).toContain('Forbidden')
   })
 })

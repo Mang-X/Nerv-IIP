@@ -4,6 +4,10 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import ItemsPage from './items.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: ['business.engineering.items.manage'] } }),
+}))
+
 const stub = vi.hoisted(() => ({
   createItemRevision: vi.fn().mockResolvedValue({ data: {} }),
   fetchItemDetail: vi.fn(),

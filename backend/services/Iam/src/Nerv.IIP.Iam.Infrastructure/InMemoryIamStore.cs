@@ -292,7 +292,7 @@ public sealed class InMemoryIamStore
             var grants = permissionRoleIds
                 .SelectMany(roleId =>
                     _roleDataScopes.GetValueOrDefault(roleId, new HashSet<DataScopeBinding>())
-                        .Select(scope => ToPermissionDataScopeGrant(
+                        .Select(scope => PermissionDataScopeGrant.FromBinding(
                             "role",
                             roleId,
                             scope,
@@ -304,7 +304,7 @@ public sealed class InMemoryIamStore
                         .GetValueOrDefault(
                             MembershipDataScopeKey(userId, organizationId, environmentId),
                             new HashSet<DataScopeBinding>())
-                        .Select(scope => ToPermissionDataScopeGrant(
+                        .Select(scope => PermissionDataScopeGrant.FromBinding(
                             "membership",
                             MembershipDataScopeKey(userId, organizationId, environmentId),
                             scope,
@@ -455,17 +455,48 @@ public sealed class InMemoryIamStore
         }
     }
 
-    public IReadOnlyList<DataScopeBinding> ReplaceRoleDataScopes(string roleId, IEnumerable<DataScopeBinding> scopes)
+    public IReadOnlyList<DataScopeBinding> GetRoleDataScopes(string roleId)
     {
         lock (_gate)
         {
-            if (_roles.All(x => x.RoleId != roleId))
+            return _roleDataScopes.TryGetValue(roleId, out var scopes) ? scopes.ToArray() : [];
+        }
+    }
+
+    public IReadOnlyList<DataScopeBinding> GetMembershipDataScopes(string userId, string organizationId, string environmentId)
+    {
+        lock (_gate)
+        {
+            return _membershipDataScopes.TryGetValue(MembershipDataScopeKey(userId, organizationId, environmentId), out var scopes)
+                ? scopes.ToArray()
+                : [];
+        }
+    }
+
+    public IReadOnlyList<DataScopeBinding> ReplaceRoleDataScopes(
+        string roleId, int expectedVersion, IEnumerable<DataScopeBinding> scopes)
+    {
+        lock (_gate)
+        {
+            var index = _roles.FindIndex(x => x.RoleId == roleId);
+            if (index < 0)
             {
                 throw new InvalidOperationException($"Role '{roleId}' was not found.");
             }
 
+            var role = _roles[index];
+            if (role.ScopeVersion != expectedVersion)
+            {
+                throw new RoleDataScopeConflictException();
+            }
+
             var normalized = NormalizeDataScopes(scopes);
-            _roleDataScopes[roleId] = normalized.ToHashSet();
+            if (!GetRoleDataScopes(roleId).ToHashSet().SetEquals(normalized))
+            {
+                _roleDataScopes[roleId] = normalized.ToHashSet();
+                _roles[index] = role with { ScopeVersion = role.ScopeVersion + 1 };
+            }
+
             return normalized;
         }
     }
@@ -809,9 +840,10 @@ public sealed class InMemoryIamStore
     private void RevokeSession(string sessionId)
     {
         var session = _sessions.SingleOrDefault(x => x.SessionId == sessionId);
-        if (session is not null)
+        var now = DateTimeOffset.UtcNow;
+        if (session is { RevokedAtUtc: null } && session.ExpiresAtUtc > now)
         {
-            _sessions[_sessions.IndexOf(session)] = session with { RevokedAtUtc = DateTimeOffset.UtcNow };
+            _sessions[_sessions.IndexOf(session)] = session with { RevokedAtUtc = now };
         }
     }
 
@@ -869,26 +901,7 @@ public sealed class InMemoryIamStore
             .ThenBy(x => x.ScopeCode, StringComparer.Ordinal)
             .ToArray();
 
-    private static PermissionDataScopeGrant ToPermissionDataScopeGrant(
-        string sourceKind,
-        string sourceId,
-        DataScopeBinding scope,
-        string userId,
-        string organizationId,
-        string permissionCode)
-    {
-        var normalized = DataScopeBinding.Normalize(scope);
-        return new PermissionDataScopeGrant(
-            sourceKind,
-            sourceId,
-            normalized.ScopeType,
-            normalized.ScopeType == DataScopeBinding.Self ? userId : normalized.ScopeCode,
-            [permissionCode],
-            OrganizationWide: normalized.ScopeType == DataScopeBinding.Organization
-                && normalized.ScopeCode == organizationId);
-    }
-
-    private static string MembershipDataScopeKey(string userId, string organizationId, string environmentId) =>
+    public static string MembershipDataScopeKey(string userId, string organizationId, string environmentId) =>
         $"{userId}:{organizationId}:{environmentId}";
 
     private void EnsureUserIsUnique(string? currentUserId, string loginName, string email)

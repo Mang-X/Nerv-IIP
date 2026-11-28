@@ -298,6 +298,7 @@ export function useWorkOrdersPage() {
     { filters, createRushWorkOrder, createRushWorkOrderError },
     { productionVersionOptions, operationTasks },
     rushSheetOpen,
+    canManageWorkOrders,
     newMesIdempotencyKey,
   )
 
@@ -449,6 +450,7 @@ export function useWorkOrdersPage() {
 
   return {
     canCreateRush,
+    canManageWorkOrders,
     canReportOrder,
     canSubmitRelease,
     clearReleaseIntent,

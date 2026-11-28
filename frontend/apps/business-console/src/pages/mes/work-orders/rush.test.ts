@@ -151,7 +151,9 @@ const uiStubs = {
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }
 
-function mountPage() {
+function mountPage(
+  permissionCodes = ['business.mes.work-orders.read', 'business.mes.work-orders.manage'],
+) {
   const pinia = createPinia()
   useAuthStore(pinia).$patch({
     principal: {
@@ -160,7 +162,7 @@ function mountPage() {
       organizationId: 'org-1',
       environmentId: 'prod',
       loginName: 'planner',
-      permissionCodes: ['business.mes.work-orders.read', 'business.mes.work-orders.manage'],
+      permissionCodes,
     },
   })
   return mount(WorkOrdersListPage, { global: { plugins: [pinia], stubs: uiStubs } })
@@ -188,6 +190,12 @@ describe('创建急单', () => {
     createRushWorkOrder.mockResolvedValue({ data: { workOrderId: 'WO-20260928-000001' } })
     // 整页直开：壳层还没把组织与环境绑定到 filters，页面初始化时两者都是空串。
     rushState.filters = reactive({ organizationId: '', environmentId: '', skip: 0, take: 20 })
+  })
+
+  it('keeps rush creation and production plans out of the read-only work-order header', () => {
+    const wrapper = mountPage(['business.mes.work-orders.read'])
+    expect(wrapper.get('header').text()).not.toContain('创建急单')
+    expect(wrapper.get('header').text()).not.toContain('生产计划')
   })
 
   // #3858：表单初始化时拷贝了当时还是空串的组织与环境，之后绑定到位也不跟进，按钮一直不可点。

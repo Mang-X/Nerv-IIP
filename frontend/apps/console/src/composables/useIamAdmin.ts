@@ -30,7 +30,7 @@ const ignoreBackgroundError = (_error: unknown) => {}
 
 export interface IamListFilters {
   filterEnabled?: boolean
-  filterRevoked?: boolean
+  filterStatus?: string
   filterSearch?: string
   pageIndex: number
   pageSize: number
@@ -40,7 +40,7 @@ export interface IamListFilters {
 
 type IamListQuery = {
   filterEnabled?: boolean | null
-  filterRevoked?: boolean | null
+  filterStatus?: string | null
   filterSearch?: string | null
   pageIndex?: number | null
   pageSize?: number | null
@@ -61,7 +61,7 @@ function createDefaultFilters(): IamListFilters {
 function toListQuery(filters: IamListFilters): IamListQuery {
   return {
     ...optionalQuery('filterEnabled', filters.filterEnabled),
-    ...optionalQuery('filterRevoked', filters.filterRevoked),
+    ...optionalQuery('filterStatus', filters.filterStatus),
     ...optionalQuery('filterSearch', filters.filterSearch),
     pageIndex: filters.pageIndex,
     pageSize: filters.pageSize,
@@ -205,12 +205,13 @@ export function useIamUsers() {
 }
 
 /** 可分配的全部角色，供新建用户与分配角色时勾选。 */
-export function useIamRoleOptions() {
-  const listQuery = useQuery(() =>
-    listConsoleIamRolesQueryOptions({
+export function useIamRoleOptions(enabled: () => boolean) {
+  const listQuery = useQuery(() => ({
+    ...listConsoleIamRolesQueryOptions({
       query: { pageIndex: DEFAULT_PAGE_INDEX, pageSize: ROLE_OPTIONS_PAGE_SIZE },
     }),
-  )
+    enabled: enabled(),
+  }))
 
   return {
     roleOptions: computed(() => listItems<ConsoleIamRoleResponse>(listQuery.data.value)),

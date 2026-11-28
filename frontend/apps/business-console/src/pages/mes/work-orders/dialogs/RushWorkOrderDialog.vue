@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import { usePermission } from '@/composables/usePermission'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import {
   NvButton,
   NvDialog,
@@ -32,6 +34,7 @@ defineProps<{
   submitRushWorkOrder: View['submitRushWorkOrder']
 }>()
 
+const { can } = usePermission()
 const rushSheetOpen = defineModel<View['rushSheetOpen']>('rushSheetOpen', { required: true })
 </script>
 
@@ -142,7 +145,13 @@ const rushSheetOpen = defineModel<View['rushSheetOpen']>('rushSheetOpen', { requ
         </NvFieldGroup>
 
         <NvDialogFooter class="sm:justify-between">
-          <NvButton size="sm" type="button" variant="ghost" as-child>
+          <NvButton
+            v-if="can(P.schedulingPlansRead)"
+            size="sm"
+            type="button"
+            variant="ghost"
+            as-child
+          >
             <RouterLink to="/scheduling"
               ><CalendarCogIcon aria-hidden="true" />排产工作台</RouterLink
             >

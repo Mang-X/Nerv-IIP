@@ -11,6 +11,8 @@ import {
 
 const props = defineProps<{
   pending?: boolean
+  allStatuses?: boolean
+  operationLinks?: ReadonlyMap<string, string>
   tasks: NotificationTaskResponse[]
   messageTitles: ReadonlyMap<string, string>
 }>()
@@ -26,7 +28,9 @@ function rowKey(task: NotificationTaskResponse, index: number) {
     aria-labelledby="notification-tasks-title"
   >
     <div class="flex items-center justify-between border-b px-4 py-3">
-      <h2 id="notification-tasks-title" class="text-sm font-semibold">待办任务</h2>
+      <h2 id="notification-tasks-title" class="text-sm font-semibold">
+        {{ props.allStatuses ? '通知任务' : '待办任务' }}
+      </h2>
       <span class="text-xs font-semibold text-muted-foreground">{{ props.tasks.length }}</span>
     </div>
 
@@ -57,10 +61,18 @@ function rowKey(task: NotificationTaskResponse, index: number) {
             :tone="notificationTone(task.status)"
           />
         </div>
+        <RouterLink
+          v-if="task.messageId && operationLinks?.has(task.messageId)"
+          :to="`/operations/${encodeURIComponent(operationLinks.get(task.messageId)!)}`"
+          class="text-sm text-primary underline"
+          >查看运维任务</RouterLink
+        >
         <p class="text-xs text-muted-foreground">{{ formatNotificationDate(task.createdAtUtc) }}</p>
       </li>
     </ul>
 
-    <p v-else class="px-4 py-8 text-center text-sm text-muted-foreground">暂无待办通知任务。</p>
+    <p v-else class="px-4 py-8 text-center text-sm text-muted-foreground">
+      没有符合条件的通知任务。
+    </p>
   </section>
 </template>

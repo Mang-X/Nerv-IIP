@@ -24,6 +24,47 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task Effective_access_keeps_each_permission_bound_to_its_granting_roles()
+    {
+        var store = _factory.Services.GetRequiredService<InMemoryIamStore>();
+        var reader = store.CreateRole("Preview user reader", ["iam.users.read"]);
+        var auditor = store.CreateRole("Preview session reader", ["iam.sessions.read"]);
+        store.ReplaceRoleDataScopes(reader.RoleId, 0, [new("site", "SITE-A")]);
+        store.ReplaceRoleDataScopes(auditor.RoleId, 0, [new("work-center", "WC-B")]);
+
+        var created = await _client.PostAsJsonAsync(
+            "/api/iam/v1/users", new { loginName = "effective-preview", email = "preview@nerv.local", password = "Preview123!" });
+        created.EnsureSuccessStatusCode();
+        var user = (await ReadResponseDataAsync<UserResponse>(created))!;
+        store.ReplaceMembershipRoles(user.UserId, "org-001", "env-dev", [reader.RoleId, auditor.RoleId]);
+        store.ReplaceMembershipDataScopes(user.UserId, "org-001", "env-dev", [new("self", "self")]);
+
+        var login = await _client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+        login.EnsureSuccessStatusCode();
+        _client.DefaultRequestHeaders.Authorization = new("Bearer", (await ReadResponseDataAsync<AuthResponse>(login))!.AccessToken);
+
+        var userPage = await _client.GetAsync("/api/iam/v1/users?filterSearch=effective-preview");
+        userPage.EnsureSuccessStatusCode();
+        var listing = await ReadResponseDataAsync<Nerv.IIP.Iam.Web.Application.PagedListResponse<Nerv.IIP.Iam.Web.Application.Users.UserResponse>>(userPage);
+        Assert.Equal([auditor.RoleName, reader.RoleName], Assert.Single(listing!.Items).RoleNames);
+
+        var path = $"/api/iam/v1/users/{user.UserId}/effective-access";
+        var response = await _client.GetAsync(path + "?orgId=org-001&envId=env-dev");
+        response.EnsureSuccessStatusCode();
+        var access = (await ReadResponseDataAsync<Nerv.IIP.Iam.Web.Application.Users.EffectiveAccessResponse>(response))!;
+        Assert.Equal("active", access.Status);
+        Assert.Equal(2, access.Roles.Count);
+        var userRead = Assert.Single(access.Permissions, x => x.PermissionCode == "iam.users.read");
+        Assert.Equal([reader.RoleId], userRead.RoleIds);
+        Assert.Equal("SITE-A", Assert.Single(userRead.ScopeGrants, x => x.SourceKind == "role").ScopeId);
+        Assert.Equal(user.UserId, Assert.Single(userRead.ScopeGrants, x => x.SourceKind == "membership").ScopeId);
+        var sessionRead = Assert.Single(access.Permissions, x => x.PermissionCode == "iam.sessions.read");
+        Assert.Equal("WC-B", Assert.Single(sessionRead.ScopeGrants, x => x.SourceKind == "role").ScopeId);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await _client.GetAsync(path + "?orgId=org-001&envId=another-environment")).StatusCode);
+    }
+
+    [Fact]
     public async Task Admin_can_login_refresh_logout_and_validate_connector_host()
     {
         var login = await _client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
@@ -141,6 +182,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         var store = new InMemoryIamStore();
         store.ReplaceRoleDataScopes(
             "role-platform-admin",
+            0,
             [new DataScopeBinding(DataScopeBinding.Organization, "org-001")]);
         store.ReplaceMembershipDataScopes(
             "user-admin",
@@ -371,6 +413,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             $"/api/iam/v1/roles/{created.RoleId}/data-scopes",
             new
             {
+                expectedVersion = 0,
                 dataScopes = new[]
                 {
                     new { scopeType = " Workshop ", scopeCode = " WS-A " },
@@ -395,9 +438,19 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         var membershipScopes = await ReadResponseDataAsync<DataScopeListResponse>(membershipScopesPatch);
         Assert.Equal([new DataScopeResponse("site", "SITE-A")], membershipScopes!.DataScopes);
 
+        var conflict = await _client.PatchAsJsonAsync(
+            $"/api/iam/v1/roles/{created.RoleId}/data-scopes",
+            new { expectedVersion = 0, dataScopes = Array.Empty<object>() });
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+
+        var missingScopes = await _client.PatchAsJsonAsync(
+            $"/api/iam/v1/roles/{created.RoleId}/data-scopes",
+            new { unrelated = true });
+        Assert.Equal(HttpStatusCode.BadRequest, missingScopes.StatusCode);
+
         var unknownScope = await _client.PatchAsJsonAsync(
             $"/api/iam/v1/roles/{created.RoleId}/data-scopes",
-            new { dataScopes = new[] { new { scopeType = "cell", scopeCode = "CELL-A" } } });
+            new { expectedVersion = 1, dataScopes = new[] { new { scopeType = "cell", scopeCode = "CELL-A" } } });
         Assert.Equal(HttpStatusCode.BadRequest, unknownScope.StatusCode);
     }
 
@@ -606,7 +659,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         login.EnsureSuccessStatusCode();
 
         await AssertPagedEnvelopeAsync("/api/iam/v1/roles?pageIndex=1&pageSize=10&sortBy=roleName&sortOrder=asc&filterSearch=admin");
-        await AssertPagedEnvelopeAsync("/api/iam/v1/sessions?pageIndex=1&pageSize=10&sortBy=issuedAtUtc&sortOrder=desc&filterSearch=user-admin&filterRevoked=false");
+        await AssertPagedEnvelopeAsync("/api/iam/v1/sessions?pageIndex=1&pageSize=10&sortBy=issuedAtUtc&sortOrder=desc&filterSearch=user-admin&filterStatus=active");
     }
 
     [Fact]

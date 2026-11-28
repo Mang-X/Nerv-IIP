@@ -13,7 +13,7 @@ namespace Nerv.IIP.Iam.Web.Application.DataScopes;
 public sealed record DataScopeBindingRequest(string ScopeType, string ScopeCode);
 public sealed record DataScopeResponse(string ScopeType, string ScopeCode);
 public sealed record DataScopeListResponse(IReadOnlyList<DataScopeResponse> DataScopes);
-public sealed record PatchDataScopesRequest(IReadOnlyList<DataScopeBindingRequest> DataScopes);
+public sealed record PatchRoleDataScopesRequest(int? ExpectedVersion, IReadOnlyList<DataScopeBindingRequest> DataScopes);
 public sealed record PatchMembershipDataScopesRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -23,6 +23,7 @@ public interface IIamDataScopeApplicationService
 {
     Task<DataScopeListResponse> PatchRoleDataScopesAsync(
         string roleId,
+        int expectedVersion,
         IReadOnlyList<DataScopeBindingRequest> dataScopes,
         SecurityAuditContext? auditContext,
         CancellationToken cancellationToken);
@@ -40,6 +41,7 @@ public sealed class InMemoryIamDataScopeApplicationService(InMemoryIamStore stor
 {
     public Task<DataScopeListResponse> PatchRoleDataScopesAsync(
         string roleId,
+        int expectedVersion,
         IReadOnlyList<DataScopeBindingRequest> dataScopes,
         SecurityAuditContext? auditContext,
         CancellationToken cancellationToken)
@@ -48,7 +50,7 @@ public sealed class InMemoryIamDataScopeApplicationService(InMemoryIamStore stor
         _ = cancellationToken;
         try
         {
-            return Task.FromResult(ToResponse(store.ReplaceRoleDataScopes(roleId, Normalize(dataScopes))));
+            return Task.FromResult(ToResponse(store.ReplaceRoleDataScopes(roleId, expectedVersion, Normalize(dataScopes))));
         }
         catch (ArgumentException ex)
         {
@@ -92,12 +94,18 @@ public sealed class PostgreSqlIamDataScopeApplicationService(
 {
     public async Task<DataScopeListResponse> PatchRoleDataScopesAsync(
         string roleId,
+        int expectedVersion,
         IReadOnlyList<DataScopeBindingRequest> dataScopes,
         SecurityAuditContext? auditContext,
         CancellationToken cancellationToken)
     {
         var role = await roleRepository.GetByIdAsync(new RoleId(roleId), cancellationToken)
             ?? throw new KnownException($"Role '{roleId}' was not found.");
+        if (role.RowVersion.VersionNumber != expectedVersion)
+        {
+            throw new RoleDataScopeConflictException();
+        }
+
         var normalized = Normalize(dataScopes);
         var before = role.DataScopes.Select(x => new DataScopeBinding(x.ScopeType, x.ScopeCode)).ToArray();
         role.ReplaceDataScopes(normalized);

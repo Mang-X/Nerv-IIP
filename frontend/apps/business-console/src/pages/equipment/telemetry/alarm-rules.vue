@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type { BusinessConsoleTelemetryAlarmRuleItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import {
@@ -47,6 +48,9 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.iiot.alarm-rules.manage'))
 
 definePage({
   meta: {
@@ -175,6 +179,7 @@ const operatorOptions = [
 ]
 
 function openCreate() {
+  if (!canManage.value) return
   Object.assign(form, {
     deviceAssetId: '',
     ruleCode: '',
@@ -191,6 +196,7 @@ function openCreate() {
   formOpen.value = true
 }
 function openEdit(row: BusinessConsoleTelemetryAlarmRuleItem) {
+  if (!canManage.value) return
   formEditing.value = true
   Object.assign(form, {
     deviceAssetId: row.deviceAssetId ?? '',
@@ -207,6 +213,7 @@ function openEdit(row: BusinessConsoleTelemetryAlarmRuleItem) {
   formOpen.value = true
 }
 async function submitRule() {
+  if (!canManage.value) return
   const thresholdValue = parseThresholdValue(form.thresholdValue)
   if (
     !form.deviceAssetId.trim() ||
@@ -284,7 +291,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManage" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建报警规则
         </NvButton>
@@ -358,7 +365,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
       <template #cell-updatedAtUtc="{ row }">{{ formatDateTime(row.updatedAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`报警规则操作 ${row.ruleCode ?? ''}`">
-          <NvDropdownMenuItem @click="openEdit(row)">
+          <NvDropdownMenuItem v-if="canManage" @click="openEdit(row)">
             <EditIcon aria-hidden="true" />
             维护规则
           </NvDropdownMenuItem>
@@ -377,7 +384,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="formOpen">
+    <NvDialog v-if="canManage" v-model:open="formOpen">
       <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>{{ formEditing ? '编辑报警规则' : '新建报警规则' }}</NvDialogTitle>

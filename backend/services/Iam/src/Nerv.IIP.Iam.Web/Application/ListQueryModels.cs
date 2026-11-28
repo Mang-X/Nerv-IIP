@@ -7,7 +7,7 @@ public sealed record IamListQueryOptions(
     string? SortOrder,
     string? FilterSearch,
     bool? FilterEnabled,
-    bool? FilterRevoked)
+    string? FilterStatus)
 {
     private const int DefaultPageIndex = 1;
     private const int DefaultPageSize = 20;
@@ -20,7 +20,7 @@ public sealed record IamListQueryOptions(
         string? sortOrder,
         string? filterSearch,
         bool? filterEnabled = null,
-        bool? filterRevoked = null)
+        string? filterStatus = null)
     {
         var normalizedPageIndex = pageIndex is > 0 ? pageIndex.Value : DefaultPageIndex;
         var normalizedPageSize = pageSize is > 0 ? Math.Min(pageSize.Value, MaxPageSize) : DefaultPageSize;
@@ -31,7 +31,7 @@ public sealed record IamListQueryOptions(
             Normalize(sortOrder),
             Normalize(filterSearch),
             filterEnabled,
-            filterRevoked);
+            filterStatus);
     }
 
     public bool IsDescending => string.Equals(SortOrder, "desc", StringComparison.OrdinalIgnoreCase);

@@ -283,3 +283,45 @@ public sealed class RevokeConsoleIamSessionEndpoint(
         CancellationToken cancellationToken) =>
         admin.RevokeSessionAsync(bearerToken, Route<string>("sessionId")!, cancellationToken);
 }
+
+[Tags("Console IAM")]
+[HttpGet("/api/console/v1/iam/users/{userId}/effective-access")]
+[GatewayOperationId("getConsoleIamUserEffectiveAccess")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class GetConsoleIamUserEffectiveAccessEndpoint(
+    IGatewayIamAuthClient iam,
+    IGatewayAuthorizationClient auth,
+    IGatewayIamAdminClient admin)
+    : AuthorizedProxyEndpoint<ConsoleIamEffectiveAccessRequest, ConsoleIamEffectiveAccess>(iam, auth, GatewayPermissions.IamUsersRead)
+{
+    protected override Task<ConsoleIamEffectiveAccess> ForwardAsync(
+        AuthorizedProxyRequestContext context,
+        ConsoleIamEffectiveAccessRequest request,
+        CancellationToken cancellationToken) =>
+        admin.GetEffectiveAccessAsync(context.BearerToken, request, cancellationToken);
+}
+
+[Tags("Console IAM")]
+[HttpPatch("/api/console/v1/iam/roles/{roleId}/data-scopes")]
+[GatewayOperationId("patchConsoleIamRoleDataScopes")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(ResponseData), StatusCodes.Status409Conflict)]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class PatchConsoleIamRoleDataScopesEndpoint(
+    IGatewayIamAuthClient iam,
+    IGatewayAuthorizationClient auth,
+    IGatewayIamAdminClient admin)
+    : AuthorizedProxyEndpoint<ConsolePatchIamRoleDataScopesRequest, ConsoleIamDataScopes>(iam, auth, GatewayPermissions.IamRolesManage)
+{
+    protected override Task<ConsoleIamDataScopes> ForwardAsync(
+        AuthorizedProxyRequestContext context,
+        ConsolePatchIamRoleDataScopesRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.ExpectedVersion is null || request.DataScopes is null)
+        {
+            throw GatewayAuthException.BadRequest("Data scopes and expected version are required.");
+        }
+
+        return admin.PatchRoleDataScopesAsync(context.BearerToken, Route<string>("roleId")!, request, cancellationToken);
+    }
+}

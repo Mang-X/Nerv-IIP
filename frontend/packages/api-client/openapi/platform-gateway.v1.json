@@ -98,6 +98,16 @@
           }
         ],
         "responses": {
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -982,10 +992,10 @@
             }
           },
           {
-            "name": "filterRevoked",
+            "name": "filterStatus",
             "in": "query",
             "schema": {
-              "type": "boolean",
+              "type": "string",
               "nullable": true
             }
           }
@@ -1385,10 +1395,10 @@
             }
           },
           {
-            "name": "filterRevoked",
+            "name": "filterStatus",
             "in": "query",
             "schema": {
-              "type": "boolean",
+              "type": "string",
               "nullable": true
             }
           }
@@ -1607,10 +1617,10 @@
             }
           },
           {
-            "name": "filterRevoked",
+            "name": "filterStatus",
             "in": "query",
             "schema": {
-              "type": "boolean",
+              "type": "string",
               "nullable": true
             }
           }
@@ -1660,6 +1670,129 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/console/v1/iam/users/{userId}/effective-access": {
+      "get": {
+        "tags": [
+          "Console IAM",
+          "Api"
+        ],
+        "operationId": "getConsoleIamUserEffectiveAccess",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "envId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleIamEffectiveAccess"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/console/v1/iam/roles/{roleId}/data-scopes": {
+      "patch": {
+        "tags": [
+          "Console IAM",
+          "Api"
+        ],
+        "operationId": "patchConsoleIamRoleDataScopes",
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "ConsolePatchIamRoleDataScopesRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsolePatchIamRoleDataScopesRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleIamDataScopes"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
@@ -3865,6 +3998,12 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "roleNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -4056,6 +4195,28 @@
             "items": {
               "type": "string"
             }
+          },
+          "dataScopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamDataScope"
+            }
+          },
+          "scopeVersion": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamDataScope": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scopeType": {
+            "type": "string"
+          },
+          "scopeCode": {
+            "type": "string"
           }
         }
       },
@@ -4155,6 +4316,12 @@
           },
           "seeded": {
             "type": "boolean"
+          },
+          "jobRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -4229,6 +4396,178 @@
           "permissionVersion": {
             "type": "integer",
             "format": "int32"
+          },
+          "loginName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfConsoleIamEffectiveAccess": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamEffectiveAccess"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamEffectiveAccess": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "loginName": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "permissionVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse"
+            }
+          },
+          "membershipDataScopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamDataScope"
+            }
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamPermissionSources"
+            }
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamPermissionSources": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "permissionCode": {
+            "type": "string"
+          },
+          "roleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopeGrants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamScopeGrant"
+            }
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamScopeGrant": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceKind": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "scopeKind": {
+            "type": "string"
+          },
+          "scopeId": {
+            "type": "string"
+          },
+          "applicablePermissionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "organizationWide": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamEffectiveAccessRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfConsoleIamDataScopes": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamDataScopes"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamDataScopes": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dataScopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamDataScope"
+            }
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsolePatchIamRoleDataScopesRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dataScopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamDataScope"
+            }
           }
         }
       },

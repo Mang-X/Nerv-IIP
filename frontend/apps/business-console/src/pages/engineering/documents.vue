@@ -252,6 +252,7 @@ const canSubmit = computed(
 )
 
 function openCreate() {
+  if (!canManageDocuments.value) return
   uploadGeneration.value += 1
   Object.assign(form, blankForm())
   showErrors.value = false

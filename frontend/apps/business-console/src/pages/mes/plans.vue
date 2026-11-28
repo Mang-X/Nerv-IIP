@@ -5,6 +5,7 @@ import { useMesProductionPlans } from '@/composables/mes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { inlineErrorMessage } from '@/utils/notify'
 import {
   NvButton,
@@ -24,7 +25,11 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({
-  meta: { requiresAuth: true, title: '生产计划', requiredPermissions: ['business.mes.plans.read'] },
+  meta: {
+    requiresAuth: true,
+    title: '生产计划',
+    requiredPermissions: [P.mesPlansRead],
+  },
 })
 
 const {

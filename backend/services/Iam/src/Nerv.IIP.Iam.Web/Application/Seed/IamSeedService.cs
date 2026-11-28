@@ -143,11 +143,19 @@ public sealed class IamSeedService(
         await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
         await EnsureMesDowntimeTeamLeaderAsync(dbContext, cancellationToken);
 
-        var maintenance = NervIipSeedRoles.MaintenanceTechnician;
-        var maintenanceRoleId = new RoleId(maintenance.RoleId);
-        if (!await dbContext.Roles.AnyAsync(role => role.Id == maintenanceRoleId, cancellationToken))
+        SeedRoleDefinition[] businessRoles =
+        [
+            NervIipSeedRoles.MaintenanceTechnician,
+            NervIipSeedRoles.QualityManager,
+            NervIipSeedRoles.MasterDataAdministrator,
+        ];
+        foreach (var definition in businessRoles)
         {
-            dbContext.Roles.Add(new Role(maintenanceRoleId, maintenance.RoleName, maintenance.PermissionCodes));
+            var roleId = new RoleId(definition.RoleId);
+            if (!await dbContext.Roles.AnyAsync(role => role.Id == roleId, cancellationToken))
+            {
+                dbContext.Roles.Add(new Role(roleId, definition.RoleName, definition.PermissionCodes));
+            }
         }
 
         var (role, user) = await EnsurePlatformAdministratorAsync(

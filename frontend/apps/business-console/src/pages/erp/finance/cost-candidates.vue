@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePermission } from '@/composables/usePermission'
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
 import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
@@ -40,6 +41,9 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, readCount } from '../shared'
+
+const { can } = usePermission()
+const canManage = computed(() => can('business.erp.finance.manage'))
 
 definePage({
   meta: {
@@ -189,6 +193,7 @@ watch(
 )
 
 function openDialog() {
+  if (!canManage.value) return
   form.sourceType = 'production'
   form.sourceDocumentNo = ''
   form.amount = '0'
@@ -197,6 +202,7 @@ function openDialog() {
 }
 
 async function submit() {
+  if (!canManage.value) return
   showErrors.value = true
   if (!canSubmit.value) return
   try {
@@ -235,7 +241,7 @@ async function submit() {
           @click="costs.refresh"
           ><RefreshCwIcon aria-hidden="true" />刷新</NvButton
         >
-        <NvButton size="sm" type="button" @click="openDialog"
+        <NvButton v-if="canManage" size="sm" type="button" @click="openDialog"
           ><PlusIcon aria-hidden="true" />登记成本</NvButton
         >
       </template>
@@ -284,7 +290,7 @@ async function submit() {
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 
-    <NvDialog v-model:open="open">
+    <NvDialog v-if="canManage" v-model:open="open">
       <NvDialogContent>
         <NvDialogHeader
           ><NvDialogTitle>登记成本候选</NvDialogTitle

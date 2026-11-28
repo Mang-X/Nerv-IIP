@@ -233,10 +233,14 @@ IAM 仅在对应角色缺失时创建默认角色；重复 seed 不应覆盖同 
 | `POST /api/console/v1/iam/users/{userId}/disable` | `disableConsoleIamUser` | `iam.users.manage` |
 | `POST /api/console/v1/iam/users/{userId}/reset-password` | `resetConsoleIamUserPassword` | `iam.users.manage` |
 | `GET /api/console/v1/iam/users/{userId}/membership` | `getConsoleIamUserMembership` | `iam.users.read` |
+| `GET /api/console/v1/iam/users/{userId}/effective-access` | `getConsoleIamUserEffectiveAccess` | `iam.users.read` |
+
 | `PUT /api/console/v1/iam/users/{userId}/membership` | `replaceConsoleIamUserMembership` | `iam.users.manage` |
 | `GET /api/console/v1/iam/roles` | `listConsoleIamRoles` | `iam.roles.read` |
 | `POST /api/console/v1/iam/roles` | `createConsoleIamRole` | `iam.roles.manage` |
 | `PATCH /api/console/v1/iam/roles/{roleId}/permissions` | `updateConsoleIamRolePermissions` | `iam.roles.manage` |
+| `PATCH /api/console/v1/iam/roles/{roleId}/data-scopes` | `patchConsoleIamRoleDataScopes` | `iam.roles.manage` |
+
 | `GET /api/console/v1/iam/permissions` | `listConsoleIamPermissions` | `iam.roles.read` |
 | `GET /api/console/v1/iam/sessions` | `listConsoleIamSessions` | `iam.sessions.read` |
 | `POST /api/console/v1/iam/sessions/{sessionId}/revoke` | `revokeConsoleIamSession` | `iam.sessions.revoke` |

@@ -64,9 +64,14 @@ public class Role : Entity<RoleId>, IAggregateRoot
             .Select(DataScopeBinding.Normalize)
             .Distinct()
             .ToHashSet();
-        dataScopes.RemoveAll(x => !desired.Contains(new DataScopeBinding(x.ScopeType, x.ScopeCode)));
-
         var existing = dataScopes.Select(x => new DataScopeBinding(x.ScopeType, x.ScopeCode)).ToHashSet();
+        if (existing.SetEquals(desired))
+        {
+            return;
+        }
+
+        RowVersion = new RowVersion(RowVersion.VersionNumber + 1);
+        dataScopes.RemoveAll(x => !desired.Contains(new DataScopeBinding(x.ScopeType, x.ScopeCode)));
         foreach (var scope in desired.OrderBy(x => x.ScopeType, StringComparer.Ordinal).ThenBy(x => x.ScopeCode, StringComparer.Ordinal))
         {
             if (!existing.Contains(scope))
@@ -76,6 +81,8 @@ public class Role : Entity<RoleId>, IAggregateRoot
         }
     }
 }
+
+public sealed class RoleDataScopeConflictException : Exception;
 
 public class RolePermission : Entity<RolePermissionId>
 {
@@ -174,4 +181,13 @@ public sealed record PermissionDataScopeGrant(
     string ScopeKind,
     string ScopeId,
     IReadOnlyCollection<string> ApplicablePermissionCodes,
-    bool OrganizationWide = false);
+    bool OrganizationWide = false)
+{
+    public static PermissionDataScopeGrant FromBinding(
+        string sourceKind, string sourceId, DataScopeBinding scope,
+        string userId, string organizationId, string permissionCode) =>
+        new(sourceKind, sourceId, scope.ScopeType,
+            scope.ScopeType == DataScopeBinding.Self ? userId : scope.ScopeCode,
+            [permissionCode],
+            scope.ScopeType == DataScopeBinding.Organization && scope.ScopeCode == organizationId);
+}

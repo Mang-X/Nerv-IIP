@@ -39,6 +39,12 @@ const pvRow = {
   status: 'active',
 }
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: { permissionCodes: ['business.engineering.production-versions.manage'] },
+  }),
+}))
+
 vi.mock('@/composables/engineering', () => ({
   useEngineeringProductionVersions: () => ({
     archiveProductionVersion: stub.archiveProductionVersion,

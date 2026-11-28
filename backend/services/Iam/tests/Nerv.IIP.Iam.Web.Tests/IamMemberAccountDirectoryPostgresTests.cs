@@ -7,7 +7,9 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Web.Application.Sessions;
 using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Testing.PostgreSql;
@@ -20,6 +22,58 @@ namespace Nerv.IIP.Iam.Web.Tests;
 /// </summary>
 public sealed class IamMemberAccountDirectoryPostgresTests
 {
+    [IamMemberAccountPostgresFact]
+    public async Task Session_list_pages_by_status_and_expired_sessions_remain_unrevoked_on_postgres()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_iam_sessions");
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState
+            .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
+            .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
+            .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
+            .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+        await using var factory = new WebApplicationFactory<Program>();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            database.AssertOwns(db.Database.GetConnectionString());
+            await scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>().MigrateAsync();
+            await scope.ServiceProvider.GetRequiredService<IamSeedService>().SeedAsync(CancellationToken.None);
+
+            var issued = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var userId = new UserId("user-admin");
+            db.UserSessions.Add(new UserSession(new UserSessionId("expired-01"), userId, "hash-01", issued, issued.AddDays(1), 1, null, null));
+            db.UserSessions.Add(new UserSession(new UserSessionId("expired-02"), userId, "hash-02", issued, issued.AddDays(1), 1, null, null));
+            await db.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+        login.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", (await ReadAsync<AuthResponse>(login)).AccessToken);
+
+        const string path = "/api/iam/v1/sessions";
+        var active = await ReadAsync<SessionPage>(await client.GetAsync(path + "?filterStatus=active&filterSearch=ADMIN"));
+        var activeSession = Assert.Single(active.Items);
+        Assert.Equal("admin", activeSession.LoginName);
+        Assert.Equal("active", activeSession.Status);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync(path + "/expired-01/revoke", null)).StatusCode);
+        var expired = await ReadAsync<SessionPage>(await client.GetAsync(
+            path + "?filterStatus=expired&filterSearch=admin&pageIndex=2&pageSize=1"));
+        Assert.Equal(2, expired.TotalCount);
+        var expiredSession = Assert.Single(expired.Items);
+        Assert.Equal("expired-02", expiredSession.SessionId);
+        Assert.Equal("expired", expiredSession.Status);
+        var original = await ReadAsync<SessionPage>(await client.GetAsync(path + "?filterSearch=expired-01"));
+        Assert.Null(Assert.Single(original.Items).RevokedAtUtc);
+    }
+
+    private sealed record SessionPage(int TotalCount, IReadOnlyList<SessionResponse> Items);
+
     [IamMemberAccountPostgresFact]
     public async Task Production_planner_query_filters_role_scope_and_active_accounts_on_postgres()
     {

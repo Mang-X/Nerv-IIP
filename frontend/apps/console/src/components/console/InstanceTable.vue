@@ -7,6 +7,7 @@ import { instanceStatusLabel, instanceTone } from './instanceStatus'
 const props = defineProps<{
   instances: InstanceListItem[]
   pending?: boolean
+  canRestart?: boolean
   restartPending?: boolean
   selectedInstanceKey?: string
 }>()
@@ -94,6 +95,7 @@ function rowKey(instance: InstanceListItem) {
           type="button"
           variant="outline"
           :aria-label="`重启 ${instanceLabel(row)}`"
+          v-if="props.canRestart"
           :disabled="props.restartPending || !row.instanceKey"
           @click="row.instanceKey && emit('restartInstance', row.instanceKey)"
         >

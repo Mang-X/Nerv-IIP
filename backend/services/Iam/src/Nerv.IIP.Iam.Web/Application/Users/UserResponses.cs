@@ -11,7 +11,10 @@ public sealed record UserResponse(
     DateTimeOffset? LockoutUntilUtc,
     string? DisplayName = null,
     string? EmployeeNo = null,
-    string? DepartmentName = null);
+    string? DepartmentName = null)
+{
+    public IReadOnlyList<string> RoleNames { get; init; } = [];
+}
 
 public sealed record UserMembershipResponse(
     string UserId,
