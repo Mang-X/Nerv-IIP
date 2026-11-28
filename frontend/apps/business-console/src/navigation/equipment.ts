@@ -41,7 +41,7 @@ export const equipmentSideNav: SideNav = [
         requiredPermissions: [P.iiotTelemetryRead],
       },
       {
-        title: '采集健康',
+        title: '连接与采集配置',
         icon: NetworkIcon,
         to: { path: '/equipment/telemetry/connectors' },
         requiredPermissions: [P.iiotTelemetryRead],

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
+import { useBusinessTelemetryTags } from '@/composables/equipment/useBusinessTelemetry'
+import { formatTelemetryUnit } from '@/data/businessLabels'
 import DeviceQuickViewSheet from '@/components/equipment/DeviceQuickViewSheet.vue'
 import {
   describeAvailabilityWindowReference,
@@ -67,12 +69,25 @@ const {
   overviewError,
   overviewPending,
   overviewState,
+  polling,
+  updatedAt,
   refreshDeviceRoster,
   refreshOverview,
 } = useBusinessEquipmentOverview()
 
 // 车间 → 产线 → 设备 级联范围：选择结果映射为 overview 接口吃的设备编号集合。
 const { scope, levels, devicesInScope, scopePending } = useEquipmentScopeSelection()
+const publicIdsByCode = computed(
+  () =>
+    new Map(
+      devicesInScope.value
+        .filter((item) => item.code && item.deviceAssetId)
+        .map((item) => [item.code, item.deviceAssetId]),
+    ),
+)
+function deviceDetailPath(reference?: string | null) {
+  return `/equipment/${encodeURIComponent(publicIdsByCode.value.get(reference ?? '') ?? reference ?? '')}`
+}
 const scopeNarrowed = computed(() =>
   Boolean(scope.value.workshop || scope.value.line || scope.value.device),
 )
@@ -156,6 +171,26 @@ function deviceLabel(code?: string | null, fallback = '无编号') {
   return resolveDevice(code) ?? code
 }
 
+const { tags } = useBusinessTelemetryTags({ take: 500 }, () => (polling.value ? 5_000 : false))
+const indicatorsByDevice = computed(() => {
+  const indicators = new Map<string, typeof tags.value>()
+  for (const tag of tags.value) {
+    if (!tag.deviceAssetId || tag.latestValue == null || tag.isEnabled === false) continue
+    const device = resolveDeviceCode(tag.deviceAssetId) ?? tag.deviceAssetId
+    const current = indicators.get(device) ?? []
+    current.push(tag)
+    indicators.set(device, current)
+  }
+  for (const [device, current] of indicators) {
+    indicators.set(
+      device,
+      current
+        .sort((a, b) => (b.latestSampledAtUtc ?? '').localeCompare(a.latestSampledAtUtc ?? ''))
+        .slice(0, 2),
+    )
+  }
+  return indicators
+})
 type Device = (typeof devices)['value'][number]
 const columns: NvDataTableColumn<Device>[] = [
   {
@@ -170,6 +205,7 @@ const columns: NvDataTableColumn<Device>[] = [
   },
   { key: 'currentState', header: '状态', width: 'w-24' },
   { key: 'isSourceFresh', header: '实时数据', width: 'w-24' },
+  { key: 'indicators', header: '关键实时指标' },
   { key: 'activeAlarmCount', header: '报警', align: 'end', width: 'w-16' },
   { key: 'activeBlockCount', header: '阻塞', align: 'end', width: 'w-16' },
   {
@@ -228,6 +264,20 @@ function formatDateTime(value?: string | null) {
   <BusinessLayout>
     <NvPageHeader title="设备运行看板" :breadcrumbs="[{ label: '设备监控' }]" :count="headerCount">
       <template #actions>
+        <NvButton
+          v-if="auth.principal?.permissionCodes?.includes(P.iiotTelemetryRead)"
+          size="sm"
+          variant="outline"
+          as-child
+        >
+          <RouterLink to="/equipment/telemetry/connectors">连接配置</RouterLink>
+        </NvButton>
+        <NvButton size="sm" variant="outline" @click="polling = !polling">{{
+          polling ? '暂停刷新' : '恢复刷新'
+        }}</NvButton>
+        <span v-if="updatedAt" class="text-xs text-muted-foreground"
+          >更新于 {{ updatedAt.toLocaleTimeString() }}</span
+        >
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/alarms"
             ><BellRingIcon aria-hidden="true" />查看报警</RouterLink
@@ -357,7 +407,7 @@ function formatDateTime(value?: string | null) {
       >
         <template #cell-deviceAssetId="{ row }">
           <RouterLink
-            :to="`/equipment/${row.deviceAssetId}`"
+            :to="deviceDetailPath(row.deviceAssetId)"
             class="grid min-w-0 leading-tight text-brand underline-offset-4 hover:underline"
           >
             <span class="min-w-0 truncate font-medium" :title="deviceLabel(row.deviceAssetId)">{{
@@ -381,6 +431,30 @@ function formatDateTime(value?: string | null) {
           <NvBadge class="rounded-sm" :variant="rowFreshness(row).tone">{{
             rowFreshness(row).label
           }}</NvBadge>
+        </template>
+        <template #cell-indicators="{ row }">
+          <div
+            v-for="point in indicatorsByDevice.get(
+              resolveDeviceCode(row.deviceAssetId) ?? row.deviceAssetId ?? '',
+            )"
+            :key="point.tagKey"
+            class="text-xs"
+          >
+            {{ point.displayName || point.tagKey }}
+            <strong
+              >{{ point.latestValue?.toLocaleString(undefined, { maximumFractionDigits: 3 }) }}
+              {{ formatTelemetryUnit(point.unitCode, '') }}</strong
+            >
+          </div>
+          <span
+            v-if="
+              !indicatorsByDevice.has(
+                resolveDeviceCode(row.deviceAssetId) ?? row.deviceAssetId ?? '',
+              )
+            "
+            class="text-muted-foreground"
+            >—</span
+          >
         </template>
         <template #cell-activeAlarmCount="{ row }"
           ><span class="tabular-nums">{{ row.activeAlarmCount ?? 0 }}</span></template

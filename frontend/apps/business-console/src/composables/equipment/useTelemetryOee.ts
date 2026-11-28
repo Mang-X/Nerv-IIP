@@ -146,13 +146,13 @@ export function useBusinessTelemetryOeeTrend(filters: TelemetryOeeAggregateFilte
   const queryEnabled = computed(
     () =>
       hasBusinessContext(businessContext) &&
-      filters.dimension === 'day' &&
       filters.windowStartUtc.trim().length > 0 &&
       filters.windowEndUtc.trim().length > 0,
   )
   const trendQuery = useQuery(() => ({
     key: [
-      'business-telemetry-oee-complete-trend',
+      'business-telemetry-oee-complete-buckets',
+      filters.dimension,
       businessContext.organizationId,
       businessContext.environmentId,
       filters.windowStartUtc,
@@ -165,6 +165,8 @@ export function useBusinessTelemetryOeeTrend(filters: TelemetryOeeAggregateFilte
       filters.businessDate,
     ],
     query: async (context): Promise<BusinessConsoleTelemetryOeeAggregateBucket[]> => {
+      const scope = { ...filters }
+      const contextQuery = toContextQuery(businessContext)
       const buckets: BusinessConsoleTelemetryOeeAggregateBucket[] = []
       const take = 100
       let totalCount = 0
@@ -172,16 +174,16 @@ export function useBusinessTelemetryOeeTrend(filters: TelemetryOeeAggregateFilte
       do {
         const { data } = await queryBusinessConsoleTelemetryOeeAggregates({
           query: {
-            ...toContextQuery(businessContext),
-            dimension: 'day',
-            windowStartUtc: filters.windowStartUtc,
-            windowEndUtc: filters.windowEndUtc,
-            deviceAssetId: trimOptional(filters.deviceAssetId),
-            workCenterId: trimOptional(filters.workCenterId),
-            shiftCode: trimOptional(filters.shiftCode),
-            lineCode: trimOptional(filters.lineCode),
-            workshopCode: trimOptional(filters.workshopCode),
-            businessDate: trimOptional(filters.businessDate),
+            ...contextQuery,
+            dimension: scope.dimension,
+            windowStartUtc: scope.windowStartUtc,
+            windowEndUtc: scope.windowEndUtc,
+            deviceAssetId: trimOptional(scope.deviceAssetId),
+            workCenterId: trimOptional(scope.workCenterId),
+            shiftCode: trimOptional(scope.shiftCode),
+            lineCode: trimOptional(scope.lineCode),
+            workshopCode: trimOptional(scope.workshopCode),
+            businessDate: trimOptional(scope.businessDate),
             skip: buckets.length,
             take,
           },

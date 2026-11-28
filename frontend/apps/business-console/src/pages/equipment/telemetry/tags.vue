@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryTagItem } from '@nerv-iip/api-client'
+import DeviceTelemetryPointsSheet from '@/components/equipment/DeviceTelemetryPointsSheet.vue'
+import { formatTelemetryDateTime } from '@/components/equipment/telemetryHistoryPresentation'
+import { useAuthStore } from '@/stores/auth'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import {
   formatSamplingPolicy,
@@ -21,7 +24,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { EyeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
 
@@ -33,9 +36,27 @@ definePage({
   },
 })
 
-const { filters, refreshTags, tags, tagsError, tagsPending, tagsTotal } = useBusinessTelemetryTags()
+const { filters, refreshTags, tags, tagsError, tagsPending, tagsTotal } = useBusinessTelemetryTags(
+  {},
+  5_000,
+)
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.deviceAssetId] })
 const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
+
+const auth = useAuthStore()
+const canManage = computed(
+  () => auth.principal?.permissionCodes?.includes('business.iiot.tags.manage') ?? false,
+)
+const pointsOpen = ref(false)
+const pointDevice = ref('')
+const pointAction = ref<'create' | 'edit' | 'disable'>('create')
+const selectedPoint = ref<BusinessConsoleTelemetryTagItem>()
+function openPoint(action: typeof pointAction.value, point?: BusinessConsoleTelemetryTagItem) {
+  pointDevice.value = point?.deviceAssetId ?? filters.deviceAssetId
+  selectedPoint.value = point
+  pointAction.value = action
+  pointsOpen.value = true
+}
 
 const errorMessage = computed(() => inlineErrorMessage(tagsError.value))
 
@@ -87,6 +108,19 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
     header: '采集周期',
     accessor: (r) => formatSamplingPolicy(r.samplingPolicy),
   },
+  {
+    key: 'latestValue',
+    header: '当前实时值',
+    accessor: (row) =>
+      row.latestValue == null
+        ? '—'
+        : `${row.latestValue.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${formatTelemetryUnit(row.unitCode, '')}`,
+  },
+  {
+    key: 'latestSampledAtUtc',
+    header: '最后采样时间',
+    accessor: (row) => formatTelemetryDateTime(row.latestSampledAtUtc),
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
@@ -103,6 +137,9 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
       :count="`${tagsTotal} 个采集点位`"
     >
       <template #actions>
+        <NvButton v-if="canManage" size="sm" variant="brand" @click="openPoint('create')"
+          >新建点位</NvButton
+        >
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/telemetry/alarm-rules"
             ><Settings2Icon aria-hidden="true" />报警规则</RouterLink
@@ -172,6 +209,14 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
       </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`采集点位操作 ${row.tagKey ?? ''}`">
+          <NvDropdownMenuItem v-if="canManage" @select="openPoint('edit', row)"
+            >编辑</NvDropdownMenuItem
+          >
+          <NvDropdownMenuItem
+            v-if="canManage && row.isEnabled !== false"
+            @select="openPoint('disable', row)"
+            >停用</NvDropdownMenuItem
+          >
           <NvDropdownMenuItem as-child>
             <RouterLink
               :to="{
@@ -202,5 +247,27 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
         </NvRowActions>
       </template>
     </NvDataTable>
+    <div
+      v-if="pointsOpen && !pointDevice"
+      class="flex items-center gap-3 rounded-lg border bg-card p-4"
+    >
+      <NvEntityPicker
+        v-model="pointDevice"
+        :options="deviceOptions"
+        title="选择新点位所属设备"
+        placeholder="选择新点位所属设备"
+      />
+      <NvButton variant="outline" @click="pointsOpen = false">取消</NvButton>
+    </div>
+    <DeviceTelemetryPointsSheet
+      v-if="pointDevice"
+      v-model:open="pointsOpen"
+      :device-asset-id="pointDevice"
+      :device-title="deviceLabel(pointDevice)"
+      :can-manage="canManage"
+      :action="pointAction"
+      :point="selectedPoint"
+      @changed="refreshTags"
+    />
   </BusinessLayout>
 </template>

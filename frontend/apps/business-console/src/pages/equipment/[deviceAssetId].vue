@@ -2,7 +2,14 @@
 import DeviceControlSheet from '@/components/equipment/DeviceControlSheet.vue'
 import DeviceTelemetryPointsSheet from '@/components/equipment/DeviceTelemetryPointsSheet.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { NvButton, NvPageHeader } from '@nerv-iip/ui'
+import {
+  NvButton,
+  NvDropdownMenu,
+  NvDropdownMenuContent,
+  NvDropdownMenuItem,
+  NvDropdownMenuTrigger,
+  NvPageHeader,
+} from '@nerv-iip/ui'
 import {
   ArrowLeftIcon,
   CalendarRangeIcon,
@@ -17,6 +24,7 @@ import {
   WrenchIcon,
 } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
+import DeviceLiveTelemetrySection from './components/DeviceLiveTelemetrySection.vue'
 import DeviceDetailMetrics from './components/DeviceDetailMetrics.vue'
 import DeviceStateAndAvailability from './components/DeviceStateAndAvailability.vue'
 import DevicePerformanceSection from './components/DevicePerformanceSection.vue'
@@ -71,10 +79,6 @@ const {
   healthPending,
   historyCount,
   historyFilters,
-  historyPreview,
-  historyType,
-  historyTypeLabel,
-  historyValue,
   inspectionResultLabel,
   intervalLabel,
   maintenanceAvailabilityWindows,
@@ -141,99 +145,9 @@ const {
           <HashIcon aria-hidden="true" />
           采集点位
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
-        </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink
-            :to="{
-              path: '/equipment/telemetry/history',
-              query: {
-                deviceAssetId: filters.deviceAssetId,
-                windowEndUtc: historyFilters.windowEndUtc,
-                windowStartUtc: historyFilters.windowStartUtc,
-              },
-            }"
-          >
-            <LineChartIcon aria-hidden="true" />
-            历史趋势
-          </RouterLink>
-        </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink
-            :to="{
-              path: '/equipment/telemetry/oee',
-              query: { deviceAssetId: filters.deviceAssetId },
-            }"
-          >
-            <GaugeIcon aria-hidden="true" />
-            OEE 趋势与横比
-          </RouterLink>
-        </NvButton>
         <NvButton size="sm" type="button" variant="outline" @click="recordDowntime">
           <WrenchIcon aria-hidden="true" />
           记录停机
-        </NvButton>
-        <NvButton
-          v-if="canCreateMaintenanceWorkOrder"
-          size="sm"
-          type="button"
-          variant="outline"
-          as-child
-        >
-          <RouterLink
-            :to="{
-              path: '/maintenance/work-orders',
-              query: { deviceAssetId: filters.deviceAssetId },
-            }"
-          >
-            <WrenchIcon aria-hidden="true" />
-            创建维修工单
-          </RouterLink>
-        </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink
-            :to="{
-              path: '/maintenance/reliability',
-              query: { deviceAssetId: filters.deviceAssetId },
-            }"
-          >
-            <TrendingUpIcon aria-hidden="true" />
-            可靠性
-          </RouterLink>
-        </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink
-            :to="{
-              path: '/maintenance/availability',
-              query: { deviceAssetId: filters.deviceAssetId },
-            }"
-          >
-            <CalendarRangeIcon aria-hidden="true" />
-            可用窗口
-          </RouterLink>
-        </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink
-            :to="{
-              path: '/maintenance/inspections',
-              query: { deviceAssetId: filters.deviceAssetId },
-            }"
-          >
-            <ClipboardCheckIcon aria-hidden="true" />
-            点检
-          </RouterLink>
-        </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink
-            :to="{
-              path: '/maintenance/spare-parts',
-              query: { deviceAssetId: filters.deviceAssetId },
-            }"
-          >
-            <PackageSearchIcon aria-hidden="true" />
-            备件
-          </RouterLink>
         </NvButton>
         <NvButton
           size="sm"
@@ -245,6 +159,97 @@ const {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
+        <NvDropdownMenu>
+          <NvDropdownMenuTrigger as-child
+            ><NvButton size="sm" variant="outline">更多</NvButton></NvDropdownMenuTrigger
+          >
+          <NvDropdownMenuContent align="end">
+            <NvDropdownMenuItem as-child>
+              <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/equipment/telemetry/history',
+                  query: {
+                    deviceAssetId: filters.deviceAssetId,
+                    windowEndUtc: historyFilters.windowEndUtc,
+                    windowStartUtc: historyFilters.windowStartUtc,
+                  },
+                }"
+              >
+                <LineChartIcon aria-hidden="true" />
+                历史趋势
+              </RouterLink>
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/equipment/telemetry/oee',
+                  query: { deviceAssetId: filters.deviceAssetId },
+                }"
+              >
+                <GaugeIcon aria-hidden="true" />
+                OEE 趋势与横比
+              </RouterLink>
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem v-if="canCreateMaintenanceWorkOrder" as-child>
+              <RouterLink
+                :to="{
+                  path: '/maintenance/work-orders',
+                  query: { deviceAssetId: filters.deviceAssetId },
+                }"
+              >
+                <WrenchIcon aria-hidden="true" />
+                创建维修工单
+              </RouterLink>
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/maintenance/reliability',
+                  query: { deviceAssetId: filters.deviceAssetId },
+                }"
+              >
+                <TrendingUpIcon aria-hidden="true" />
+                可靠性
+              </RouterLink>
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/maintenance/availability',
+                  query: { deviceAssetId: filters.deviceAssetId },
+                }"
+              >
+                <CalendarRangeIcon aria-hidden="true" />
+                可用窗口
+              </RouterLink>
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/maintenance/inspections',
+                  query: { deviceAssetId: filters.deviceAssetId },
+                }"
+              >
+                <ClipboardCheckIcon aria-hidden="true" />
+                点检
+              </RouterLink>
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/maintenance/spare-parts',
+                  query: { deviceAssetId: filters.deviceAssetId },
+                }"
+              >
+                <PackageSearchIcon aria-hidden="true" />
+                备件
+              </RouterLink>
+            </NvDropdownMenuItem>
+          </NvDropdownMenuContent>
+        </NvDropdownMenu>
       </template>
     </NvPageHeader>
 
@@ -267,7 +272,12 @@ const {
         :state-text="stateText"
       />
 
+      <DeviceLiveTelemetrySection
+        :device-asset-id="currentState?.deviceAssetId || filters.deviceAssetId"
+      />
+
       <DeviceStateAndAvailability
+        :device-asset-id="filters.deviceAssetId"
         :active-alarms="activeAlarms"
         :availability-windows="availabilityWindows"
         :badge-variant="badgeVariant"
@@ -292,10 +302,6 @@ const {
         :filters="filters"
         :history-count="historyCount"
         :history-filters="historyFilters"
-        :history-preview="historyPreview"
-        :history-type="historyType"
-        :history-type-label="historyTypeLabel"
-        :history-value="historyValue"
         :most-urgent-ok-runtime-candidate="mostUrgentOkRuntimeCandidate"
         :oee="oee"
         :oee-degraded-reasons="oeeDegradedReasons"

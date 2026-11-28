@@ -52,7 +52,10 @@ const props = defineProps<{
   deviceAssetId: string
   deviceTitle: string
   canManage: boolean
+  action?: 'create' | 'edit' | 'disable'
+  point?: BusinessConsoleTelemetryTagItem
 }>()
+const emit = defineEmits<{ changed: [] }>()
 const open = defineModel<boolean>('open', { required: true })
 
 const {
@@ -86,9 +89,17 @@ const form = reactive({
   controlAllowedValues: [] as string[],
 })
 
-watch(open, (value) => {
-  if (value) backToList()
-})
+watch(
+  () => [open.value, props.deviceAssetId, props.action, props.point] as const,
+  ([value]) => {
+    if (!value) return
+    backToList()
+    if (props.action === 'create') openCreate()
+    if (props.action === 'edit' && props.point) openEdit(props.point)
+    if (props.action === 'disable' && props.point) openDisable(props.point)
+  },
+  { immediate: true },
+)
 
 const listErrorMessage = computed(() => inlineErrorMessage(pointsError.value))
 
@@ -251,6 +262,7 @@ async function submit() {
       controlMaxValue: typeof max === 'number' ? max : null,
       controlAllowedValues: writable ? form.controlAllowedValues : [],
     })
+    emit('changed')
     notifySuccess(editing.value ? `采集点位已更新：${title}` : `采集点位已新建：${title}`)
     backToList()
   } catch (error) {
@@ -263,6 +275,7 @@ async function confirmDisable() {
   if (!target?.tagKey) return
   try {
     await disablePoint(target.tagKey)
+    emit('changed')
     notifySuccess(`采集点位已停用：${pointTitle(target)}`)
     disableOpen.value = false
     disableTarget.value = null

@@ -3,7 +3,7 @@ import {
   describeTelemetryOeeLimitations,
   formatOeeQuantity,
 } from '@/composables/equipment/useBusinessTelemetry'
-import { NvBadge, NvButton, NvMetricCard, NvSectionCards } from '@nerv-iip/ui'
+import { NvButton, NvMetricCard, NvSectionCards } from '@nerv-iip/ui'
 import { GaugeIcon, LineChartIcon, Settings2Icon } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import { formatDateTime } from '@/utils/format'
@@ -18,10 +18,6 @@ defineProps<{
   filters: View['filters']
   historyCount: View['historyCount']
   historyFilters: View['historyFilters']
-  historyPreview: View['historyPreview']
-  historyType: View['historyType']
-  historyTypeLabel: View['historyTypeLabel']
-  historyValue: View['historyValue']
   mostUrgentOkRuntimeCandidate: View['mostUrgentOkRuntimeCandidate']
   oee: View['oee']
   oeeDegradedReasons: View['oeeDegradedReasons']
@@ -170,45 +166,7 @@ defineProps<{
       />
     </NvSectionCards>
 
-    <div class="grid gap-4 lg:grid-cols-2">
-      <div class="rounded-lg border bg-card">
-        <div class="border-b px-4 py-3">
-          <h3 class="text-sm font-semibold text-foreground">历史趋势摘录</h3>
-          <p class="mt-1 text-xs text-muted-foreground">
-            仅展示最近事件，完整曲线请进入设备历史趋势页。
-          </p>
-        </div>
-        <div class="grid gap-3 p-4">
-          <div v-if="telemetryPending" class="text-sm text-muted-foreground">
-            正在读取历史数据。
-          </div>
-          <div
-            v-for="item in historyPreview"
-            :key="`${item.occurredAtUtc}-${item.tagKey}-${historyValue(item)}`"
-            class="grid gap-1 rounded-lg border p-3"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm font-medium text-foreground">{{
-                item.tagKey ?? '未命名采集点'
-              }}</span>
-              <NvBadge class="rounded-sm" variant="neutral">{{
-                historyTypeLabel(historyType(item))
-              }}</NvBadge>
-            </div>
-            <p class="text-sm text-muted-foreground">{{ historyValue(item) }}</p>
-            <p class="text-xs text-muted-foreground">
-              {{ formatDateTime(item.occurredAtUtc) }}
-            </p>
-          </div>
-          <div
-            v-if="!telemetryPending && !historyPreview.length"
-            class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
-          >
-            所选时间范围内没有历史数据；不代表设备未接入，可换个时间范围再看。
-          </div>
-        </div>
-      </div>
-
+    <div>
       <div class="rounded-lg border bg-card">
         <div class="border-b px-4 py-3">
           <h3 class="text-sm font-semibold text-foreground">OEE 计算依据</h3>

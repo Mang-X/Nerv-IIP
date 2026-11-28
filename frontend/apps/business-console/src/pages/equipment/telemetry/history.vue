@@ -3,12 +3,16 @@ import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
 import type { DateRange, EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
 import EquipmentScopeOverviewCard from '@/components/equipment/EquipmentScopeOverviewCard.vue'
 import TelemetryEventTimeline from '@/components/equipment/TelemetryEventTimeline.vue'
+import { telemetryReferenceLines } from '@/components/equipment/telemetryThresholds'
 import TelemetryTrendPanel from '@/components/equipment/TelemetryTrendPanel.vue'
 import {
   formatTelemetryDateTime,
   projectTelemetryHistory,
 } from '@/components/equipment/telemetryHistoryPresentation'
-import { useBusinessTelemetryHistory } from '@/composables/equipment/useBusinessTelemetry'
+import {
+  useBusinessTelemetryAlarmRules,
+  useBusinessTelemetryHistory,
+} from '@/composables/equipment/useBusinessTelemetry'
 import { useTelemetryTagCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
 import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
@@ -26,7 +30,7 @@ import {
   NvPageHeader,
 } from '@nerv-iip/ui'
 import { GaugeIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -39,15 +43,35 @@ definePage({
 
 const route = useRoute()
 const router = useRouter()
+const presets = [
+  { minutes: 15, label: '近 15 分钟' },
+  { minutes: 60, label: '近 1 小时' },
+  { minutes: 360, label: '近 6 小时' },
+  { minutes: 1440, label: '近 24 小时' },
+  { minutes: 10080, label: '近 7 天' },
+]
+const autoRefresh = ref(false)
+const preset = ref(presets.find((item) => String(item.minutes) === routeQuery('minutes'))?.minutes)
+function selectWindow(minutes?: number) {
+  preset.value = minutes
+  if (!minutes) return
+  const end = Date.now()
+  filters.windowStartUtc = new Date(end - minutes * 60_000).toISOString()
+  filters.windowEndUtc = new Date(end).toISOString()
+}
 // 默认近 7 天：一台设备的趋势要看出班次/昼夜规律，8 小时窗口太窄，一进页面就像"没数据"。
 const DEFAULT_WINDOW_DAYS = 7
 const { filters, historyError, historyPending, refreshHistory, visibleHistoryItems } =
-  useBusinessTelemetryHistory({
-    deviceAssetId: routeQuery('deviceAssetId'),
-    tagKey: routeQuery('tagKey'),
-    windowEndUtc: routeQuery('windowEndUtc') || defaultWindowEnd(),
-    windowStartUtc: routeQuery('windowStartUtc') || defaultWindowStart(),
-  })
+  useBusinessTelemetryHistory(
+    {
+      deviceAssetId: routeQuery('deviceAssetId'),
+      tagKey: routeQuery('tagKey'),
+      windowEndUtc: routeQuery('windowEndUtc') || defaultWindowEnd(),
+      windowStartUtc: routeQuery('windowStartUtc') || defaultWindowStart(),
+    },
+    () => (autoRefresh.value ? 5_000 : false),
+    () => (autoRefresh.value ? preset.value : undefined),
+  )
 const defaultWindowStartUtc = filters.windowStartUtc
 const defaultWindowEndUtc = filters.windowEndUtc
 
@@ -75,7 +99,12 @@ watch(
  * 采集标签跟随当前设备：选中设备后目录只列该设备已配置的测点，未选设备时列全部。
  * 换设备后旧测点若不在新设备的目录里就清空，避免筛选条件与选择器显示对不上。
  */
-const { tagOptions, tagsPending } = useTelemetryTagCatalog(() => filters.deviceAssetId)
+const telemetryDeviceId = computed(
+  () =>
+    devicesInScope.value.find((device) => device.code === filters.deviceAssetId)?.deviceAssetId ??
+    filters.deviceAssetId,
+)
+const { tagOptions, tagsPending, numericTags } = useTelemetryTagCatalog(telemetryDeviceId)
 const selectedTagInCatalog = computed(() =>
   tagOptions.value.some((option) => option.value === filters.tagKey.trim()),
 )
@@ -85,10 +114,26 @@ const tagPickerOptions = computed<EntityPickerOption[]>(() => {
   if (!tagKey || selectedTagInCatalog.value) return tagOptions.value
   return [...tagOptions.value, { value: tagKey, label: '—', hint: '当前筛选' }]
 })
-watch([() => filters.deviceAssetId, tagOptions, tagsPending], () => {
-  if (tagsPending.value || !filters.tagKey.trim()) return
-  if (tagOptions.value.length > 0 && !selectedTagInCatalog.value) filters.tagKey = ''
+watch(telemetryDeviceId, (deviceAssetId) => {
+  rules.filters.deviceAssetId = deviceAssetId
 })
+watch(
+  [tagOptions, tagsPending, () => filters.tagKey],
+  () => {
+    if (tagsPending.value || !filters.deviceAssetId) return
+    if (filters.tagKey && !selectedTagInCatalog.value && tagOptions.value.length)
+      filters.tagKey = ''
+    if (!filters.tagKey) filters.tagKey = numericTags.value[0]?.tagKey ?? ''
+  },
+  { immediate: true },
+)
+const rules = useBusinessTelemetryAlarmRules(
+  { deviceAssetId: telemetryDeviceId.value, isEnabled: 'enabled', take: 500 },
+  () => !!filters.deviceAssetId,
+)
+const referenceLines = computed(() =>
+  telemetryReferenceLines(rules.alarmRules.value, filters.tagKey),
+)
 
 const errorMessage = computed(() =>
   historyError.value
@@ -121,8 +166,10 @@ watch(
       routeQuery('tagKey'),
       routeQuery('windowStartUtc'),
       routeQuery('windowEndUtc'),
+      routeQuery('minutes'),
     ] as const,
-  ([deviceAssetId, tagKey, windowStartUtc, windowEndUtc]) => {
+  ([deviceAssetId, tagKey, windowStartUtc, windowEndUtc, minutes]) => {
+    preset.value = presets.find((item) => String(item.minutes) === minutes)?.minutes
     const nextWindowStartUtc = windowStartUtc || defaultWindowStartUtc
     const nextWindowEndUtc = windowEndUtc || defaultWindowEndUtc
     if (filters.deviceAssetId !== deviceAssetId) filters.deviceAssetId = deviceAssetId
@@ -135,19 +182,27 @@ watch(
 
 watch(
   () =>
-    [filters.deviceAssetId, filters.tagKey, filters.windowStartUtc, filters.windowEndUtc] as const,
-  ([deviceAssetId, tagKey, windowStartUtc, windowEndUtc]) => {
+    [
+      filters.deviceAssetId,
+      filters.tagKey,
+      filters.windowStartUtc,
+      filters.windowEndUtc,
+      preset.value,
+    ] as const,
+  ([deviceAssetId, tagKey, windowStartUtc, windowEndUtc, minutes]) => {
     if (
       routeQuery('deviceAssetId') === deviceAssetId.trim() &&
       routeQuery('tagKey') === tagKey.trim() &&
       routeQuery('windowStartUtc') === windowStartUtc &&
-      routeQuery('windowEndUtc') === windowEndUtc
+      routeQuery('windowEndUtc') === windowEndUtc &&
+      routeQuery('minutes') === (minutes?.toString() ?? '')
     ) {
       return
     }
     void router.replace({
       query: {
         ...route.query,
+        minutes: minutes?.toString(),
         deviceAssetId: deviceAssetId.trim() || undefined,
         tagKey: tagKey.trim() || undefined,
         windowEndUtc: windowEndUtc || undefined,
@@ -268,6 +323,27 @@ function fromDateInput(value: string, dayOffset: number) {
 
     <div class="grid gap-3 rounded-lg border bg-card p-4">
       <NvCascadePicker v-model="scope" :levels="levels" :aria-busy="scopePending" />
+      <div class="flex flex-wrap items-center gap-2" aria-label="快捷时间窗">
+        <NvButton
+          v-for="item in presets"
+          :key="item.minutes"
+          size="sm"
+          :variant="preset === item.minutes ? 'default' : 'outline'"
+          :aria-pressed="preset === item.minutes"
+          @click="selectWindow(item.minutes)"
+          >{{ item.label }}</NvButton
+        >
+        <NvButton
+          size="sm"
+          :variant="preset == null ? 'default' : 'outline'"
+          :aria-pressed="preset == null"
+          @click="selectWindow()"
+          >自定义</NvButton
+        >
+        <label class="ml-2 flex items-center gap-2 text-sm"
+          ><input v-model="autoRefresh" type="checkbox" /> 自动刷新（5s）</label
+        >
+      </div>
       <NvFieldGroup
         class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_minmax(240px,1fr)]"
       >
@@ -291,8 +367,9 @@ function fromDateInput(value: string, dayOffset: number) {
           />
         </NvField>
         <NvField>
-          <NvFieldLabel for="history-window">时间范围</NvFieldLabel>
+          <NvFieldLabel v-if="preset == null" for="history-window">时间范围</NvFieldLabel>
           <NvDateRangePicker
+            v-if="preset == null"
             id="history-window"
             v-model="windowRange"
             placeholder="选择时间范围"
@@ -328,7 +405,11 @@ function fromDateInput(value: string, dayOffset: number) {
     </div>
 
     <template v-else>
-      <TelemetryTrendPanel :projection="projection" :tag-key="filters.tagKey" />
+      <TelemetryTrendPanel
+        :projection="projection"
+        :tag-key="filters.tagKey"
+        :reference-lines="referenceLines"
+      />
       <TelemetryEventTimeline :timeline-items="projection.timelineItems" />
 
       <section class="grid gap-3" aria-labelledby="telemetry-detail-title">

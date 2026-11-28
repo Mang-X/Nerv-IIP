@@ -43,6 +43,11 @@ vi.mock('vue-router', async (importOriginal) => ({
 
 vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/composables/equipment/useBusinessEquipment')>()),
+  useBusinessEquipmentAlarms: () => ({
+    alarms: computed(() => []),
+    acknowledgeAlarm: vi.fn(),
+    refreshAlarms: vi.fn(),
+  }),
   useBusinessEquipmentDevice: () => ({
     activeAlarms: computed(() => []),
     availabilityWindows: computed(() => state.availabilityWindows),
@@ -80,6 +85,17 @@ vi.mock('@/composables/equipment/useBusinessTelemetry', () => {
     describeTelemetryOeeLimitations: () => '',
     formatOeeQuantity: () => '无数据',
     formatOeeRate: () => '无数据',
+    useBusinessTelemetryTags: () => ({
+      tags: shallowRef([]),
+      tagsError: shallowRef(),
+      tagsPending: shallowRef(false),
+      filters: { deviceAssetId: '' },
+    }),
+    useBusinessTelemetryAlarmRules: () => ({
+      alarmRules: shallowRef([]),
+      alarmRulesError: shallowRef(),
+      filters: { deviceAssetId: '' },
+    }),
     useBusinessTelemetryHistory: () => ({
       filters: windowFilters(),
       historyError: shallowRef(),

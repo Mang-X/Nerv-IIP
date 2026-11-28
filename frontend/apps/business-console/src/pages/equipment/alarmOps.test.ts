@@ -704,3 +704,10 @@ describe('alarm row menu — 创建维修工单 gated by maintenance work-order 
     wrapper.unmount()
   })
 })
+
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', async () => {
+  const { ref } = await import('vue')
+  return {
+    useEquipmentDeviceCatalog: () => ({ deviceOptions: ref([]), devicesPending: ref(false) }),
+  }
+})

@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { useEquipmentDeviceCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
   NvButton,
   NvDataTable,
   NvDropdownMenuItem,
+  NvEntityPicker,
+  NvMetricStrip,
   NvPageHeader,
   NvRowActions,
   NvTooltip,
@@ -36,7 +39,10 @@ definePage({
   },
 })
 
+const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 const {
+  deviceAssetId,
+  kpis,
   DURATION_PRESETS,
   MAX_SHELVE_MINUTES,
   VIEW_TABS,
@@ -120,6 +126,23 @@ const {
         </NvButton>
       </template>
     </NvPageHeader>
+    <NvMetricStrip :cells="kpis" />
+    <NvEntityPicker
+      :model-value="deviceAssetId"
+      :options="deviceOptions"
+      :loading="devicesPending"
+      title="选择设备"
+      placeholder="全部设备"
+      aria-label="筛选设备"
+      clearable
+      class="w-72"
+      @update:model-value="
+        (value) => {
+          deviceAssetId = value
+          page = 1
+        }
+      "
+    />
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 

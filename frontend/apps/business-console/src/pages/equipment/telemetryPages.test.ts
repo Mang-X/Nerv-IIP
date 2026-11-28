@@ -83,6 +83,11 @@ const telemetryPageMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/ui', () => ({
+  NvBarChart: {
+    props: ['data'],
+    template:
+      '<div data-testid="bar-chart"><span v-for="item in data">{{ item.group }} {{ item.oee }}</span></div>',
+  },
   NvBadge: { template: '<span><slot /></span>' },
   NvButton: { template: '<button><slot /></button>' },
   // 级联范围选择桩件：把三级选中值挂到 data-* 上便于断言路由 ↔ 范围的同步。
@@ -294,6 +299,7 @@ vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => ({
       { value: 'pressure', label: '压力' },
     ]),
     tagsPending: shallowRef(false),
+    numericTags: computed(() => [{ tagKey: 'temperature' }]),
     unitByTagKey: computed(() => new Map([['temperature', 'CEL']])),
   }),
 }))
@@ -662,7 +668,7 @@ describe('equipment telemetry pages', () => {
 
     expect(wrapper.findAll('[data-testid="date-range"]')).toHaveLength(1)
     expect(wrapper.findAll('input[type="datetime-local"]')).toHaveLength(0)
-    await wrapper.findAll('input')[0]!.setValue('spindle-temperature')
+    await wrapper.findAll('input:not([type=checkbox])')[0]!.setValue('spindle-temperature')
     expect(telemetryPageMocks.replaceRoute).toHaveBeenCalledWith({
       query: expect.objectContaining({
         deviceAssetId: 'DEV-CNC-01',
@@ -671,6 +677,23 @@ describe('equipment telemetry pages', () => {
         windowStartUtc: '2026-07-02T00:00:00.000Z',
       }),
     })
+  })
+
+  it('queries the selected 15-minute window and opens the custom date picker on request', async () => {
+    const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '近 15 分钟')!
+      .trigger('click')
+    const latest = telemetryPageMocks.replaceRoute.mock.lastCall?.[0].query
+    expect(latest.minutes).toBe('15')
+    expect(Date.parse(latest.windowEndUtc) - Date.parse(latest.windowStartUtc)).toBe(15 * 60_000)
+    expect(wrapper.find('[data-testid="date-range"]').exists()).toBe(false)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '自定义')!
+      .trigger('click')
+    expect(wrapper.find('[data-testid="date-range"]').exists()).toBe(true)
   })
 
   it('restores filters when browser history changes the route query', async () => {
@@ -687,7 +710,9 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.get('[data-testid="cascade-picker"]').attributes('data-device')).toBe(
       'DEV-PRESS-02',
     )
-    expect(wrapper.findAll('input')[0]?.element.value).toBe('pressure')
+    expect(wrapper.get<HTMLInputElement>('input:not([type=checkbox])').element.value).toBe(
+      'pressure',
+    )
   })
 
   it('shows the scope device overview and drills down when no device is selected', async () => {
@@ -774,6 +799,30 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.text()).toContain('缺少或存在冲突的工序标准速率')
     expect(wrapper.text()).toContain('—')
     expect(wrapper.text()).toContain('1 条数据完整，1 条缺数')
+  })
+
+  it('draws comparison bars for complete non-day results and reports the available OEE summary', () => {
+    ;(telemetryPageMocks.route as { query: Record<string, string> }).query.dimension = 'shift'
+    telemetryPageMocks.trendBuckets = [
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimension: 'shift',
+        shiftCode: 'EARLY',
+        oeeRate: 0.77,
+      },
+      {
+        ...telemetryPageMocks.aggregateBuckets[0],
+        dimension: 'shift',
+        shiftCode: 'LATE',
+        oeeRate: null,
+      },
+    ]
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+    const chart = wrapper.get('[data-testid="bar-chart"]')
+    expect(chart.findAll('span')).toHaveLength(1)
+    expect(chart.text()).toContain('77')
+    expect(wrapper.text()).toContain('综合 OEE')
+    expect(wrapper.text()).toContain('77.0%')
   })
 
   it('renders the complete 31-day trend independently from the 20-row audit page', () => {

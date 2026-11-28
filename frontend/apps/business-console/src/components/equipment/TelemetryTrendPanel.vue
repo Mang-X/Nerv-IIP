@@ -8,6 +8,7 @@ import { computed } from 'vue'
 const props = defineProps<{
   projection: TelemetryHistoryProjection
   tagKey: string
+  referenceLines?: { value: number; label: string; color?: string }[]
 }>()
 
 const hasSelectedTag = computed(() => props.tagKey.trim().length > 0)
@@ -113,7 +114,13 @@ const statisticCells = computed<NvMetricStripCell[]>(() => {
       >
         {{ projection.invalidTimestampCount }} 条时间无效的数值记录未进入趋势与统计。
       </p>
-      <NvLineChart :data="projection.chartData" x-key="time" :series="chartSeries" :height="300" />
+      <NvLineChart
+        :data="projection.chartData"
+        x-key="time"
+        :series="chartSeries"
+        :reference-lines="referenceLines"
+        :height="300"
+      />
     </template>
   </section>
 </template>

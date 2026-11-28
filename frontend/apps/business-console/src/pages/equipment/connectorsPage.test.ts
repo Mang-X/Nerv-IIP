@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 
 import { computeConnectorSampleRate } from '@/composables/equipment/useBusinessTelemetry'
 import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
@@ -220,6 +220,28 @@ const connectorMocks = vi.hoisted(() => ({
   ],
 }))
 
+const configMocks = vi.hoisted(() => ({
+  manage: false,
+  rows: [] as import('@nerv-iip/api-client').TelemetryConnectorConfigItem[],
+  saveConfig: vi.fn(),
+  deleteConfig: vi.fn(),
+}))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: { permissionCodes: configMocks.manage ? ['business.iiot.tags.manage'] : [] },
+  }),
+}))
+vi.mock('@/composables/equipment/useConnectorConfigs', () => ({
+  useConnectorConfigs: () => ({
+    configs: ref(configMocks.rows),
+    configsError: ref(),
+    configsPending: ref(false),
+    refreshConfigs: vi.fn(),
+    deleteConfig: configMocks.deleteConfig,
+    saveConfig: configMocks.saveConfig,
+  }),
+}))
+
 const notifyMock = vi.hoisted(() => ({
   friendlyErrorMessage: (_error: unknown, fallback = '操作失败，请稍后重试。') => fallback,
   notifyError: vi.fn(),
@@ -293,11 +315,15 @@ const stubs = {
     template: '<div>{{ description }} {{ value }} {{ hint }}</div>',
   },
   NvSectionCards: { template: '<section><slot /></section>' },
+  ConnectorConfigSheet: { template: '<div />' },
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }
 
 describe('equipment telemetry connectors page', () => {
   beforeEach(() => {
+    configMocks.manage = false
+    configMocks.rows = []
+    configMocks.saveConfig.mockReset()
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-13T01:10:00.000Z'))
     notifyMock.notifyError.mockClear()
@@ -431,13 +457,32 @@ describe('equipment telemetry connectors page', () => {
     expect(wrapper.text()).not.toContain('主机离线约')
   })
 
-  it('summarizes online / offline / fault connectors separately', () => {
-    const text = mount(ConnectorsPage, { global: { stubs } }).text()
-
-    // the never-sampled connector is 待采集, NOT counted as online
-    expect(text).toMatch(/在线\s*1/)
-    expect(text).toMatch(/断线\s*2/)
-    expect(text).toMatch(/异常停止\s*1/)
+  it('merges saved settings with runtime health and disables a configured connector', async () => {
+    configMocks.manage = true
+    configMocks.rows = [
+      {
+        connectorId: 'opcua-main',
+        displayName: '产线 OPC UA 连接',
+        protocol: 'opcua',
+        endpoint: 'opc.tcp://192.0.2.1:4840',
+        pollIntervalSeconds: 2,
+        isEnabled: true,
+        mappings: [{ tagKey: 'pressure' }],
+      },
+    ]
+    const wrapper = mount(ConnectorsPage, { global: { stubs } })
+    const card = wrapper.findAll('article').find((row) => row.text().includes('产线 OPC UA 连接'))!
+    expect(card.text()).toContain('opc.tcp://192.0.2.1:4840')
+    expect(card.text()).toContain('2 秒 · 1 个测点 · 已启用')
+    expect(card.text()).toContain('12.5 /秒')
+    await card
+      .findAll('button')
+      .find((button) => button.text() === '停用')!
+      .trigger('click')
+    expect(configMocks.saveConfig).toHaveBeenCalledWith({
+      ...configMocks.rows[0],
+      isEnabled: false,
+    })
   })
 
   it('shows a not-configured connector as 待采集, not as online/collecting', () => {
@@ -494,8 +539,8 @@ describe('equipment telemetry connectors page', () => {
     const wrapper = mount(ConnectorsPage, { global: { stubs } })
     await nextTick()
 
-    expect(wrapper.text()).toContain('采集健康取不到，无法判断现场采集是否正常。')
-    expect(wrapper.text()).not.toContain('暂无现场采集连接')
+    expect(wrapper.text()).toContain('连接器读取失败，当前无法判断现场采集状态。')
+    expect(wrapper.text()).not.toContain('暂无连接器')
     expect(wrapper.find('.nv-ring-card').exists()).toBe(false)
     // 计数不许在取不到时显 0
     expect(wrapper.text()).not.toContain('0 个采集连接器')
@@ -511,9 +556,7 @@ describe('equipment telemetry connectors page', () => {
     setError(new Error('boom'))
     await nextTick()
 
-    expect(wrapper.text()).toContain(
-      '采集健康刷新失败，下方为上一次成功读取的结果，不代表现场此刻的状态。',
-    )
+    expect(wrapper.text()).toContain('连接器刷新失败，下方显示上一次读取的结果。')
     expect(wrapper.text()).toContain('OPC UA Main')
   })
 
@@ -522,17 +565,17 @@ describe('equipment telemetry connectors page', () => {
     contextMock.organizationId = ''
     const idle = mount(ConnectorsPage, { global: { stubs } })
     expect(idle.text()).toContain('尚未确定当前组织，暂未查询采集健康。')
-    expect(idle.text()).not.toContain('暂无现场采集连接')
+    expect(idle.text()).not.toContain('暂无连接器')
 
     contextMock.organizationId = 'org-001'
     setPending(true)
     const loading = mount(ConnectorsPage, { global: { stubs } })
-    expect(loading.text()).toContain('正在加载采集连接器…')
-    expect(loading.text()).not.toContain('暂无现场采集连接')
+    expect(loading.text()).toContain('正在读取连接器…')
+    expect(loading.text()).not.toContain('暂无连接器')
 
     setPending(false)
     const empty = mount(ConnectorsPage, { global: { stubs } })
-    expect(empty.text()).toContain('暂无现场采集连接')
+    expect(empty.text()).toContain('暂无连接器')
   })
 
   it('does not spam toast on repeated auto-refetch failures, but re-notifies after recovery', async () => {

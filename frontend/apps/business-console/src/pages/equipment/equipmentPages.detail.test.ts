@@ -106,7 +106,8 @@ describe('equipment pages', () => {
     // 理论产出的单位按主数据名称显示，不直接显示单位编码。
     expect(wrapper.text()).toContain('理论产出120 件')
     expect(wrapper.text()).toContain('历史事件6')
-    expect(wrapper.text()).toContain('temperature')
+    expect(wrapper.text()).toContain('实时测点与曲线')
+    expect(wrapper.text()).not.toContain('历史趋势摘录')
     expect(wrapper.text()).toContain('维护与可靠性')
     expect(wrapper.text()).toContain('维修工单')
     expect(wrapper.text()).toContain('PM-CNC-MONTHLY')
@@ -114,7 +115,7 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('结果 通过')
     expect(wrapper.text()).not.toContain('insp-6')
     expect(wrapper.text()).not.toContain('passed')
-    // 历史摘录里状态类记录的值是设备状态码，同样说中文。
+    // 设备状态使用业务文案。
     expect(wrapper.text()).not.toContain('running')
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')

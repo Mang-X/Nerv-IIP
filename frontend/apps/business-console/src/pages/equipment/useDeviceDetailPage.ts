@@ -180,7 +180,6 @@ export function useDeviceDetailPage() {
   const blockCount = computed(
     () => availabilityWindows.value.filter((w) => w.availabilityStatus !== 'available').length,
   )
-  const historyPreview = computed(() => visibleHistoryItems.value.slice(0, 5))
   const historyCount = computed(() => visibleHistoryItems.value.length)
   const currentDeviceId = computed(() => filters.deviceAssetId.trim())
   const currentDeviceWorkOrderMatches = computed(() =>
@@ -582,25 +581,7 @@ export function useDeviceDetailPage() {
     if (value === null || value === undefined) return '暂无记录'
     return `${Number(value).toFixed(1)} 小时`
   }
-  function historyTypeLabel(value?: string | null) {
-    const labels: Record<string, string> = {
-      alarm: '报警',
-      daily: '日汇总',
-      hourly: '小时汇总',
-      sample: '采集值',
-      state: '状态',
-    }
-    // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
-    return value ? (labels[value.toLowerCase()] ?? '其他记录') : '事件'
-  }
-  function historyType(row: { itemType?: string | null }) {
-    return row.itemType
-  }
-  function historyValue(row: { itemType?: string | null; value?: string | null }) {
-    if (!row.value) return '无数值'
-    // 状态类记录的值是设备状态码，按设备状态词表说中文。
-    return row.itemType?.toLowerCase() === 'state' ? statusLabel(row.value) : row.value
-  }
+
   function inspectionResultLabel(value?: string | null) {
     return value ? labelFor(MAINTENANCE_INSPECTION_RESULT_LABELS, value, '未知结果') : '未记录'
   }
@@ -702,10 +683,6 @@ export function useDeviceDetailPage() {
     healthPending,
     historyCount,
     historyFilters,
-    historyPreview,
-    historyType,
-    historyTypeLabel,
-    historyValue,
     inspectionResultLabel,
     intervalLabel,
     maintenanceAvailabilityWindows,

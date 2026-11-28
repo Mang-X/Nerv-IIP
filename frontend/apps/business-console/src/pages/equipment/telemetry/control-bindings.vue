@@ -75,6 +75,7 @@ const { connectorInstanceOptions, connectorsPending } = useConnectorInstanceCata
 
 const errorMessage = computed(() => inlineErrorMessage(bindingsError.value))
 
+const developmentHost = import.meta.env.DEV ? 'connector-host-001' : ''
 const dialogOpen = ref(false)
 const editing = ref(false)
 const form = reactive({ deviceAssetId: '', connectorHostId: '', instanceKey: '' })
@@ -148,7 +149,7 @@ const disableContextItems = computed(() => [
 function openCreate() {
   editing.value = false
   form.deviceAssetId = ''
-  form.connectorHostId = ''
+  form.connectorHostId = developmentHost
   form.instanceKey = ''
   showErrors.value = false
   dialogOpen.value = true
@@ -271,9 +272,13 @@ function formatDateTime(value?: string | null) {
                   <NvInput
                     id="binding-host"
                     v-model="form.connectorHostId"
-                    placeholder="填写连接主机标识"
+                    :list="developmentHost ? 'binding-host-options' : undefined"
+                    placeholder="选择或输入连接主机标识"
                     :aria-invalid="!!hostError"
                   />
+                  <datalist v-if="developmentHost" id="binding-host-options">
+                    <option :value="developmentHost">开发环境默认主机</option>
+                  </datalist>
                   <p v-if="hostError" class="text-xs text-destructive" role="alert">
                     {{ hostError }}
                   </p>

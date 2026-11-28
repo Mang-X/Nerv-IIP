@@ -203,7 +203,7 @@ describe('business telemetry composables', () => {
     })
   })
 
-  it('polls connector health every ten seconds and preserves explicit connection facts', () => {
+  it('polls connector health every five seconds and preserves explicit connection facts', () => {
     coladaState.queryDataById.set('listBusinessConsoleTelemetryConnectorCollectionHealth', {
       success: true,
       data: {
@@ -235,7 +235,7 @@ describe('business telemetry composables', () => {
       coladaState.queryOptionsById
         .get('listBusinessConsoleTelemetryConnectorCollectionHealth')
         ?.autoRefetch?.(),
-    ).toBe(10_000)
+    ).toBe(5_000)
     expect(result.connectors.value[0]).toMatchObject({
       offlineReason: 'field-connection',
       hostLivenessDeadlineUtc: '2026-07-13T01:00:06.000Z',
@@ -601,7 +601,7 @@ describe('business telemetry composables', () => {
     })
     useBusinessTelemetryOeeTrend(aggregates.filters)
 
-    const query = coladaState.queryOptionsById.get('business-telemetry-oee-complete-trend')?.query
+    const query = coladaState.queryOptionsById.get('business-telemetry-oee-complete-buckets')?.query
     const buckets = (await query?.({})) as unknown[]
 
     expect(buckets).toHaveLength(131)

@@ -20,7 +20,10 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import {
   NvBadge,
+  NvBarChart,
   NvButton,
+  NvMetricCard,
+  NvSectionCards,
   NvDataTable,
   NvDatePicker,
   NvDateRangePicker,
@@ -131,6 +134,47 @@ const reportPresentation = computed(() =>
   }),
 )
 
+function summarizeRate(key: 'oeeRate' | 'availabilityRate' | 'performanceRate' | 'qualityRate') {
+  const values = trendBuckets.value.flatMap((bucket) => (bucket[key] == null ? [] : [bucket[key]]))
+  return {
+    value: values.length
+      ? rateCell(values.reduce((sum, value) => sum + value, 0) / values.length)
+      : '—',
+    footStart: `有效分组均值 · ${values.length} 组`,
+  }
+}
+const summaries = computed(() => ({
+  oee: summarizeRate('oeeRate'),
+  availability: summarizeRate('availabilityRate'),
+  performance: summarizeRate('performanceRate'),
+  quality: summarizeRate('qualityRate'),
+}))
+const comparisonRows = computed(() =>
+  presentOeeReport({
+    dimension: filters.dimension,
+    trendBuckets: [],
+    tableBuckets: trendBuckets.value,
+    tableTotal: trendBuckets.value.length,
+    names: {
+      site: displayNames.resolveSite,
+      workshop: displayNames.resolveWorkshop,
+      line: displayNames.resolveLine,
+      workCenter: displayNames.resolveWorkCenter,
+      shift: displayNames.resolveShift,
+    },
+  }).tableRows.flatMap((row) =>
+    row.oeeRate == null
+      ? []
+      : [
+          {
+            group: [row.primaryLabel, row.hierarchyLabel].filter(Boolean).join(' · '),
+            oee: Number((row.oeeRate * 100).toFixed(1)),
+          },
+        ],
+  ),
+)
+const comparisonSeries = [{ key: 'oee', label: 'OEE' }]
+
 // 表格是 table-layout: fixed，单元格默认不换行：不声明列宽时名称一长就互相压字。
 // 这里按内容给定列宽，文字较长的几列允许换行；总宽超出容器时由表格横向滚动。
 const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
@@ -238,6 +282,12 @@ function refreshReport() {
         </NvButton>
       </template>
     </NvPageHeader>
+    <NvSectionCards>
+      <NvMetricCard label="综合 OEE" v-bind="summaries.oee" />
+      <NvMetricCard label="可用率" v-bind="summaries.availability" />
+      <NvMetricCard label="性能率" v-bind="summaries.performance" />
+      <NvMetricCard label="质量率" v-bind="summaries.quality" />
+    </NvSectionCards>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -262,6 +312,30 @@ function refreshReport() {
         </NvField>
       </template>
     </NvToolbar>
+
+    <section
+      v-if="filters.dimension !== 'day'"
+      class="grid gap-3 rounded-lg border bg-card p-4"
+      aria-labelledby="oee-comparison"
+    >
+      <h2 id="oee-comparison" class="font-semibold">OEE 分组对比</h2>
+      <p v-if="trendErrorMessage" role="alert" class="text-sm text-destructive">
+        {{ trendErrorMessage }}
+      </p>
+      <p v-else-if="trendPending" role="status" class="text-sm text-muted-foreground">
+        正在读取对比数据…
+      </p>
+      <div v-else-if="comparisonRows.length" class="overflow-x-auto">
+        <NvBarChart
+          :style="{ minWidth: `${comparisonRows.length * 115}px` }"
+          :data="comparisonRows"
+          x-key="group"
+          :series="comparisonSeries"
+          value-suffix="%"
+        />
+      </div>
+      <p v-else class="text-sm text-muted-foreground">当前范围没有可绘制的 OEE 数据。</p>
+    </section>
 
     <section class="grid gap-3 rounded-lg border bg-card p-4" aria-label="范围筛选">
       <div>

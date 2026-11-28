@@ -1,202 +1,211 @@
 <script setup lang="ts">
+import type { TelemetryConnectorConfigItem } from '@nerv-iip/api-client'
+import { NvButton, NvPageHeader } from '@nerv-iip/ui'
+import { computed, reactive, ref, watch } from 'vue'
+import ConnectorConfigSheet from '@/components/equipment/ConnectorConfigSheet.vue'
+import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
+import { useConnectorConfigs } from '@/composables/equipment/useConnectorConfigs'
 import {
-  isConnectorFault,
-  isConnectorOffline,
+  connectorSourceSystemLabel,
   useBusinessTelemetryConnectors,
 } from '@/composables/equipment/useBusinessTelemetry'
-import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
 import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { friendlyErrorMessage, notifyError } from '@/utils/notify'
+import { useAuthStore } from '@/stores/auth'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import type { NvMetricSegment } from '@nerv-iip/ui'
-import { NvButton, NvMetricRing, NvPageHeader } from '@nerv-iip/ui'
-import { HashIcon, RefreshCwIcon, TriangleAlertIcon } from '@lucide/vue'
-import { computed, reactive, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
     requiresAuth: true,
-    title: '采集健康',
+    title: '连接与采集配置',
     requiredPermissions: ['business.iiot.telemetry.read'],
   },
 })
 
-const {
-  connectors,
-  connectorsError,
-  connectorsPending,
-  connectorsTotal,
-  refreshConnectors,
-  sampleRateByConnector,
-} = useBusinessTelemetryConnectors()
+const context = useBusinessContextStore()
+const contextReady = computed(() => hasBusinessContext(context))
+const auth = useAuthStore()
+const canManage = computed(() =>
+  auth.principal?.permissionCodes?.includes('business.iiot.tags.manage'),
+)
+const { configs, configsError, configsPending, refreshConfigs, deleteConfig, saveConfig } =
+  useConnectorConfigs()
+const { connectors, connectorsError, connectorsPending, refreshConnectors, sampleRateByConnector } =
+  useBusinessTelemetryConnectors()
 
-// 一次性 toast，且按错误"进入"边界去重：10 秒自动轮询持续失败时每次重试都会写入新的 error 对象，
-// 这里只在从"无错误"跨入"有错误"时通知一次，恢复成功后重置，避免长期故障下每 10 秒轰炸用户。
-const errorNotified = ref(false)
-watch(connectorsError, (error) => {
-  if (error && !errorNotified.value) {
-    notifyError(error, '采集健康加载失败，请稍后重试。')
-    errorNotified.value = true
-  } else if (!error) {
-    errorNotified.value = false
-  }
+const rows = computed(() => {
+  const healthById = new Map(connectors.value.map((health) => [health.connectorId, health]))
+  const configuredIds = new Set(configs.value.map((config) => config.connectorId))
+  return [
+    ...configs.value.map((config) => ({
+      id: config.connectorId ?? '',
+      config,
+      health: healthById.get(config.connectorId),
+    })),
+    ...connectors.value
+      .filter((health) => !configuredIds.has(health.connectorId))
+      .map((health) => ({
+        id: health.connectorId ?? '',
+        config: undefined,
+        health,
+      })),
+  ]
 })
-
-// toast 会消失，故障不会。读面四态在页面上留下持久痕迹：
-// 「上下文未就绪 / 加载中 / 取不到 / 已取到」各自不同，绝不都落回「暂无现场采集连接」。
-const businessContext = useBusinessContextStore()
-const hasConnectorData = computed(() => connectors.value.length > 0)
-const connectorsState = computed<'idle' | 'loading' | 'error' | 'ready'>(() => {
-  if (!hasBusinessContext(businessContext)) return 'idle'
-  if (connectorsPending.value && !hasConnectorData.value) return 'loading'
-  if (connectorsError.value && !hasConnectorData.value) return 'error'
-  return 'ready'
-})
-// 有旧数据时不清空页面，但必须标明「这批读数已经不是最新的」，否则轮询挂了也看着像现场正常。
-const staleAfterError = computed(() => Boolean(connectorsError.value) && hasConnectorData.value)
-const connectorsErrorDetail = computed(() =>
-  friendlyErrorMessage(connectorsError.value, '请稍后重试。'),
+const error = computed(() => configsError.value ?? connectorsError.value)
+watch(
+  () => Boolean(error.value),
+  (failed) => {
+    if (failed) notifyError(error.value, '连接器读取失败，请稍后重试。')
+  },
 )
-const headerCount = computed(() =>
-  connectorsState.value === 'ready' ? `${connectorsTotal.value} 个采集连接器` : '—',
-)
-
-const onlineCount = computed(
-  () =>
-    connectors.value.filter(
-      (connector) => connector.status === 'current' && connector.connection?.status === 'alive',
-    ).length,
-)
-const offlineCount = computed(
-  () => connectors.value.filter((c) => isConnectorOffline(c.status, c.staleReason)).length,
-)
-const faultCount = computed(
-  () => connectors.value.filter((c) => isConnectorFault(c.status, c.staleReason)).length,
-)
-
-// 采集状态构成：四段互斥且相加等于当前已加载的连接器数（Ring 的构成前提）。分母用本页已加载的
-// 连接器数而非 connectorsTotal —— 后者可能包含尚未加载的分页外记录，混用会让各段占比失真。
-const otherCount = computed(() =>
-  Math.max(0, connectors.value.length - onlineCount.value - offlineCount.value - faultCount.value),
-)
-const connectorSegments = computed<NvMetricSegment[]>(() => [
-  { key: 'online', label: '在线', value: onlineCount.value, tone: 'success' },
-  { key: 'offline', label: '断线', value: offlineCount.value, tone: 'danger' },
-  { key: 'fault', label: '异常停止', value: faultCount.value, tone: 'warning' },
-  { key: 'other', label: '待采集', value: otherCount.value, tone: 'neutral' },
-])
-
 const expanded = reactive(new Set<string>())
-function rowKey(connectorId?: string | null, connectorName?: string | null) {
-  return connectorId ?? connectorName ?? '未知连接器'
+function toggleDetails(id: string) {
+  if (expanded.has(id)) expanded.delete(id)
+  else expanded.add(id)
 }
-function toggle(key: string) {
-  if (expanded.has(key)) expanded.delete(key)
-  else expanded.add(key)
+function refresh() {
+  void refreshConfigs()
+  void refreshConnectors()
+}
+const editing = ref<TelemetryConnectorConfigItem | null>(null)
+const sheetOpen = ref(false)
+const deleting = ref<TelemetryConnectorConfigItem>()
+const busy = ref(false)
+
+function edit(config: TelemetryConnectorConfigItem | null) {
+  editing.value = config
+  sheetOpen.value = true
+}
+
+async function change(config: TelemetryConnectorConfigItem, remove = false) {
+  busy.value = true
+  try {
+    if (remove) {
+      await deleteConfig(config.connectorId ?? '')
+      deleting.value = undefined
+    } else {
+      await saveConfig({ ...config, isEnabled: !config.isEnabled })
+    }
+    notifySuccess(remove ? '连接器已删除' : '采集状态已更新')
+  } catch (cause) {
+    const action = remove ? '删除连接器失败' : '更新采集状态失败'
+    notifyOperationFailure(action, cause, action)
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <NvPageHeader title="采集健康" :breadcrumbs="[{ label: '设备监控' }]" :count="headerCount">
+    <NvPageHeader
+      title="连接与采集配置"
+      :breadcrumbs="[{ label: '设备监控' }]"
+      :count="contextReady && !error ? `${rows.length} 个连接器` : undefined"
+    >
       <template #actions>
-        <span class="text-xs text-muted-foreground">每 10 秒自动刷新</span>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink to="/equipment/telemetry/tags"
-            ><HashIcon aria-hidden="true" />采集点位</RouterLink
-          >
-        </NvButton>
-        <NvButton
-          size="sm"
-          type="button"
-          variant="outline"
-          :disabled="connectorsPending"
-          @click="refreshConnectors"
+        <NvButton size="sm" variant="outline" :disabled="!contextReady" @click="refresh"
+          >刷新</NvButton
         >
-          <RefreshCwIcon aria-hidden="true" />
-          刷新
-        </NvButton>
+        <NvButton
+          v-if="canManage"
+          :disabled="!contextReady"
+          size="sm"
+          variant="brand"
+          @click="edit(null)"
+          >新建连接器</NvButton
+        >
       </template>
     </NvPageHeader>
-
-    <!-- 取不到读数时不画环：四段全 0 的环等于断言「现场一个连接器都没有」。 -->
-    <NvMetricRing
-      v-if="connectorsState === 'ready'"
-      label="采集状态构成"
-      :value="connectors.length"
-      center-caption="个连接器"
-      :segments="connectorSegments"
-      class="max-w-md"
-    />
-
-    <!-- 轮询失败但仍有上一次读数：保留数据，同时常驻标明读数已过期。 -->
-    <div v-if="staleAfterError" class="rounded-lg border border-destructive/40 p-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <p class="inline-flex items-center gap-1.5 font-medium text-destructive" role="alert">
-            <TriangleAlertIcon class="size-4 shrink-0" aria-hidden="true" />
-            采集健康刷新失败，下方为上一次成功读取的结果，不代表现场此刻的状态。
-          </p>
-          <p class="mt-1 text-sm text-muted-foreground">{{ connectorsErrorDetail }}</p>
-        </div>
-        <NvButton size="sm" type="button" variant="outline" @click="refreshConnectors">
-          <RefreshCwIcon aria-hidden="true" />
-          重试
-        </NvButton>
-      </div>
-    </div>
-
-    <div
-      v-if="connectorsState === 'idle'"
-      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-    >
+    <p v-if="!contextReady" role="status" class="text-sm text-muted-foreground">
       尚未确定当前组织，暂未查询采集健康。
-    </div>
-
+    </p>
     <div
-      v-else-if="connectorsState === 'loading'"
+      v-else-if="error"
+      role="alert"
+      class="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 p-4 text-sm text-destructive"
+    >
+      <span>{{
+        rows.length
+          ? '连接器刷新失败，下方显示上一次读取的结果。'
+          : '连接器读取失败，当前无法判断现场采集状态。'
+      }}</span>
+      <NvButton size="sm" variant="outline" @click="refresh">重试</NvButton>
+    </div>
+    <p
+      v-else-if="configsPending || connectorsPending"
+      role="status"
+      class="text-sm text-muted-foreground"
+    >
+      正在读取连接器…
+    </p>
+    <p
+      v-else-if="!rows.length"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      正在加载采集连接器…
-    </div>
-
-    <div
-      v-else-if="connectorsState === 'error'"
-      class="rounded-lg border border-destructive/40 p-4"
-    >
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <p class="inline-flex items-center gap-1.5 font-medium text-destructive" role="alert">
-            <TriangleAlertIcon class="size-4 shrink-0" aria-hidden="true" />
-            采集健康取不到，无法判断现场采集是否正常。
+      暂无连接器。
+    </p>
+    <div class="grid items-start gap-4 xl:grid-cols-2">
+      <article
+        v-for="{ id, config, health } in rows"
+        :key="id"
+        class="grid gap-3 rounded-lg border bg-card p-4"
+      >
+        <div v-if="config" class="grid gap-2">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 class="font-semibold">{{ config.displayName }}</h2>
+              <p class="text-xs text-muted-foreground">{{ id }}</p>
+            </div>
+            <div v-if="canManage" class="flex gap-1">
+              <NvButton size="sm" variant="ghost" :disabled="busy" @click="edit(config)"
+                >编辑</NvButton
+              >
+              <NvButton size="sm" variant="ghost" :disabled="busy" @click="change(config)">{{
+                config.isEnabled ? '停用' : '启用'
+              }}</NvButton>
+              <NvButton size="sm" variant="ghost" :disabled="busy" @click="deleting = config"
+                >删除</NvButton
+              >
+            </div>
+          </div>
+          <p class="text-sm">
+            {{ connectorSourceSystemLabel(config.protocol) }} · {{ config.pollIntervalSeconds }} 秒
+            · {{ config.mappings?.length ?? 0 }} 个测点 ·
+            {{ config.isEnabled ? '已启用' : '已停用' }}
           </p>
-          <p class="mt-1 text-sm text-muted-foreground">{{ connectorsErrorDetail }}</p>
+          <p class="break-all font-mono text-xs text-muted-foreground">{{ config.endpoint }}</p>
+          <div
+            v-if="deleting?.connectorId === config.connectorId"
+            class="flex flex-wrap items-center gap-2 text-sm"
+          >
+            删除连接器「{{ config.displayName }}」？
+            <NvButton size="sm" variant="outline" :disabled="busy" @click="deleting = undefined"
+              >取消</NvButton
+            >
+            <NvButton size="sm" variant="destructive" :disabled="busy" @click="change(config, true)"
+              >确认删除</NvButton
+            >
+          </div>
         </div>
-        <NvButton size="sm" type="button" variant="outline" @click="refreshConnectors">
-          <RefreshCwIcon aria-hidden="true" />
-          重试
-        </NvButton>
-      </div>
+        <ConnectorHealthCard
+          v-if="health"
+          :connector="health"
+          :sample-rate="sampleRateByConnector[id] ?? null"
+          :expanded="expanded.has(id)"
+          @toggle="toggleDetails(id)"
+        />
+        <p v-else class="text-sm text-muted-foreground">
+          {{ connectorsError ? '运行态读取失败' : '暂无运行态上报' }}
+        </p>
+      </article>
     </div>
-
-    <div
-      v-else-if="!connectors.length"
-      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-    >
-      暂无现场采集连接。完成现场采集配置并开始上报后，设备数据会出现在这里。
-    </div>
-
-    <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      <ConnectorHealthCard
-        v-for="connector in connectors"
-        :key="rowKey(connector.connectorId, connector.connectorName)"
-        :connector="connector"
-        :sample-rate="sampleRateByConnector[connector.connectorId ?? ''] ?? null"
-        :expanded="expanded.has(rowKey(connector.connectorId, connector.connectorName))"
-        @toggle="toggle(rowKey(connector.connectorId, connector.connectorName))"
-      />
-    </div>
+    <ConnectorConfigSheet
+      v-if="canManage"
+      v-model:open="sheetOpen"
+      :config="editing"
+      @saved="refreshConnectors"
+    />
   </BusinessLayout>
 </template>

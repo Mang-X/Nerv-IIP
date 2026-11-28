@@ -60,7 +60,13 @@ export function useEquipmentDeviceAlarms(deviceAssetId: MaybeRefOrGetter<string>
 }
 
 export function useBusinessEquipmentAlarms(
-  pagination: MaybeRefOrGetter<{ status?: string; skip?: number; take?: number }> = {},
+  pagination: MaybeRefOrGetter<{
+    status?: string
+    skip?: number
+    take?: number
+    deviceAssetId?: string
+  }> = {},
+  enabled = () => true,
 ) {
   const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
@@ -68,7 +74,8 @@ export function useBusinessEquipmentAlarms(
     ...listBusinessConsoleEquipmentAlarmsQueryOptions({
       query: { ...toContextQuery(businessContext), ...toValue(pagination) },
     }),
-    enabled: hasBusinessContext(businessContext),
+    enabled: hasBusinessContext(businessContext) && enabled(),
+    autoRefetch: () => 10_000,
   }))
   async function readAlarm(
     alarmEventId: string,

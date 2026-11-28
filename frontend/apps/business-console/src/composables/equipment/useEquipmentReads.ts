@@ -12,7 +12,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { hasBusinessContext } from '../shared/businessContextBinding'
 import {
   defaultAvailabilityFilters,
@@ -42,6 +42,8 @@ export function useBusinessEquipmentOverview() {
   const overviewEnabled = computed(
     () => contextReady.value && effectiveDeviceAssetIds.value.length > 0,
   )
+  const polling = ref(true)
+  const updatedAt = ref<Date>()
   const overviewQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentOverviewQueryOptions({
       query: {
@@ -50,6 +52,7 @@ export function useBusinessEquipmentOverview() {
       },
     }),
     enabled: overviewEnabled.value,
+    autoRefetch: () => (polling.value ? 5_000 : false),
   }))
 
   const overview = computed(() =>
@@ -70,7 +73,17 @@ export function useBusinessEquipmentOverview() {
     return 'ready'
   })
 
+  watch(
+    overview,
+    (value) => {
+      updatedAt.value = value ? new Date() : undefined
+    },
+    { immediate: true },
+  )
+
   return {
+    polling,
+    updatedAt,
     activeBlocks: computed(() => overview.value?.activeBlocks ?? []),
     contextReady,
     deviceRosterError,

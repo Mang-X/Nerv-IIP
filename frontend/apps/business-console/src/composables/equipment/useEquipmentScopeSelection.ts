@@ -71,12 +71,14 @@ export function useEquipmentScopeSelection(initial?: Partial<EquipmentScopeSelec
   const devicesInScope = computed(() => {
     const device = scope.value.device
     if (!device) return devicesInParentScope.value
-    return devicesInParentScope.value.filter((item) => item.code === device)
+    return devicesInParentScope.value.filter(
+      (item) => item.code === device || item.deviceAssetId === device,
+    )
   })
 
   // 目录刷新后已选值可能不再落在范围内（如产线改挂到别的车间）——静默回退到「全部」。
   watch(devicesInScope, (devices) => {
-    if (scope.value.device && !devices.some((item) => item.code === scope.value.device)) {
+    if ((scope.value.line || scope.value.workshop) && scope.value.device && !devices.length) {
       scope.value = { ...scope.value, device: '' }
     }
   })
@@ -98,16 +100,15 @@ export function useEquipmentScopeSelection(initial?: Partial<EquipmentScopeSelec
     {
       key: 'device',
       label: '设备',
-      options: devicesInParentScope.value.map(toOption),
+      options: devicesInParentScope.value.map((item) => ({
+        ...toOption(item),
+        value: item.deviceAssetId === scope.value.device ? scope.value.device : (item.code ?? ''),
+      })),
       loading: deviceSource.resourcesPending.value,
     },
   ])
 
-  const selectedDevice = computed(() =>
-    scope.value.device
-      ? deviceSource.resources.value.find((item) => item.code === scope.value.device)
-      : undefined,
-  )
+  const selectedDevice = computed(() => (scope.value.device ? devicesInScope.value[0] : undefined))
 
   const scopeLabel = computed(() => {
     const { workshop, line, device } = scope.value
