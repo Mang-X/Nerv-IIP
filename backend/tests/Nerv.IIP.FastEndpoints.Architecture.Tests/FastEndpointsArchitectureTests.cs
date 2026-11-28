@@ -313,7 +313,7 @@ public sealed class FastEndpointsArchitectureTests
         var inheritedEnvironmentRegistrations = Regex.Matches(
             programText,
             @"WithAppHostEnvironment\(builder\.AddProject<Projects\.[^>]+>\(");
-        Assert.Equal(21, projectRegistrations.Count);
+        Assert.Equal(22, projectRegistrations.Count);
         Assert.Equal(projectRegistrations.Count, inheritedEnvironmentRegistrations.Count);
         Assert.DoesNotContain("WithLocalDevelopmentEnvironment", programText, StringComparison.Ordinal);
 
