@@ -2,7 +2,7 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import { AppShellT } from '@nerv-iip/app-shell'
 import { NvDropdownMenuItem } from '@nerv-iip/ui'
-import { usePermission } from '@nerv-iip/auth'
+import { canAccess, consolePagePermissions } from '@/router/access'
 import { useAuthStore } from '@/stores/auth'
 import {
   BellIcon,
@@ -25,23 +25,41 @@ const { principal } = storeToRefs(auth)
 const router = useRouter()
 const route = useRoute()
 
-const { can } = usePermission(() => principal.value?.permissionCodes)
+function canOpen(path: keyof typeof consolePagePermissions) {
+  return canAccess(principal.value?.permissionCodes, consolePagePermissions[path])
+}
+
+const notificationItems = computed(() =>
+  (
+    [
+      { title: t('nav.notificationInbox'), icon: InboxIcon, path: '/notifications' },
+      { title: t('nav.notificationDlq'), icon: TriangleAlertIcon, path: '/notifications/dlq' },
+    ] as const
+  )
+    .filter(({ path }) => canOpen(path))
+    .map(({ path, ...item }) => ({ ...item, to: { path } })),
+)
+
 const iamItems = computed(() =>
   (['users', 'roles', 'sessions'] as const)
-    .filter((section) => can(`iam.${section}.read`))
+    .filter((section) => canOpen(`/iam/${section}`))
     .map((section) => ({ title: t(`nav.${section}`), to: { path: `/iam/${section}` } })),
 )
 
 // 顶部一级能力区（T 型导航的横向部分）。
 const topDomains = computed<NavDomain[]>(() => [
-  { id: 'instances', title: t('nav.instances'), icon: LayersIcon, to: { name: '/' } },
-  {
+  ...(canOpen('/')
+    ? [{ id: 'instances', title: t('nav.instances'), icon: LayersIcon, to: { path: '/' } }]
+    : []),
+  ...notificationItems.value.slice(0, 1).map(({ to }) => ({
     id: 'notifications',
     title: t('nav.notifications'),
     icon: BellIcon,
-    to: { path: '/notifications' },
-  },
-  { id: 'business', title: t('nav.business'), icon: Building2Icon, to: { path: '/business' } },
+    to,
+  })),
+  ...(canOpen('/business')
+    ? [{ id: 'business', title: t('nav.business'), icon: Building2Icon, to: { path: '/business' } }]
+    : []),
   ...iamItems.value.slice(0, 1).map(({ to }) => ({
     id: 'iam',
     title: t('nav.iam'),
@@ -63,19 +81,8 @@ function isUnder(path: string, base: string) {
 const currentDomainId = computed(() => resolveDomainId(route?.path ?? '/'))
 
 const sideNav = computed<SideNav>(() => {
-  if (currentDomainId.value === 'notifications') {
-    return [
-      {
-        items: [
-          { title: t('nav.notificationInbox'), icon: InboxIcon, to: { path: '/notifications' } },
-          {
-            title: t('nav.notificationDlq'),
-            icon: TriangleAlertIcon,
-            to: { path: '/notifications/dlq' },
-          },
-        ],
-      },
-    ]
+  if (currentDomainId.value === 'notifications' && notificationItems.value.length) {
+    return [{ items: notificationItems.value }]
   }
 
   return currentDomainId.value === 'iam' && iamItems.value.length ? [{ items: iamItems.value }] : []
@@ -94,10 +101,6 @@ async function signOut() {
   await auth.logout()
   await router.push('/login')
 }
-
-function openSearch() {
-  // 命令/对象搜索入口占位（与 Business Console 一致，后续接入）。
-}
 </script>
 
 <template>
@@ -109,7 +112,7 @@ function openSearch() {
     :user="shellUser"
     :sign-out-label="t('nav.signOut')"
     @sign-out="signOut"
-    @open-search="openSearch"
+    :search-enabled="false"
   >
     <template #user-menu-items>
       <NvDropdownMenuItem @select="router.push('/change-password')">

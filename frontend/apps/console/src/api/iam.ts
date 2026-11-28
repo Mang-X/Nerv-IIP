@@ -70,9 +70,8 @@ function readMessage(error: unknown) {
 }
 
 function readStatus(error: unknown) {
-  if (typeof error === 'object' && error !== null && 'status' in error) {
-    return typeof error.status === 'number' ? error.status : undefined
-  }
+  if (typeof error !== 'object' || error === null) return undefined
 
-  return undefined
+  const requestError = error as { status?: number; response?: { status?: number } }
+  return requestError.status ?? requestError.response?.status
 }

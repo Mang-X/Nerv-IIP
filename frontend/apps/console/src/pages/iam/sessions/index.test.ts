@@ -7,7 +7,7 @@ import SessionsPage from './index.vue'
 
 const iamState = vi.hoisted(() => ({
   filters: {
-    filterRevoked: undefined as boolean | undefined,
+    filterStatus: undefined as string | undefined,
     filterSearch: undefined as string | undefined,
     pageIndex: 3,
     pageSize: 20,
@@ -41,6 +41,8 @@ vi.mock('@/composables/useIamAdmin', () => ({
     sessions: computed(() => [
       {
         sessionId: 'session-current',
+        loginName: 'admin',
+        status: 'active',
         userId: 'user-admin',
         issuedAtUtc: '2026-05-20T05:00:00Z',
         expiresAtUtc: '2026-05-20T13:00:00Z',
@@ -49,6 +51,8 @@ vi.mock('@/composables/useIamAdmin', () => ({
       },
       {
         sessionId: 'session-1',
+        loginName: 'operator',
+        status: 'active',
         userId: 'user-admin',
         issuedAtUtc: '2026-05-20T06:00:00Z',
         expiresAtUtc: '2026-05-20T14:00:00Z',
@@ -57,11 +61,20 @@ vi.mock('@/composables/useIamAdmin', () => ({
       },
       {
         sessionId: 'session-revoked',
+        loginName: 'former-operator',
+        status: 'revoked',
         userId: 'user-admin',
         issuedAtUtc: '2026-05-19T06:00:00Z',
         expiresAtUtc: '2026-05-19T14:00:00Z',
         revokedAtUtc: '2026-05-19T10:00:00Z',
         permissionVersion: 6,
+      },
+      {
+        sessionId: 'session-expired',
+        userId: 'user-expired',
+        loginName: 'expired-operator',
+        status: 'expired',
+        revokedAtUtc: null,
       },
     ]),
     sessionsError: computed(() => undefined),
@@ -84,7 +97,7 @@ describe('IAM sessions page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
-    iamState.filters.filterRevoked = undefined
+    iamState.filters.filterStatus = undefined
     iamState.filters.filterSearch = undefined
     iamState.filters.pageIndex = 3
     iamState.filters.pageSize = 20
@@ -101,7 +114,7 @@ describe('IAM sessions page', () => {
 
     expect(wrapper.text()).toContain('会话')
     const session = wrapper.findAll('details')[1]!
-    expect(session.get('summary').text()).toBe('会话 · ession-1')
+    expect(session.get('summary').text()).toBe('operator')
     expect(session.text()).toContain('session-1')
     expect(wrapper.text()).toContain('账号标识 user-admin')
     expect(wrapper.text()).toContain('签发时间')
@@ -113,34 +126,34 @@ describe('IAM sessions page', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    const activeBadge = wrapper.findAll('[aria-label="状态：活跃"]')[0]
+    const activeBadge = wrapper.findAll('[aria-label="状态：有效"]')[0]
     expect(activeBadge).toBeTruthy()
-    expect(activeBadge.text()).toBe('活跃')
+    expect(activeBadge.text()).toBe('有效')
     expect(activeBadge.classes()).toContain('text-success-strong')
   })
 
-  it('maps session status filters to revoked filters', async () => {
+  it('sends distinct session statuses to the server filter', async () => {
     const wrapper = mountPage()
     await flushPromises()
 
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'active')
     await flushPromises()
 
-    expect(iamState.filters.filterRevoked).toBe(false)
+    expect(iamState.filters.filterStatus).toBe('active')
     expect(iamState.filters.pageIndex).toBe(1)
 
     iamState.filters.pageIndex = 3
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'revoked')
     await flushPromises()
 
-    expect(iamState.filters.filterRevoked).toBe(true)
+    expect(iamState.filters.filterStatus).toBe('revoked')
     expect(iamState.filters.pageIndex).toBe(1)
 
     iamState.filters.pageIndex = 3
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'all')
     await flushPromises()
 
-    expect(iamState.filters.filterRevoked).toBeUndefined()
+    expect(iamState.filters.filterStatus).toBeUndefined()
     expect(iamState.filters.pageIndex).toBe(1)
   })
 
@@ -148,19 +161,17 @@ describe('IAM sessions page', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(
-      wrapper.findAll('button[aria-label^="吊销会话"]')[0]!.attributes('disabled'),
-    ).toBeDefined()
+    expect(wrapper.find('button[aria-label="吊销会话 admin"]').exists()).toBe(false)
   })
 
   it('revokes the selected session and refreshes sessions after confirmation', async () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.findAll('button[aria-label^="吊销会话"]')[1]!.trigger('click')
+    await wrapper.get('button[aria-label="吊销会话 operator"]').trigger('click')
     await flushPromises()
 
-    expect(document.body.textContent).toContain('会话 · ession-1')
+    expect(document.body.textContent).toContain('operator')
     expect(document.body.textContent).not.toContain('user-admin')
     const confirmButton = [...document.body.querySelectorAll('button')].find(
       (button) => button.textContent?.trim() === '吊销会话',
@@ -179,18 +190,16 @@ describe('IAM sessions page', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(
-      wrapper.findAll('button[aria-label^="吊销会话"]')[1]!.attributes('disabled'),
-    ).toBeDefined()
+    expect(wrapper.find('button[aria-label="吊销会话 operator"]').exists()).toBe(false)
   })
 
   it('disables revoke for revoked sessions', async () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(
-      wrapper.findAll('button[aria-label^="吊销会话"]')[2]!.attributes('disabled'),
-    ).toBeDefined()
+    expect(wrapper.find('button[aria-label="吊销会话 former-operator"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="吊销会话 expired-operator"]').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="状态：已过期"]').text()).toBe('已过期')
   })
 
   it('renders the server pagination summary when sessions exceed one page', async () => {

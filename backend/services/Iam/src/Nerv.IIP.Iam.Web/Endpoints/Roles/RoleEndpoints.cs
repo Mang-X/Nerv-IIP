@@ -1,6 +1,8 @@
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Commands.Roles;
@@ -105,16 +107,31 @@ public sealed class PatchRoleDataScopesEndpoint(
             return;
         }
 
-        var req = await HttpContext.Request.ReadFromJsonAsync<PatchDataScopesRequest>(ct)
-            ?? throw new BadHttpRequestException("Request body is required.");
+        var req = await HttpContext.Request.ReadFromJsonAsync<PatchRoleDataScopesRequest>(ct);
+        if (req?.ExpectedVersion is not { } expectedVersion || req.DataScopes is null)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                HttpContext, StatusCodes.Status400BadRequest, "Data scopes and expected version are required.", ct);
+            return;
+        }
+
         var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
-        var response = await mediator.Send(
-            new PatchRoleDataScopesCommand(
-                Route<string>("roleId")!,
-                req.DataScopes,
-                IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
-            ct);
-        await Send.OkAsync(response.AsResponseData(), ct);
+        try
+        {
+            var response = await mediator.Send(
+                new PatchRoleDataScopesCommand(
+                    Route<string>("roleId")!,
+                    expectedVersion,
+                    req.DataScopes,
+                    IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
+                ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (Exception exception) when (exception is RoleDataScopeConflictException or DbUpdateConcurrencyException)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                HttpContext, StatusCodes.Status409Conflict, "角色范围已更新，请重新加载后编辑。", ct);
+        }
     }
 }
 

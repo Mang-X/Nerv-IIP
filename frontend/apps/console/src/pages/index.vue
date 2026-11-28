@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { consolePagePermissions } from '@/router/access'
 import InstanceDetailPanel from '@/components/console/InstanceDetailPanel.vue'
 import InstanceTable from '@/components/console/InstanceTable.vue'
 import { useConsoleInstances, useRestartOperation } from '@/composables/useConsoleOperations'
@@ -6,17 +7,24 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Alert, AlertDescription, AlertTitle, Button, NvPageHeader } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { useHasPermission } from '@/composables/usePermissions'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   alias: '/instances',
   meta: {
     requiresAuth: true,
+    requiredPermissions: consolePagePermissions['/'],
     title: 'routes.instances',
   },
 })
 
 const { t } = useI18n()
+const auth = useAuthStore()
+const route = useRoute('/')
+const canRestart = useHasPermission('ops.tasks.create')
+const canReadTasks = useHasPermission('ops.tasks.read')
 const {
   detail,
   detailError,
@@ -28,20 +36,32 @@ const {
   refreshDetail,
   refreshInstances,
   selectInstance,
-} = useConsoleInstances()
+} = useConsoleInstances(typeof route.query.instance === 'string' ? route.query.instance : undefined)
 
 const { latestOperationTask, restartError, restartInstance, restartPending } = useRestartOperation()
 const router = useRouter()
 
 const latestOperationPath = computed(() => {
   const operationTaskId = latestOperationTask.value?.operationTaskId
-  return operationTaskId ? `/operations/${operationTaskId}` : undefined
+  return canReadTasks.value && operationTaskId ? `/operations/${operationTaskId}` : undefined
 })
 
 async function handleRestart(instanceKey: string) {
+  const principal = auth.principal
+  if (!canRestart.value || !principal?.organizationId || !principal.environmentId) return
+
+  const instance = instances.value.find((row) => row.instanceKey === instanceKey)
+  if (!instance) return
+  if (
+    !window.confirm(
+      `重启实例 ${instance.instanceName ?? instanceKey}（${instanceKey}）？\n组织：${principal.organizationId}\n环境：${principal.environmentId}`,
+    )
+  )
+    return
+
   const task = await restartInstance(instanceKey)
   const operationTaskId = task?.operationTaskId
-  if (operationTaskId) {
+  if (operationTaskId && canReadTasks.value) {
     await router.push(`/operations/${operationTaskId}`)
   }
 }
@@ -92,6 +112,7 @@ async function handleRefreshDetail() {
             v-else
             :instances="instances"
             :pending="listPending"
+            :can-restart="canRestart"
             :restart-pending="restartPending"
             :selected-instance-key="effectiveInstanceKey"
             @restart-instance="handleRestart"
@@ -102,6 +123,7 @@ async function handleRefreshDetail() {
             <AlertDescription>{{ restartError.message }}</AlertDescription>
           </Alert>
 
+          <p v-if="latestOperationTask" role="status" class="text-sm">重启请求已受理。</p>
           <RouterLink
             v-if="latestOperationPath"
             class="console-page__operation-link rounded-lg border bg-background px-4 py-3 text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

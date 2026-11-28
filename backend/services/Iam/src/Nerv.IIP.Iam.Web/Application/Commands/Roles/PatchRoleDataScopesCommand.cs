@@ -8,6 +8,7 @@ namespace Nerv.IIP.Iam.Web.Application.Commands.Roles;
 
 public sealed record PatchRoleDataScopesCommand(
     string RoleId,
+    int ExpectedVersion,
     IReadOnlyList<DataScopeBindingRequest> DataScopes,
     SecurityAuditContext? AuditContext) : ICommand<DataScopeListResponse>;
 
@@ -22,6 +23,7 @@ public sealed class PatchRoleDataScopesCommandHandler(IIamDataScopeApplicationSe
             DataScopeApplicationMapping.Normalize(request.DataScopes));
         return await dataScopes.PatchRoleDataScopesAsync(
             request.RoleId,
+            request.ExpectedVersion,
             request.DataScopes,
             request.AuditContext,
             cancellationToken);

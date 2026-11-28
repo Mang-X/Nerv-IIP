@@ -148,10 +148,26 @@ describe('useNotifications', () => {
         principalId: 'user-admin',
         principalType: 'user',
         loginName: 'admin',
+        permissionCodes: [
+          'notifications.messages.read',
+          'notifications.tasks.read',
+          'notifications.messages.mark-read',
+        ],
         organizationId: 'org-customer',
         environmentId: 'env-prod',
       },
     })
+  })
+
+  it('queries only tasks when the principal has task read permission', async () => {
+    useAuthStore().$patch({ principal: { permissionCodes: ['notifications.tasks.read'] } })
+    const notifications = useNotifications()
+
+    await notifications.refreshNotifications()
+
+    expect(listConsoleNotificationTasksQueryOptions).toHaveBeenCalled()
+    expect(listConsoleNotificationMessagesQueryOptions).not.toHaveBeenCalled()
+    expect(notifications.canMarkRead.value).toBe(false)
   })
 
   it('loads notification messages and tasks from gateway query options', () => {

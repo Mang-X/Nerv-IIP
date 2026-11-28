@@ -703,10 +703,14 @@ public sealed class IamPostgresProfileTests
             new { permissionCodes = new[] { "iam.users.read", "ops.tasks.read" } });
         patchRole.EnsureSuccessStatusCode();
 
+        var rolesResponse = await client.GetAsync("/api/iam/v1/roles?filterSearch=role-platform-admin");
+        var adminRole = Assert.Single((await ReadResponseDataAsync<RoleListResponse>(rolesResponse))!.Items);
+
         var patchAdminRoleScopes = await client.PatchAsJsonAsync(
             "/api/iam/v1/roles/role-platform-admin/data-scopes",
             new
             {
+                expectedVersion = adminRole.ScopeVersion,
                 dataScopes = new[]
                 {
                     new { scopeType = "organization", scopeCode = "org-001" },
@@ -718,6 +722,15 @@ public sealed class IamPostgresProfileTests
         Assert.Equal(
             [new DataScopeResponse("organization", "org-001"), new DataScopeResponse("workshop", "WS-PG")],
             adminRoleScopes!.DataScopes);
+
+        var staleScopePatch = await client.PatchAsJsonAsync(
+            "/api/iam/v1/roles/role-platform-admin/data-scopes",
+            new
+            {
+                expectedVersion = adminRole.ScopeVersion,
+                dataScopes = new[] { new { scopeType = "organization", scopeCode = "org-001" } },
+            });
+        Assert.Equal(HttpStatusCode.Conflict, staleScopePatch.StatusCode);
 
         var patchAdminMembershipScopes = await client.PatchAsJsonAsync(
             "/api/iam/v1/users/user-admin/membership-data-scopes",
@@ -746,6 +759,8 @@ public sealed class IamPostgresProfileTests
             new { loginName = "reset-pg-user", email = "reset-pg-user@nerv-iip.local", password = "OldPassword123!" });
         Assert.Equal(HttpStatusCode.Created, createUser.StatusCode);
         var user = await ReadResponseDataAsync<UserResponse>(createUser);
+
+        await IamTestMembership.AssignAsync(client, user!.UserId);
 
         var oldUserLogin = await client.PostAsJsonAsync(
             "/api/iam/v1/auth/login",
@@ -847,6 +862,8 @@ public sealed class IamPostgresProfileTests
             });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var user = await ReadResponseDataAsync<UserResponse>(create);
+
+        await IamTestMembership.AssignAsync(client, user!.UserId);
 
         var userLogin = await client.PostAsJsonAsync(
             "/api/iam/v1/auth/login",
@@ -1217,7 +1234,8 @@ public sealed class IamPostgresProfileTests
         bool PasswordChangeRequired = false,
         DateTimeOffset? PasswordExpiresAtUtc = null,
         DateTimeOffset? LockoutUntilUtc = null);
-    private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
+    private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes, int ScopeVersion);
+    private sealed record RoleListResponse(IReadOnlyList<RoleResponse> Items);
     private sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogItemResponse> Items);
     private sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);
     private sealed record MeResponse(

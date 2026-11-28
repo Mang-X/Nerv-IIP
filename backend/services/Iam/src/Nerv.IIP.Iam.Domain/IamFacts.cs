@@ -18,7 +18,7 @@ public sealed record UserFact(
     DateTimeOffset? PasswordExpiresAtUtc = null,
     bool PasswordChangeRequired = false,
     IReadOnlyList<string>? PasswordHistoryHashes = null);
-public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes);
+public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes, int ScopeVersion = 0);
 public sealed record MembershipFact(string UserId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> RoleIds);
 public sealed record UserSessionFact(
     string SessionId,

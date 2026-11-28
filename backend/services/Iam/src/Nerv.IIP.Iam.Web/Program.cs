@@ -57,6 +57,7 @@ if (usesPostgreSql)
     builder.Services.AddScoped<IIamAuthService, PostgreSqlIamAuthService>();
     builder.Services.AddScoped<IIamPermissionAuthorizer, IamPermissionAuthorizer>();
     builder.Services.AddScoped<IIamUserApplicationService, PostgreSqlIamUserApplicationService>();
+    builder.Services.AddScoped<IIamEffectiveAccess, PostgreSqlIamEffectiveAccess>();
     builder.Services.AddScoped<IIamRoleApplicationService, PostgreSqlIamRoleApplicationService>();
     builder.Services.AddScoped<IIamDataScopeApplicationService, PostgreSqlIamDataScopeApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, PostgreSqlIamSessionApplicationService>();
@@ -69,6 +70,7 @@ else
     builder.Services.AddScoped<IIamAuthService, InMemoryIamAuthService>();
     builder.Services.AddScoped<IIamPermissionAuthorizer, InMemoryIamPermissionAuthorizer>();
     builder.Services.AddScoped<IIamUserApplicationService, InMemoryIamUserApplicationService>();
+    builder.Services.AddScoped<IIamEffectiveAccess, InMemoryIamEffectiveAccess>();
     builder.Services.AddScoped<IIamRoleApplicationService, InMemoryIamRoleApplicationService>();
     builder.Services.AddScoped<IIamDataScopeApplicationService, InMemoryIamDataScopeApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, InMemoryIamSessionApplicationService>();

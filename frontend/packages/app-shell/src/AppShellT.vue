@@ -37,6 +37,7 @@ const props = withDefaults(
     signOutLabel?: string
     /** Command-search button placeholder text. */
     searchLabel?: string
+    searchEnabled?: boolean
     /** Recent items (already permission-filtered by the consumer). */
     recent?: NavLink[]
     /** Starred items (already permission-filtered by the consumer). */
@@ -44,6 +45,7 @@ const props = withDefaults(
   }>(),
   {
     signOutLabel: '退出登录',
+    searchEnabled: true,
     searchLabel: '搜索菜单、单号、物料…',
   },
 )
@@ -60,7 +62,7 @@ const pinned = computed<{ label: string; icon: typeof StarIcon; items: NavLink[]
 )
 
 function onKeydown(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+  if (props.searchEnabled && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     emit('openSearch')
   }
@@ -102,6 +104,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
       <div class="ml-2 flex shrink-0 items-center gap-1">
         <NvButton
+          v-if="searchEnabled"
           type="button"
           variant="outline"
           size="sm"
@@ -114,6 +117,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <kbd class="ml-2 rounded border bg-muted px-1 text-[10px] font-medium">⌘K</kbd>
         </NvButton>
         <NvButton
+          v-if="searchEnabled"
           type="button"
           variant="ghost"
           size="icon"

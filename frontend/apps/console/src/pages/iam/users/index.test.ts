@@ -101,6 +101,14 @@ function mountPage() {
   return mount(UsersPage, {
     global: {
       stubs: {
+        NvDropdownMenu: { template: '<div><slot /></div>' },
+        NvDropdownMenuContent: { template: '<div><slot /></div>' },
+        NvDropdownMenuTrigger: { template: '<slot />' },
+        NvDropdownMenuItem: {
+          emits: ['select'],
+          template: `<button @click="$emit('select')"><slot /></button>`,
+        },
+
         DefaultLayout: { template: '<main><slot /></main>' },
       },
     },
@@ -184,9 +192,9 @@ describe('IAM users page', () => {
 
     const createButton = wrapper.findAll('button').find((button) => button.text() === '新建用户')
     expect(createButton?.attributes('disabled')).toBeDefined()
-    expect(wrapper.get('button[aria-label="编辑用户 admin"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('button[aria-label="重置密码 admin"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('button[aria-label="停用用户 admin"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button[aria-label="编辑用户 admin"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="重置密码 admin"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="停用用户 admin"]').exists()).toBe(false)
   })
 
   it('renders the server pagination summary and changes the server page', async () => {

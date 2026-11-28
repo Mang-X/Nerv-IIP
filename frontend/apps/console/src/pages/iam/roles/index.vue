@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { consolePagePermissions } from '@/router/access'
 import type { ConsoleIamRoleResponse } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import PermissionCodeBadge from '@/components/iam/PermissionCodeBadge.vue'
 import RoleCreateDialog from '@/components/iam/RoleCreateDialog.vue'
+import RoleDataScopesDialog from '@/components/iam/RoleDataScopesDialog.vue'
 import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
 import { useIamRoles } from '@/composables/useIamAdmin'
 import { useHasPermission } from '@/composables/usePermissions'
@@ -29,11 +31,30 @@ import { computed, shallowRef, watch } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
+    requiredPermissions: consolePagePermissions['/iam/roles'],
     title: 'IAM 角色',
   },
 })
 
 const roles = useIamRoles()
+const scopeRole = shallowRef<ConsoleIamRoleResponse>()
+const scopeOpen = shallowRef(false)
+
+function editScopes(role: ConsoleIamRoleResponse) {
+  scopeRole.value = role
+  scopeOpen.value = true
+}
+
+async function refreshConflictingScopes() {
+  scopeOpen.value = false
+  toast.error('角色范围已更新，请重新打开编辑。')
+  await roles.refreshRoles()
+}
+
+async function refreshScopes() {
+  await roles.refreshRoles()
+  toast.success('数据范围已更新')
+}
 
 const search = shallowRef('')
 const canManageRoles = useHasPermission('iam.roles.manage')
@@ -95,7 +116,8 @@ const columns: NvDataTableColumn<RoleRow>[] = [
     accessor: (r) => r.permissionCodes?.length ?? 0,
   },
   { key: 'keyPermissions', header: '关键权限' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
+  { key: 'dataScopes', header: '数据范围' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-48' },
 ]
 
 watch(
@@ -201,8 +223,32 @@ async function savePermissions() {
             </span>
           </div>
         </template>
+        <template #cell-dataScopes="{ row }">
+          <details v-if="row.dataScopes?.length" class="text-sm">
+            <summary class="cursor-pointer">{{ row.dataScopes.length }} 项</summary>
+            <ul class="mt-1 grid gap-1 text-xs text-muted-foreground">
+              <li
+                v-for="scope in row.dataScopes"
+                :key="`${scope.scopeType}:${scope.scopeCode}`"
+                class="break-all"
+              >
+                {{ scope.scopeType }} · {{ scope.scopeCode }}
+              </li>
+            </ul>
+          </details>
+          <span v-else class="text-sm text-muted-foreground">未配置</span>
+        </template>
         <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end">
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              v-if="canManageRoles"
+              size="sm"
+              type="button"
+              variant="outline"
+              @click="editScopes(row)"
+            >
+              编辑范围
+            </Button>
             <Button
               size="sm"
               type="button"
@@ -221,6 +267,14 @@ async function savePermissions() {
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="roles.totalCount.value"
+      />
+
+      <RoleDataScopesDialog
+        v-if="scopeOpen && scopeRole"
+        v-model:open="scopeOpen"
+        :role="scopeRole"
+        @saved="refreshScopes"
+        @conflict="refreshConflictingScopes"
       />
 
       <RoleCreateDialog

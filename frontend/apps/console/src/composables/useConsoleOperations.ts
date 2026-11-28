@@ -70,8 +70,8 @@ function isListConsoleInstancesEntry(entry: UseQueryEntry) {
   })
 }
 
-export function useConsoleInstances() {
-  const selectedInstanceKey = shallowRef<string>()
+export function useConsoleInstances(initialInstanceKey?: string) {
+  const selectedInstanceKey = shallowRef(initialInstanceKey)
   const consoleContext = useConsoleContext()
 
   const listQuery = useQuery(() => {
@@ -214,7 +214,14 @@ export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
           ...context,
         },
       } as Parameters<typeof getConsoleOperationTaskQueryOptions>[0]),
-      autoRefetch: 1000,
+      autoRefetch: (state) => {
+        const status =
+          state.status === 'success' ? unwrapResponseData(state.data)?.status : undefined
+        return status &&
+          !['completed', 'failed', 'rejected', 'cancelled', 'canceled'].includes(status)
+          ? 1000
+          : false
+      },
       staleTime: 1000,
     }
   })

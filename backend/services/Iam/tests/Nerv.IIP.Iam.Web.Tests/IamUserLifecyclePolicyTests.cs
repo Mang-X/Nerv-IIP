@@ -38,7 +38,7 @@ public sealed class IamUserLifecyclePolicyTests : IClassFixture<WebApplicationFa
         Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
 
         var sessions = await GetPagedAsync<SessionResponse>(
-            $"/api/iam/v1/sessions?filterSearch={user.UserId}&filterRevoked=false&pageIndex=1&pageSize=20");
+            $"/api/iam/v1/sessions?filterSearch={user.UserId}&filterStatus=active&pageIndex=1&pageSize=20");
         Assert.DoesNotContain(sessions.Items, session => session.UserId == user.UserId);
 
         var disabledLogin = await _client.PostAsJsonAsync(

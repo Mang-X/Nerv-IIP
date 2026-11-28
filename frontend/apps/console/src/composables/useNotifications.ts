@@ -14,6 +14,7 @@ import {
   submitConsoleNotificationIntentMutationOptions,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
+import { useHasPermission } from './usePermissions'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { computed, shallowRef } from 'vue'
@@ -43,6 +44,10 @@ function isNotificationEntry(entry: UseQueryEntry) {
 export function useNotifications() {
   const auth = useAuthStore()
   const { principal } = storeToRefs(auth)
+  const canReadMessages = useHasPermission('notifications.messages.read')
+  const canReadOperationTasks = useHasPermission('ops.tasks.read')
+  const canReadTasks = useHasPermission('notifications.tasks.read')
+  const canMarkRead = useHasPermission('notifications.messages.mark-read')
   const queryCache = useQueryCache()
   const actionError = shallowRef<Error>()
   const consoleContext = computed<ConsoleContext | undefined>(() => {
@@ -62,7 +67,7 @@ export function useNotifications() {
   const messagesQuery = useQuery(() => {
     const context = consoleContext.value
 
-    if (!context) {
+    if (!context || !canReadMessages.value) {
       return disabledNotificationQueryOptions<NotificationMessageListEnvelope>(
         'listConsoleNotificationMessages',
       )
@@ -79,7 +84,7 @@ export function useNotifications() {
   const tasksQuery = useQuery(() => {
     const context = consoleContext.value
 
-    if (!context) {
+    if (!context || !canReadTasks.value) {
       return disabledNotificationQueryOptions<NotificationTaskListEnvelope>(
         'listConsoleNotificationTasks',
       )
@@ -151,7 +156,10 @@ export function useNotifications() {
 
   async function refreshNotifications() {
     actionError.value = undefined
-    const results = await Promise.allSettled([messagesQuery.refetch(), tasksQuery.refetch()])
+    const results = await Promise.allSettled([
+      ...(canReadMessages.value ? [messagesQuery.refetch()] : []),
+      ...(canReadTasks.value ? [tasksQuery.refetch()] : []),
+    ])
     const failed = results.find((result) => result.status === 'rejected')
     if (failed?.status === 'rejected') {
       actionError.value = toError(failed.reason, '无法刷新通知。')
@@ -159,7 +167,7 @@ export function useNotifications() {
   }
 
   async function markRead(messageId: string) {
-    if (!messageId) {
+    if (!canMarkRead.value || !messageId) {
       return undefined
     }
 
@@ -184,12 +192,10 @@ export function useNotifications() {
     }
   }
 
-  async function markAllUnreadRead() {
-    const messageIds = unreadMessages.value
-      .map((message) => message.messageId)
-      .filter(isNonEmptyString)
+  async function markAllUnreadRead(visibleMessages = unreadMessages.value) {
+    const messageIds = visibleMessages.map((message) => message.messageId).filter(isNonEmptyString)
 
-    if (messageIds.length === 0) {
+    if (!canMarkRead.value || messageIds.length === 0) {
       return []
     }
 
@@ -234,6 +240,10 @@ export function useNotifications() {
 
   return {
     allError,
+    canReadMessages,
+    canReadTasks,
+    canReadOperationTasks,
+    canMarkRead,
     actionError,
     batchError: batchReadMutation.error,
     batchPending: batchReadMutation.isLoading,
@@ -242,7 +252,7 @@ export function useNotifications() {
     markReadError: markReadMutation.error,
     markReadPending: markReadMutation.isLoading,
     messages,
-    messagesError: messagesQuery.error,
+    messagesError: computed(() => messagesQuery.error.value ?? messagesEnvelopeError.value),
     messagesPending: messagesQuery.isLoading,
     openTasks,
     readMessages,
@@ -251,7 +261,7 @@ export function useNotifications() {
     submitIntent,
     submitPending: intentMutation.isLoading,
     tasks,
-    tasksError: tasksQuery.error,
+    tasksError: computed(() => tasksQuery.error.value ?? tasksEnvelopeError.value),
     tasksPending: tasksQuery.isLoading,
     unreadMessages,
   }

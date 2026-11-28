@@ -1,3 +1,4 @@
+using System.Net;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Contracts.Ops;
@@ -67,6 +68,7 @@ public sealed class GetConsoleOperationTaskRequest
 [HttpGet("/api/console/v1/operation-tasks/{operationTaskId}")]
 [GatewayOperationId("getConsoleOperationTask")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(ResponseData), StatusCodes.Status404NotFound)]
 public sealed class GetConsoleOperationTaskEndpoint(
     IGatewayOpsClient opsClient,
     IGatewayAuthorizationClient auth) : Endpoint<GetConsoleOperationTaskRequest, ResponseData<OperationTaskResponse>>
@@ -91,13 +93,26 @@ public sealed class GetConsoleOperationTaskEndpoint(
         try
         {
             var response = await opsClient.GetTaskAsync(req.OperationTaskId, ct);
+            if (response.OrganizationId != req.OrganizationId || response.EnvironmentId != req.EnvironmentId)
+            {
+                await WriteNotFoundAsync(ct);
+                return;
+            }
+
             await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            await WriteNotFoundAsync(ct);
         }
         catch (HttpRequestException ex)
         {
             await GatewayOpsEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
         }
     }
+
+    private Task WriteNotFoundAsync(CancellationToken ct) =>
+        ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status404NotFound, "Operation task not found.", ct);
 }
 
 internal static class GatewayOpsEndpointResults

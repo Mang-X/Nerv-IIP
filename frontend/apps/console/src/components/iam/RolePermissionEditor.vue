@@ -10,6 +10,17 @@ const props = defineProps<{
 
 const selectedCodes = defineModel<string[]>({ default: () => [] })
 const search = shallowRef('')
+const job = shallowRef('')
+const selectedOnly = shallowRef(false)
+const jobs = computed(() =>
+  [...new Set(props.permissions.flatMap((permission) => permission.jobRoles ?? []))].sort(),
+)
+
+function permissionGroup(permission: ConsoleIamPermissionResponse) {
+  return permission.domain === 'business'
+    ? permission.code?.split('.').slice(0, 3).join('.') || 'business'
+    : permission.domain || '其他'
+}
 
 const sortedPermissions = computed(() =>
   [...props.permissions]
@@ -26,13 +37,14 @@ const sortedPermissions = computed(() =>
 
 const filteredPermissions = computed(() => {
   const query = search.value.trim().toLowerCase()
-  if (!query) {
-    return sortedPermissions.value
-  }
-
   return sortedPermissions.value.filter((permission) => {
-    return [permission.code, permission.domain, permission.description].some((value) =>
-      value?.toLowerCase().includes(query),
+    if (job.value && !permission.jobRoles?.includes(job.value)) return false
+    if (selectedOnly.value && !isSelected(permission.code ?? '')) return false
+    return (
+      !query ||
+      [permission.code, permission.domain, permission.description].some((value) =>
+        value?.toLowerCase().includes(query),
+      )
     )
   })
 })
@@ -41,7 +53,7 @@ const permissionGroups = computed(() => {
   const groups = new Map<string, ConsoleIamPermissionResponse[]>()
 
   for (const permission of filteredPermissions.value) {
-    const domain = permission.domain || '其他'
+    const domain = permissionGroup(permission)
     groups.set(domain, [...(groups.get(domain) ?? []), permission])
   }
 
@@ -82,6 +94,18 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
       />
     </Field>
 
+    <div class="flex flex-wrap items-center gap-3 text-sm">
+      <label for="iam-permission-job">按岗位查看权限</label>
+      <select id="iam-permission-job" v-model="job" class="rounded-md border bg-background p-2">
+        <option value="">全部岗位</option>
+        <option v-for="name in jobs" :key="name" :value="name">{{ name }}</option>
+      </select>
+      <label class="inline-flex items-center gap-2">
+        <input v-model="selectedOnly" type="checkbox" />
+        仅已选
+      </label>
+    </div>
+
     <div class="flex items-start justify-between gap-3 text-sm">
       <span class="text-muted-foreground">已选 {{ selectedCount }} 项</span>
       <div class="flex max-h-20 flex-wrap justify-end gap-1.5 overflow-y-auto">
@@ -100,14 +124,15 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
       data-testid="role-permission-editor-scroll"
       class="grid max-h-[min(45vh,28rem)] gap-3 overflow-y-auto pr-1"
     >
-      <section
+      <details
         v-for="group in permissionGroups"
         :key="group.domain"
-        class="grid gap-2 rounded-lg border p-3"
+        class="rounded-lg border p-3"
+        open
       >
-        <h3 class="text-sm font-medium text-foreground">
-          {{ group.domain }}
-        </h3>
+        <summary class="cursor-pointer text-sm font-medium text-foreground">
+          {{ group.domain }} · {{ group.permissions.length }} 项
+        </summary>
         <div class="grid gap-2">
           <label
             v-for="permission in group.permissions"
@@ -128,7 +153,7 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
             </span>
           </label>
         </div>
-      </section>
+      </details>
     </div>
   </FieldGroup>
 </template>

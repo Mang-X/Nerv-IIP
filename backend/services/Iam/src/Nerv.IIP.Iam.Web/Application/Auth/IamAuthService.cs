@@ -198,6 +198,11 @@ public sealed class PostgreSqlIamAuthService(
         }
 
         var now = DateTimeOffset.UtcNow;
+        if (!session.CanRefresh(now))
+        {
+            return;
+        }
+
         session.Revoke(now, reason);
         await securityAudit.RecordAsync(
             auditContext ?? await CreateSessionAuditContextAsync(session, $"user:{session.UserId.Id}", session.IpAddress, cancellationToken),

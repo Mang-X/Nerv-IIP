@@ -11,7 +11,9 @@ public sealed record SessionResponse(
     DateTimeOffset IssuedAtUtc,
     DateTimeOffset ExpiresAtUtc,
     DateTimeOffset? RevokedAtUtc,
-    int PermissionVersion);
+    int PermissionVersion,
+    string LoginName,
+    string Status);
 
 public interface IIamSessionApplicationService
 {
@@ -27,19 +29,20 @@ public sealed class InMemoryIamSessionApplicationService(InMemoryIamStore store)
 {
     public Task<PagedListResponse<SessionResponse>> ListSessionsAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
+        var now = DateTimeOffset.UtcNow;
+        var users = store.Users.ToDictionary(x => x.UserId, x => x.LoginName);
         var sessions = store.Sessions
-            .Where(session => options.FilterRevoked is null || (session.RevokedAtUtc is not null) == options.FilterRevoked)
-            .Where(session => string.IsNullOrWhiteSpace(options.FilterSearch)
-                || session.SessionId.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
-                || session.UserId.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase))
             .Select(x => new SessionResponse(
-                x.SessionId,
-                x.UserId,
-                x.IssuedAtUtc,
-                x.ExpiresAtUtc,
-                x.RevokedAtUtc,
-                x.PermissionVersion))
+                x.SessionId, x.UserId, x.IssuedAtUtc, x.ExpiresAtUtc, x.RevokedAtUtc, x.PermissionVersion,
+                users.GetValueOrDefault(x.UserId, x.UserId),
+                SessionListSorting.GetStatus(x.RevokedAtUtc, x.ExpiresAtUtc, now)))
+            .Where(session => options.FilterStatus is null || session.Status == options.FilterStatus)
+            .Where(session => string.IsNullOrWhiteSpace(options.FilterSearch)
+                || session.SessionId.Equals(options.FilterSearch, StringComparison.Ordinal)
+                || session.UserId.Equals(options.FilterSearch, StringComparison.Ordinal)
+                || session.LoginName.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase))
             .ApplySessionSort(options)
+            .ThenBy(x => x.SessionId, StringComparer.Ordinal)
             .ToPagedResponse(options);
         return Task.FromResult(sessions);
     }
@@ -61,21 +64,15 @@ public sealed class PostgreSqlIamSessionApplicationService(
 {
     public async Task<PagedListResponse<SessionResponse>> ListSessionsAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
-        var sessions = await repository.ListAsync(cancellationToken);
-        return sessions
-            .Where(session => options.FilterRevoked is null || (session.RevokedAtUtc is not null) == options.FilterRevoked)
-            .Where(session => string.IsNullOrWhiteSpace(options.FilterSearch)
-                || session.Id.Id.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase)
-                || session.UserId.Id.Contains(options.FilterSearch, StringComparison.OrdinalIgnoreCase))
-            .Select(x => new SessionResponse(
-                x.Id.Id,
-                x.UserId.Id,
-                x.IssuedAtUtc,
-                x.ExpiresAtUtc,
-                x.RevokedAtUtc,
-                x.PermissionVersion))
-            .ApplySessionSort(options)
-            .ToPagedResponse(options);
+        var now = DateTimeOffset.UtcNow;
+        var (total, page) = await repository.ListPageAsync(new UserSessionListFilter(
+            options.FilterStatus, options.FilterSearch, options.SortBy, options.IsDescending, options.Skip, options.PageSize),
+            now, cancellationToken);
+        var items = page.Select(x => new SessionResponse(
+            x.SessionId.Id, x.UserId.Id, x.IssuedAtUtc, x.ExpiresAtUtc,
+            x.RevokedAtUtc, x.PermissionVersion, x.LoginName,
+            SessionListSorting.GetStatus(x.RevokedAtUtc, x.ExpiresAtUtc, now))).ToArray();
+        return new PagedListResponse<SessionResponse>(options.PageIndex, options.PageSize, total, items);
     }
 
     public async Task RevokeSessionAsync(
@@ -89,7 +86,10 @@ public sealed class PostgreSqlIamSessionApplicationService(
 
 internal static class SessionListSorting
 {
-    public static IEnumerable<SessionResponse> ApplySessionSort(this IEnumerable<SessionResponse> sessions, IamListQueryOptions options)
+    public static string GetStatus(DateTimeOffset? revokedAt, DateTimeOffset expiresAt, DateTimeOffset now) =>
+        revokedAt is not null ? "revoked" : expiresAt <= now ? "expired" : "active";
+
+    public static IOrderedEnumerable<SessionResponse> ApplySessionSort(this IEnumerable<SessionResponse> sessions, IamListQueryOptions options)
     {
         return (options.SortBy?.ToLowerInvariant(), options.IsDescending) switch
         {

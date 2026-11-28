@@ -168,6 +168,9 @@ public sealed class UserRepository(ApplicationDbContext context)
 
 public interface IRoleRepository : IRepository<Role, RoleId>
 {
+    Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> ListMemberRoleNamesAsync(
+        IReadOnlyCollection<UserId> userIds, OrganizationId organizationId,
+        IamEnvironmentId environmentId, CancellationToken cancellationToken);
     Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default);
     Task<Role?> GetByNameAsync(string roleName, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Role>> ListNotDeletedAsync(CancellationToken cancellationToken = default);
@@ -187,6 +190,26 @@ public sealed class RoleRepository(ApplicationDbContext context)
     : RepositoryBase<Role, RoleId, ApplicationDbContext>(context), IRoleRepository
 {
     private static readonly Deleted NotDeleted = new(false);
+
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> ListMemberRoleNamesAsync(
+        IReadOnlyCollection<UserId> userIds, OrganizationId organizationId,
+        IamEnvironmentId environmentId, CancellationToken cancellationToken)
+    {
+        var rows = await (
+            from membership in DbContext.Memberships
+            join binding in DbContext.MembershipRoles on membership.Id equals binding.MembershipId
+            join role in DbContext.Roles on binding.RoleId equals role.Id
+            where userIds.Contains(membership.UserId)
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+                && role.Deleted == NotDeleted
+            select new { membership.UserId, role.RoleName })
+            .ToListAsync(cancellationToken);
+        return rows.GroupBy(row => row.UserId.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key,
+                group => (IReadOnlyList<string>)group.Select(row => row.RoleName).Order(StringComparer.Ordinal).ToArray(),
+                StringComparer.Ordinal);
+    }
 
     public async Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default)
     {
@@ -211,6 +234,7 @@ public sealed class RoleRepository(ApplicationDbContext context)
         return await DbContext.Roles
             .AsNoTracking()
             .Include(x => x.Permissions)
+            .Include(x => x.DataScopes)
             .Where(x => x.Deleted == NotDeleted)
             .OrderBy(x => x.RoleName)
             .ToListAsync(cancellationToken);
@@ -228,6 +252,7 @@ public sealed class RoleRepository(ApplicationDbContext context)
         return await DbContext.Roles
             .AsNoTracking()
             .Include(x => x.Permissions)
+            .Include(x => x.DataScopes)
             .Where(x => roleIds.Contains(x.Id) && x.Deleted == NotDeleted)
             .OrderBy(x => x.RoleName)
             .ToListAsync(cancellationToken);
@@ -450,40 +475,12 @@ public sealed class MembershipRepository(ApplicationDbContext context)
             })
             .ToListAsync(cancellationToken);
 
-        var grants = roles
-            .SelectMany(roleIdValue =>
-            {
-                var scopes = roleScopes.Where(x => x.RoleId == roleIdValue).ToArray();
-                var roleId = roleIdValue.Id;
-                return scopes.Length == 0
-                    ? []
-                    : scopes.Select(scope => new PermissionDataScopeGrant(
-                        "role",
-                        roleId,
-                        scope.ScopeType,
-                        string.Equals(scope.ScopeType, DataScopeBinding.Self, StringComparison.Ordinal)
-                            ? userId.Id
-                            : scope.ScopeCode,
-                        [permissionCode],
-                        OrganizationWide: string.Equals(
-                                scope.ScopeType,
-                                DataScopeBinding.Organization,
-                                StringComparison.Ordinal)
-                            && string.Equals(scope.ScopeCode, organizationId.Id, StringComparison.Ordinal)));
-            })
-            .Concat(membershipScopes.Select(scope => new PermissionDataScopeGrant(
-                "membership",
-                scope.MembershipId.Id,
-                scope.ScopeType,
-                string.Equals(scope.ScopeType, DataScopeBinding.Self, StringComparison.Ordinal)
-                    ? userId.Id
-                    : scope.ScopeCode,
-                [permissionCode],
-                OrganizationWide: string.Equals(
-                        scope.ScopeType,
-                        DataScopeBinding.Organization,
-                        StringComparison.Ordinal)
-                    && string.Equals(scope.ScopeCode, organizationId.Id, StringComparison.Ordinal))))
+        var grants = roleScopes.Select(scope => PermissionDataScopeGrant.FromBinding(
+                "role", scope.RoleId.Id, new DataScopeBinding(scope.ScopeType, scope.ScopeCode),
+                userId.Id, organizationId.Id, permissionCode))
+            .Concat(membershipScopes.Select(scope => PermissionDataScopeGrant.FromBinding(
+                "membership", scope.MembershipId.Id, new DataScopeBinding(scope.ScopeType, scope.ScopeCode),
+                userId.Id, organizationId.Id, permissionCode)))
             .Distinct()
             .OrderBy(x => x.SourceKind, StringComparer.Ordinal)
             .ThenBy(x => x.SourceId, StringComparer.Ordinal)
@@ -507,8 +504,15 @@ public sealed class MembershipRepository(ApplicationDbContext context)
     }
 }
 
+public sealed record UserSessionListFilter(string? Status, string? Search, string? SortBy, bool Descending, int Skip, int Take);
+
+public sealed record UserSessionListItem(UserSessionId SessionId, UserId UserId, DateTimeOffset IssuedAtUtc,
+    DateTimeOffset ExpiresAtUtc, DateTimeOffset? RevokedAtUtc, int PermissionVersion, string LoginName);
+
 public interface IUserSessionRepository : IRepository<UserSession, UserSessionId>
 {
+    Task<(int Total, IReadOnlyList<UserSessionListItem> Items)> ListPageAsync(
+        UserSessionListFilter filter, DateTimeOffset now, CancellationToken cancellationToken);
     Task<UserSession?> GetByIdAsync(UserSessionId sessionId, CancellationToken cancellationToken = default);
     Task<UserSession?> GetByPrincipalAsync(
         UserSessionId sessionId,
@@ -547,6 +551,50 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
 public sealed class UserSessionRepository(ApplicationDbContext context)
     : RepositoryBase<UserSession, UserSessionId, ApplicationDbContext>(context), IUserSessionRepository
 {
+    public async Task<(int Total, IReadOnlyList<UserSessionListItem> Items)> ListPageAsync(
+        UserSessionListFilter filter, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var query =
+            from session in DbContext.UserSessions.AsNoTracking()
+            join user in DbContext.Users.AsNoTracking() on session.UserId equals user.Id
+            select new { Session = session, user.LoginName };
+        query = filter.Status switch
+        {
+            "active" => query.Where(x => x.Session.RevokedAtUtc == null && x.Session.ExpiresAtUtc > now),
+            "expired" => query.Where(x => x.Session.RevokedAtUtc == null && x.Session.ExpiresAtUtc <= now),
+            "revoked" => query.Where(x => x.Session.RevokedAtUtc != null),
+            null => query,
+            _ => query.Where(_ => false),
+        };
+        if (filter.Search is { } search)
+        {
+            var sessionId = new UserSessionId(search);
+            var userId = new UserId(search);
+            var loginName = search.ToLowerInvariant();
+            query = query.Where(x => x.Session.Id == sessionId || x.Session.UserId == userId
+                || x.LoginName.ToLower().Contains(loginName));
+        }
+
+        var ordered = (filter.SortBy?.ToLowerInvariant(), filter.Descending) switch
+        {
+            ("sessionid", true) => query.OrderByDescending(x => x.Session.Id),
+            ("sessionid", false) => query.OrderBy(x => x.Session.Id),
+            ("userid", true) => query.OrderByDescending(x => x.Session.UserId),
+            ("userid", false) => query.OrderBy(x => x.Session.UserId),
+            ("expiresatutc", true) => query.OrderByDescending(x => x.Session.ExpiresAtUtc),
+            ("expiresatutc", false) => query.OrderBy(x => x.Session.ExpiresAtUtc),
+            ("issuedatutc", false) => query.OrderBy(x => x.Session.IssuedAtUtc),
+            _ => query.OrderByDescending(x => x.Session.IssuedAtUtc),
+        };
+        var total = await query.CountAsync(cancellationToken);
+        var page = await ordered.ThenBy(x => x.Session.Id).Skip(filter.Skip).Take(filter.Take)
+            .Select(x => new UserSessionListItem(
+                x.Session.Id, x.Session.UserId, x.Session.IssuedAtUtc, x.Session.ExpiresAtUtc,
+                x.Session.RevokedAtUtc, x.Session.PermissionVersion, x.LoginName))
+            .ToListAsync(cancellationToken);
+        return (total, page);
+    }
+
     public async Task<UserSession?> GetByIdAsync(UserSessionId sessionId, CancellationToken cancellationToken = default)
     {
         return await DbContext.UserSessions.FindAsync([sessionId], cancellationToken);

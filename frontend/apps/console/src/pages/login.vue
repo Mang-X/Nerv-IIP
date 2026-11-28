@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import LoginForm from '@/components/auth/LoginForm.vue'
 import { useAuthStore } from '@/stores/auth'
+import { canAccess, firstConsolePage } from '@/router/access'
 import { sanitizeRedirectPath } from '@/router/redirects'
 import { storeToRefs } from 'pinia'
 import { computed, shallowRef } from 'vue'
@@ -32,7 +33,14 @@ async function submit(credentials: { loginName: string; password: string }) {
     pending.value = false
   }
 
-  await router.push(redirectPath.value)
+  const permissions = auth.principal?.permissionCodes
+  const redirect = router.resolve(redirectPath.value)
+  const required = redirect.meta.requiredPermissions
+  const landing =
+    redirect.path === '/' || (required && !canAccess(permissions, required))
+      ? firstConsolePage(permissions)
+      : redirectPath.value
+  await router.push(landing)
 }
 </script>
 

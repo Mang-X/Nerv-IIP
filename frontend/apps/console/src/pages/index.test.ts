@@ -22,6 +22,7 @@ const routerState = vi.hoisted(() => ({
 
 vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
+  useRoute: () => ({ query: {} }),
   useRouter: () => ({
     push: routerState.push,
   }),
@@ -142,6 +143,7 @@ describe('Console index page', () => {
         principalId: 'user-admin',
         principalType: 'user',
         loginName: 'admin',
+        permissionCodes: ['apphub.instances.read', 'ops.tasks.read', 'ops.tasks.create'],
         organizationId: 'org-page-test',
         environmentId: 'env-page-test',
       },
@@ -273,7 +275,10 @@ describe('Console index page', () => {
     const restartButton = wrapper.findAll('button').find((button) => button.text() === '重启')
     expect(restartButton).toBeDefined()
 
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
     await restartButton!.trigger('click')
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('env-page-test'))
+    confirm.mockRestore()
     await flushPromises()
 
     const operationLink = wrapper.find('.console-page__operation-link')

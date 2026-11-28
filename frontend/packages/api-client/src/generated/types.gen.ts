@@ -446,6 +446,7 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserResponse =
     passwordChangeRequired?: boolean;
     passwordExpiresAtUtc?: string | null;
     lockoutUntilUtc?: string | null;
+    roleNames?: Array<string>;
 };
 
 export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamListRequest = {
@@ -504,6 +505,13 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse =
     roleId?: string;
     roleName?: string;
     permissionCodes?: Array<string>;
+    dataScopes?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScope>;
+    scopeVersion?: number;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScope = {
+    scopeType?: string;
+    scopeCode?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfConsoleIamRoleResponse = NetCorePalExtensionsDtoResponseData & {
@@ -532,6 +540,7 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionResp
     domain?: string;
     description?: string;
     seeded?: boolean;
+    jobRoles?: Array<string>;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamSessionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -552,6 +561,56 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamSessionRespons
     expiresAtUtc?: string;
     revokedAtUtc?: string | null;
     permissionVersion?: number;
+    loginName?: string;
+    status?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfConsoleIamEffectiveAccess = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminConsoleIamEffectiveAccess | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamEffectiveAccess = {
+    userId?: string;
+    loginName?: string;
+    organizationId?: string;
+    environmentId?: string;
+    status?: string;
+    permissionVersion?: number;
+    roles?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse>;
+    membershipDataScopes?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScope>;
+    permissions?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionSources>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionSources = {
+    permissionCode?: string;
+    roleIds?: Array<string>;
+    scopeGrants?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamScopeGrant>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamScopeGrant = {
+    sourceKind?: string;
+    sourceId?: string;
+    scopeKind?: string;
+    scopeId?: string;
+    applicablePermissionCodes?: Array<string>;
+    organizationWide?: boolean;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamEffectiveAccessRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfConsoleIamDataScopes = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScopes | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScopes = {
+    dataScopes?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScope>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsolePatchIamRoleDataScopesRequest = {
+    expectedVersion?: number | null;
+    dataScopes?: Array<NervIipPlatformGatewayWebApplicationIamAdminConsoleIamDataScope>;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfObject = NetCorePalExtensionsDtoResponseData & {
@@ -749,7 +808,13 @@ export type GetConsoleOperationTaskErrors = {
      * Forbidden
      */
     403: unknown;
+    /**
+     * Not Found
+     */
+    404: NetCorePalExtensionsDtoResponseData;
 };
+
+export type GetConsoleOperationTaskError = GetConsoleOperationTaskErrors[keyof GetConsoleOperationTaskErrors];
 
 export type GetConsoleOperationTaskResponses = {
     /**
@@ -1256,7 +1321,7 @@ export type ListConsoleIamUsersData = {
         sortOrder?: string | null;
         filterSearch?: string | null;
         filterEnabled?: boolean | null;
-        filterRevoked?: boolean | null;
+        filterStatus?: string | null;
     };
     url: '/api/console/v1/iam/users';
 };
@@ -1492,7 +1557,7 @@ export type ListConsoleIamRolesData = {
         sortOrder?: string | null;
         filterSearch?: string | null;
         filterEnabled?: boolean | null;
-        filterRevoked?: boolean | null;
+        filterStatus?: string | null;
     };
     url: '/api/console/v1/iam/roles';
 };
@@ -1610,7 +1675,7 @@ export type ListConsoleIamSessionsData = {
         sortOrder?: string | null;
         filterSearch?: string | null;
         filterEnabled?: boolean | null;
-        filterRevoked?: boolean | null;
+        filterStatus?: string | null;
     };
     url: '/api/console/v1/iam/sessions';
 };
@@ -1663,6 +1728,70 @@ export type RevokeConsoleIamSessionResponses = {
 };
 
 export type RevokeConsoleIamSessionResponse = RevokeConsoleIamSessionResponses[keyof RevokeConsoleIamSessionResponses];
+
+export type GetConsoleIamUserEffectiveAccessData = {
+    body?: never;
+    path: {
+        userId: string;
+    };
+    query: {
+        orgId: string;
+        envId: string;
+    };
+    url: '/api/console/v1/iam/users/{userId}/effective-access';
+};
+
+export type GetConsoleIamUserEffectiveAccessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleIamUserEffectiveAccessResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamEffectiveAccess;
+};
+
+export type GetConsoleIamUserEffectiveAccessResponse = GetConsoleIamUserEffectiveAccessResponses[keyof GetConsoleIamUserEffectiveAccessResponses];
+
+export type PatchConsoleIamRoleDataScopesData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsolePatchIamRoleDataScopesRequest;
+    path: {
+        roleId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/roles/{roleId}/data-scopes';
+};
+
+export type PatchConsoleIamRoleDataScopesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PatchConsoleIamRoleDataScopesError = PatchConsoleIamRoleDataScopesErrors[keyof PatchConsoleIamRoleDataScopesErrors];
+
+export type PatchConsoleIamRoleDataScopesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamDataScopes;
+};
+
+export type PatchConsoleIamRoleDataScopesResponse = PatchConsoleIamRoleDataScopesResponses[keyof PatchConsoleIamRoleDataScopesResponses];
 
 export type HealthEndpointData = {
     body?: never;

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { consolePagePermissions } from '@/router/access'
 import {
   NOTIFICATION_DLQ_STATUS_LABELS,
   notificationDlqStatusLabel,
 } from '@/components/notifications/notificationFormatters'
 import type { NotificationDeadLetterResponse } from '@nerv-iip/api-client'
 import { useNotificationDeadLetters } from '@/composables/useNotificationDeadLetters'
+import { useHasPermission } from '@/composables/usePermissions'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Button, NvPageHeader, NvSectionCard, NvSectionCards, toast } from '@nerv-iip/ui'
 import { BanIcon, PlayIcon, RefreshCwIcon, RotateCwIcon } from '@lucide/vue'
@@ -13,6 +15,7 @@ import { computed, ref, watch } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
+    requiredPermissions: consolePagePermissions['/notifications/dlq'],
     title: '死信队列',
   },
 })
@@ -40,19 +43,20 @@ const {
   statusFilter,
 } = useNotificationDeadLetters()
 
+const canManage = useHasPermission('notifications.dlq.manage')
+const batchStatus = computed(() => statusFilter.value || 'Pending')
+const canReplay = (status?: string | null) => status === 'Pending' || status === 'Failed'
 const ignoreReason = ref('')
 const actionPending = computed(
   () => replayPending.value || replayBatchPending.value || ignorePending.value,
 )
 const refreshPending = computed(() => listPending.value || metricsPending.value)
 const errorMessage = computed(() => allError.value?.message ?? '')
-const canReplaySelected = computed(
-  () => selectedDeadLetter.value && selectedDeadLetter.value.status !== 'Replayed',
-)
+const canReplaySelected = computed(() => canReplay(selectedDeadLetter.value?.status))
 const canIgnoreSelected = computed(
   () =>
     selectedDeadLetter.value &&
-    selectedDeadLetter.value.status !== 'Ignored' &&
+    canReplay(selectedDeadLetter.value.status) &&
     ignoreReason.value.trim().length > 0,
 )
 const ignoreHandledError = (_error: unknown) => {}
@@ -82,20 +86,34 @@ async function handleRefresh() {
 }
 
 async function handleReplay(deadLetterId: string | undefined) {
-  if (!deadLetterId) return
+  if (!canManage.value || !deadLetterId) return
 
   try {
-    await replay(deadLetterId)
-    toast.success('死信消息已重放')
+    const result = await replay(deadLetterId)
+    if (result?.succeeded) toast.success('死信消息已重放')
+    else toast.error(result?.message || '此死信未重放')
   } catch (error) {
     ignoreHandledError(error)
   }
 }
 
 async function handleReplayFiltered() {
+  if (!canManage.value || !canReplay(batchStatus.value)) return
+  if (
+    !window.confirm(
+      `重放当前事件与消费者筛选下最多 100 条${notificationDlqStatusLabel(batchStatus.value)}死信？`,
+    )
+  )
+    return
+
   try {
     const result = await replayFiltered()
-    toast.success(`已提交 ${result.items?.length ?? 0} 条匹配死信重放`)
+    const items = result.items ?? []
+    const succeeded = items.filter((item) => item.succeeded).length
+    const failed = items.filter((item) => !item.succeeded && item.status === 'Failed').length
+    const message = `成功 ${succeeded} 条，失败 ${failed} 条，跳过 ${items.length - succeeded - failed} 条`
+    if (failed) toast.error(message)
+    else toast.info(message)
   } catch (error) {
     ignoreHandledError(error)
   }
@@ -103,7 +121,7 @@ async function handleReplayFiltered() {
 
 async function handleIgnore() {
   const deadLetterId = selectedDeadLetter.value?.id
-  if (!deadLetterId || !ignoreReason.value.trim()) return
+  if (!canManage.value || !deadLetterId || !ignoreReason.value.trim()) return
 
   try {
     await ignore(deadLetterId, ignoreReason.value)
@@ -112,6 +130,12 @@ async function handleIgnore() {
   } catch (error) {
     ignoreHandledError(error)
   }
+}
+
+function clearFilters() {
+  eventTypeFilter.value = ''
+  consumerNameFilter.value = ''
+  statusFilter.value = ''
 }
 
 function selectDeadLetter(item: NotificationDeadLetterResponse) {
@@ -135,10 +159,12 @@ function statusClass(status: string | null | undefined) {
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
   return new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'short',
     timeStyle: 'medium',
-  }).format(new Date(value))
+  }).format(date)
 }
 
 function shortText(value: string | null | undefined, fallback = '-') {
@@ -168,7 +194,12 @@ function shortText(value: string | null | undefined, fallback = '-') {
             刷新
           </Button>
           <Button
-            :disabled="actionPending || deadLetters.length === 0"
+            v-if="canManage"
+            :disabled="
+              actionPending ||
+              !canReplay(batchStatus) ||
+              !deadLetters.some((item) => item.status === batchStatus)
+            "
             size="sm"
             type="button"
             aria-label="重放当前筛选死信"
@@ -229,8 +260,8 @@ function shortText(value: string | null | undefined, fallback = '-') {
         </div>
       </section>
 
-      <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_28rem]">
-        <section class="overflow-hidden rounded-lg border bg-card">
+      <div class="grid items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <section class="min-w-0 overflow-hidden rounded-lg border bg-card">
           <div class="overflow-x-auto">
             <table class="w-full min-w-[48rem] text-left text-sm">
               <thead class="border-b bg-muted/40 text-xs uppercase text-muted-foreground">
@@ -250,6 +281,9 @@ function shortText(value: string | null | undefined, fallback = '-') {
                 <tr v-else-if="deadLetters.length === 0">
                   <td class="px-3 py-6 text-center text-muted-foreground" colspan="6">
                     暂无匹配死信消息
+                    <Button type="button" size="sm" variant="ghost" @click="clearFilters"
+                      >清除筛选</Button
+                    >
                   </td>
                 </tr>
                 <template v-else>
@@ -295,7 +329,8 @@ function shortText(value: string | null | undefined, fallback = '-') {
                         <Button
                           size="sm"
                           type="button"
-                          :disabled="actionPending || item.status === 'Replayed'"
+                          v-if="canManage && canReplay(item.status)"
+                          :disabled="actionPending"
                           :aria-label="`重放死信：${item.eventId ?? item.id}`"
                           @click="handleReplay(item.id)"
                         >
@@ -310,7 +345,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
           </div>
         </section>
 
-        <aside class="grid gap-4 rounded-lg border bg-card p-4">
+        <aside class="grid min-w-0 gap-4 rounded-lg border bg-card p-4">
           <header class="grid gap-1">
             <h2 class="text-base font-semibold">死信详情</h2>
             <p class="text-xs text-muted-foreground">
@@ -339,7 +374,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
               selectedDeadLetter.eventJson
             }}</pre>
 
-            <div class="grid gap-2">
+            <div v-if="canManage" class="grid gap-2">
               <textarea
                 v-model="ignoreReason"
                 class="min-h-20 rounded-md border bg-background px-3 py-2 text-sm"

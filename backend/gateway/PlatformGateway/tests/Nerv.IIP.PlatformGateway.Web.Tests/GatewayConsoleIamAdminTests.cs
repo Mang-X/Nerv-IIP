@@ -59,6 +59,36 @@ public sealed class GatewayConsoleIamAdminTests
         Assert.Equal(message, envelope.GetProperty("message").GetString());
     }
 
+    [Theory]
+    [InlineData(true, "iam.users.read")]
+    [InlineData(false, "iam.roles.manage")]
+    public async Task Console_iam_authorizes_and_forwards_effective_access_and_role_scope_requests(bool preview, string permission)
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var admin = new FakeGatewayIamAdminClient();
+        await using var factory = CreateFactory(auth, new FakeGatewayIamAuthClient(), admin);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+
+        var response = preview
+            ? await client.GetAsync("/api/console/v1/iam/users/user-target/effective-access?orgId=org-001&envId=env-dev")
+            : await client.PatchAsJsonAsync("/api/console/v1/iam/roles/role-target/data-scopes",
+                new ConsolePatchIamRoleDataScopesRequest(3, [new("work-center", "WC-01")]));
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(permission, auth.LastRequirement!.PermissionCode);
+        if (preview)
+        {
+            Assert.Equal(new ConsoleIamEffectiveAccessRequest("user-target", "org-001", "env-dev"), admin.LastEffectiveAccessRequest);
+        }
+        else
+        {
+            Assert.Equal("role-target", admin.LastScopeRoleId);
+            Assert.Equal(3, admin.LastScopes!.ExpectedVersion);
+            Assert.Equal(new ConsoleIamDataScope("work-center", "WC-01"), Assert.Single(admin.LastScopes!.DataScopes));
+        }
+    }
+
     [Fact]
     public async Task Iam_admin_client_passes_iam_rejection_reason_through_as_bad_request()
     {
@@ -487,6 +517,26 @@ public sealed class GatewayConsoleIamAdminTests
             ConsoleResetIamUserPasswordRequest request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public ConsoleIamEffectiveAccessRequest? LastEffectiveAccessRequest { get; private set; }
+        public ConsolePatchIamRoleDataScopesRequest? LastScopes { get; private set; }
+        public string? LastScopeRoleId { get; private set; }
+
+        public Task<ConsoleIamEffectiveAccess> GetEffectiveAccessAsync(
+            string bearerToken, ConsoleIamEffectiveAccessRequest request, CancellationToken cancellationToken)
+        {
+            LastEffectiveAccessRequest = request;
+            return Task.FromResult(new ConsoleIamEffectiveAccess(
+                request.UserId, "target", request.OrgId, request.EnvId, "active", 1, [], [], []));
+        }
+
+        public Task<ConsoleIamDataScopes> PatchRoleDataScopesAsync(
+            string bearerToken, string roleId, ConsolePatchIamRoleDataScopesRequest request, CancellationToken cancellationToken)
+        {
+            LastScopeRoleId = roleId;
+            LastScopes = request;
+            return Task.FromResult(new ConsoleIamDataScopes(request.DataScopes));
+        }
 
         public Task<ConsoleIamUserMembershipResponse> GetUserMembershipAsync(
             string bearerToken,

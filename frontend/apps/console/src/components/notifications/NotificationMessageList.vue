@@ -17,6 +17,7 @@ const props = defineProps<{
   markReadPending?: boolean
   messages: NotificationMessageResponse[]
   pending?: boolean
+  canReadOperationTasks?: boolean
   showMarkRead?: boolean
   title: string
   /** Stable, unique section key for the heading id / aria-labelledby (e.g. 'unread'). */
@@ -84,6 +85,16 @@ function rowKey(message: NotificationMessageResponse, index: number) {
           />
           <span>{{ formatResource(message.resource) }}</span>
           <span>{{ formatNotificationDate(message.createdAtUtc) }}</span>
+          <RouterLink
+            v-if="
+              props.canReadOperationTasks &&
+              message.resource?.resourceType === 'operation-task' &&
+              message.resource.resourceId
+            "
+            :to="`/operations/${encodeURIComponent(message.resource.resourceId)}`"
+            class="text-primary underline"
+            >查看运维任务</RouterLink
+          >
         </div>
       </li>
     </ul>

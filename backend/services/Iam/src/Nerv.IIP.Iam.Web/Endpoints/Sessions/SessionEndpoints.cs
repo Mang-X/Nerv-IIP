@@ -15,7 +15,7 @@ public sealed record ListSessionsRequest(
     string? SortBy,
     string? SortOrder,
     string? FilterSearch,
-    bool? FilterRevoked);
+    string? FilterStatus);
 
 [HttpGet("/api/iam/v1/sessions")]
 [AllowAnonymous]
@@ -36,7 +36,7 @@ public sealed class ListSessionsEndpoint(
             req.SortBy,
             req.SortOrder,
             req.FilterSearch,
-            filterRevoked: req.FilterRevoked), ct);
+            filterStatus: req.FilterStatus), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }

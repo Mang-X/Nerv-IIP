@@ -63,6 +63,10 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/Spc/SpcAnalysisQueries.cs",
             "services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs"),
 
+        ..Group("active", "同值不同义：IAM 账号可用及会话有效状态，独立于工程生产版本状态。",
+            "services/Iam/src/Nerv.IIP.Iam.Web/Application/Users/IamEffectiveAccess.cs",
+            "services/Iam/src/Nerv.IIP.Iam.Web/Application/Sessions/IamSessionApplicationService.cs"),
+
         // ── "archived" ──────────────────────────────────────────────────────────────
         // 同值不同义：Scheduling 保留策略的 Prometheus 指标标签值，非 PE 契约状态。
         ..Group("archived", "同值不同义：指标标签值（快照归档计数），非 PE 生产版本契约状态。",

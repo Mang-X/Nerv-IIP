@@ -349,6 +349,10 @@ public sealed class IamTokenHardeningTests
 
     private sealed class FakeUserSessionRepository : IUserSessionRepository
     {
+        public Task<(int Total, IReadOnlyList<UserSessionListItem> Items)> ListPageAsync(
+            UserSessionListFilter filter, DateTimeOffset now, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         private readonly List<UserSession> sessions = [];
 
         public IReadOnlyList<UserSession> Sessions => sessions;

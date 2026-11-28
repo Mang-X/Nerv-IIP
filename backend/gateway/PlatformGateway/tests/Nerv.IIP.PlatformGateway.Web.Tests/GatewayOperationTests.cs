@@ -85,6 +85,27 @@ public sealed class GatewayOperationTests
         Assert.Contains("Ops unavailable", await response.Content.ReadAsStringAsync());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Operation_detail_returns_not_found_for_missing_or_out_of_scope_task(bool missing)
+    {
+        var fake = new FakeGatewayOpsClient
+        {
+            GetFailure = missing ? new HttpRequestException("Missing", null, HttpStatusCode.NotFound) : null,
+            TaskEnvironment = "another-environment",
+        };
+        await using var factory = CreateFactory(fake);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/console/v1/operation-tasks/op-000001?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("another-environment", await response.Content.ReadAsStringAsync());
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeGatewayOpsClient fake,
         FakeGatewayAuthorizationClient? auth = null)
@@ -105,6 +126,7 @@ public sealed class GatewayOperationTests
         public string? LastOperationTaskId { get; private set; }
         public HttpRequestException? CreateFailure { get; init; }
         public HttpRequestException? GetFailure { get; init; }
+        public string TaskEnvironment { get; init; } = "env-dev";
 
         public Task<OperationTaskResponse> CreateTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken)
         {
@@ -125,7 +147,7 @@ public sealed class GatewayOperationTests
             }
 
             LastOperationTaskId = operationTaskId;
-            return Task.FromResult(new OperationTaskResponse(operationTaskId, "org-001", "env-dev", "docker-container-local-demo-001", "lifecycle.restart", "completed", "local-admin", DateTimeOffset.UtcNow, null, "attempt-000001", [], []));
+            return Task.FromResult(new OperationTaskResponse(operationTaskId, "org-001", TaskEnvironment, "docker-container-local-demo-001", "lifecycle.restart", "completed", "local-admin", DateTimeOffset.UtcNow, null, "attempt-000001", [], []));
         }
     }
 

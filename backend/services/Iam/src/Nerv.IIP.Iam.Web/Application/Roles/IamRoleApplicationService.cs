@@ -1,3 +1,4 @@
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Infrastructure;
@@ -8,7 +9,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Iam.Web.Application.Roles;
 
-public sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
+public sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes, IReadOnlyList<DataScopeResponse> DataScopes, int ScopeVersion);
 public sealed record CreateRoleRequest(string? RoleName, IReadOnlyList<string> PermissionCodes);
 public sealed record PatchRolePermissionsRequest(IReadOnlyList<string> PermissionCodes);
 
@@ -93,12 +94,14 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
         }
     }
 
-    private static RoleResponse ToResponse(RoleFact role)
+    private RoleResponse ToResponse(RoleFact role)
     {
         return new RoleResponse(
             role.RoleId,
             role.RoleName,
-            role.PermissionCodes.OrderBy(code => code, StringComparer.Ordinal).ToArray());
+            role.PermissionCodes.Order(StringComparer.Ordinal).ToArray(),
+            DataScopeApplicationMapping.ToResponseItems(store.GetRoleDataScopes(role.RoleId)),
+            role.ScopeVersion);
     }
 
 }
@@ -191,7 +194,9 @@ public sealed class PostgreSqlIamRoleApplicationService(
         return new RoleResponse(
             role.Id.Id,
             role.RoleName,
-            role.Permissions.Select(x => x.PermissionCode).OrderBy(code => code, StringComparer.Ordinal).ToArray());
+            role.Permissions.Select(x => x.PermissionCode).Order(StringComparer.Ordinal).ToArray(),
+            DataScopeApplicationMapping.ToResponseItems(role.DataScopes.Select(x => new DataScopeBinding(x.ScopeType, x.ScopeCode))),
+            role.RowVersion.VersionNumber);
     }
 
 }
