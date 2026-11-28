@@ -172,9 +172,9 @@ $approvalCallers = [ordered]@{
 }
 $approvalTokens = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($operation in $approvalCallers.Keys) {
-    $settings = if ($operation -eq 'OverdueCheck') { 'OverdueCheck__HttpAuthorization' } else { $operation }
+    $settings = if ([string]::Equals($operation, 'OverdueCheck', [StringComparison]::Ordinal)) { 'OverdueCheck__HttpAuthorization' } else { $operation }
     $approval = $serviceEnvironments['business-approval']
-    if ($approval["Approval__${settings}__AllowLegacyBearer"] -cne '${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}') {
+    if (-not [string]::Equals($approval["Approval__${settings}__AllowLegacyBearer"], '${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}', [StringComparison]::Ordinal)) {
         throw "Approval $operation 缺少默认关闭的共享凭据兼容开关。"
     }
     $index = 0
@@ -184,22 +184,22 @@ foreach ($operation in $approvalCallers.Keys) {
         if ($token -cnotmatch '^\$\{NERV_IIP_APPROVAL_[A-Z0-9_]+_TOKEN:\?set NERV_IIP_APPROVAL_[A-Z0-9_]+_TOKEN\}$' -or -not $approvalTokens.Add($token)) {
             throw "Approval $operation 的 $caller 缺少独立必填凭据。"
         }
-        if ($caller -ne 'approval-overdue-operator') {
+        if (-not [string]::Equals($caller, 'approval-overdue-operator', [StringComparison]::Ordinal)) {
             $sender = $serviceEnvironments[$caller]
             $outbound = "Approval__${operation}__OutboundCredentials__0__"
             foreach ($field in @('OrganizationId', 'EnvironmentId', 'BearerToken')) {
-                if ([string]::IsNullOrEmpty($approval[$profile + $field]) -or $approval[$profile + $field] -cne $sender[$outbound + $field]) {
+                if ([string]::IsNullOrEmpty($approval[$profile + $field]) -or -not [string]::Equals($approval[$profile + $field], $sender[$outbound + $field], [StringComparison]::Ordinal)) {
                     throw "Approval $operation 的 $caller 缺少匹配的 $field。"
                 }
             }
-            if ($sender['Approval__BaseUrl'] -cne 'http://business-approval:8080') {
+            if (-not [string]::Equals($sender['Approval__BaseUrl'], 'http://business-approval:8080', [StringComparison]::Ordinal)) {
                 throw "$caller 缺少容器内 Approval 路由。"
             }
         }
         $index++
     }
 }
-if ($serviceEnvironments['iam']['InternalService__BearerToken'] -cne '') {
+if (-not [string]::Equals($serviceEnvironments['iam']['InternalService__BearerToken'], '', [StringComparison]::Ordinal)) {
     throw 'IAM 不应接收共享内部凭据。'
 }
 

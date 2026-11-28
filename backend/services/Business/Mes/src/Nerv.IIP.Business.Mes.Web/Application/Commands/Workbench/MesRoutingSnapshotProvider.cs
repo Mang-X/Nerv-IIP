@@ -37,14 +37,16 @@ public sealed record MesRoutingSnapshotResult(
     string SourceSystem,
     IReadOnlyCollection<MesRoutingOperationSnapshot> Operations,
     string? ProductionVersionId,
-    OperationTaskRoutingIdentity? RoutingIdentity = null)
+    OperationTaskRoutingIdentity? RoutingIdentity = null,
+    string? MbomVersionId = null)
 {
     public static MesRoutingSnapshotResult Captured(
         string sourceSystem,
         IReadOnlyCollection<MesRoutingOperationSnapshot> operations,
         string? productionVersionId = null,
-        OperationTaskRoutingIdentity? routingIdentity = null) =>
-        new(MesRoutingSnapshotStatus.Captured, sourceSystem, operations, productionVersionId, routingIdentity);
+        OperationTaskRoutingIdentity? routingIdentity = null,
+        string? mbomVersionId = null) =>
+        new(MesRoutingSnapshotStatus.Captured, sourceSystem, operations, productionVersionId, routingIdentity, mbomVersionId);
 
     public static MesRoutingSnapshotResult Missing(string sourceSystem) =>
         new(MesRoutingSnapshotStatus.Missing, sourceSystem, [], null);
@@ -161,7 +163,8 @@ public sealed class HttpMesProductEngineeringRoutingSnapshotProvider(
             operations,
             productionVersionId,
             new OperationTaskRoutingIdentity(productionVersionId, selectedVersion.RoutingVersionId,
-                selectedVersion.RoutingCode, selectedVersion.RoutingRevision));
+                selectedVersion.RoutingCode, selectedVersion.RoutingRevision),
+            selectedVersion.MbomVersionId);
     }
 
     private async Task<T?> SendOptionalAsync<T>(string requestUri, CancellationToken cancellationToken)
@@ -241,7 +244,8 @@ internal sealed record RoutingProductionVersionSnapshotResponse(
     string RoutingCode,
     string RoutingRevision,
     string RoutingStatus,
-    IReadOnlyCollection<RoutingOperationResponse> Operations);
+    IReadOnlyCollection<RoutingOperationResponse> Operations,
+    string? MbomVersionId = null);
 
 internal sealed record RoutingOperationResponse(
     int Sequence,

@@ -12,8 +12,9 @@ internal sealed partial class AppHostComposition
         {
             postgres.WithHostPort(15432);
         }
-        if (fullStackEphemeral)
+        if (localDevelopmentAppHost)
         {
+            // 完整本地平台共享此实例，业务查询与 CAP 后台任务使用独立连接池。
             postgres.WithArgs("-c", "max_connections=300");
         }
         var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");

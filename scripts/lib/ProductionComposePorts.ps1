@@ -33,9 +33,10 @@ function Assert-ProductionComposeInternalPorts {
     }
 
     foreach ($service in $ServiceBlocks.Keys) {
-        if ($service -ceq 'iam' -or
+        if ([string]::Equals($service, 'iam', [StringComparison]::Ordinal) -or
             ($service.StartsWith('business-', [StringComparison]::Ordinal) -and
-             $service -cnotin @('business-gateway', 'business-console'))) {
+             -not [string]::Equals($service, 'business-gateway', [StringComparison]::Ordinal) -and
+             -not [string]::Equals($service, 'business-console', [StringComparison]::Ordinal))) {
             if ($ServiceBlocks[$service] -match '(?m)^    ports:') {
                 throw "服务 $service 不得发布宿主机端口。"
             }

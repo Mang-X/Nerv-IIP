@@ -51,6 +51,42 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: stub.permissionCodes } }),
 }))
 
+vi.mock('@nerv-iip/api-client', async (original) => {
+  const eboms = [
+    { bomCode: 'EBOM-FG', revision: 'A', parentItemCode: 'SKU-FG' },
+    ...Array.from({ length: 100 }, (_, index) => ({
+      bomCode: `EBOM-${index + 2}`,
+      revision: 'A',
+      parentItemCode: 'SKU-FG',
+    })),
+  ]
+  const list =
+    <T>(items: T[]) =>
+    ({ query }: { query: { skip: number; take: number } }) => ({
+      query: async () => ({
+        success: true,
+        data: { items: items.slice(query.skip, query.skip + query.take), total: items.length },
+      }),
+    })
+  return {
+    ...(await original<typeof import('@nerv-iip/api-client')>()),
+    listBusinessConsoleEngineeringBomsQueryOptions: list(eboms),
+    listBusinessConsoleEngineeringManufacturingBomsQueryOptions: list([]),
+    listBusinessConsoleEngineeringRoutingsQueryOptions: list([
+      { routingCode: 'RT-1', revision: 'B', skuCode: 'SKU-FG' },
+    ]),
+    listBusinessConsoleEngineeringDocumentsQueryOptions: list([]),
+    listBusinessConsoleEngineeringProductionVersionsQueryOptions: list([
+      {
+        productionVersionId: 'PV-1',
+        skuCode: 'SKU-1',
+        validFrom: '2026-01-01T00:00:00Z',
+        isDefault: true,
+      },
+    ]),
+  }
+})
+
 vi.mock('@/composables/engineering', () => ({
   useEngineeringChanges: () => ({
     changes: computed(() => [changeRow]),
@@ -70,22 +106,6 @@ vi.mock('@/composables/engineering', () => ({
       impactPreview.value = undefined
     },
     fetchChangeDetail: stub.fetchChangeDetail,
-  }),
-  // 受影响版本里「生产版本」改成只选，页面新引入了生产版本目录读面。
-  useEngineeringProductionVersions: () => ({
-    filters: reactive({ skip: 0, take: 500 }),
-    productionVersions: computed(() => [
-      {
-        productionVersionId: 'PV-1',
-        skuCode: 'SKU-1',
-        validFrom: '2026-01-01T00:00:00Z',
-        isDefault: true,
-      },
-    ]),
-    productionVersionsError: shallowRef(undefined),
-    productionVersionsPending: shallowRef(false),
-    productionVersionsTotal: computed(() => 1),
-    refresh: vi.fn(),
   }),
 }))
 
@@ -155,6 +175,15 @@ const approvalPanelStub = {
 }
 
 const allStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'disabled'],
+    emits: ['update:modelValue'],
+    template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)">
+      <option value=""></option>
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>`,
+  },
+
   ...layoutStub,
   ...dialogStubs,
   ...sheetStubs,
@@ -282,7 +311,7 @@ describe('engineering eco page', () => {
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
     // 受影响版本：第一个 select 是对象种类
     await wrapper.findAll('select')[0]!.setValue('Routing')
-    await wrapper.find('#eco-vid-0').setValue('ROUTING-VER-1')
+    await wrapper.find('#eco-vid-0').setValue('RT-1:B')
     await flushPromises()
 
     await wrapper.find('form').trigger('submit')
@@ -297,7 +326,7 @@ describe('engineering eco page', () => {
     const affected = body.affectedVersions as Array<Record<string, unknown>>
     expect(affected).toHaveLength(1)
     expect(affected[0]!.versionKind).toBe('Routing')
-    expect(affected[0]!.versionId).toBe('ROUTING-VER-1')
+    expect(affected[0]!.versionId).toBe('RT-1:B')
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
@@ -335,7 +364,7 @@ describe('engineering eco page', () => {
     await findButton(wrapper, '关联审批链')!.trigger('click')
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
     await wrapper.findAll('select')[0]!.setValue('Routing')
-    await wrapper.find('#eco-vid-0').setValue('ROUTING-VER-1')
+    await wrapper.find('#eco-vid-0').setValue('RT-1:B')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -406,7 +435,7 @@ describe('engineering eco page', () => {
     expect(stub.releaseChange).not.toHaveBeenCalled()
   })
 
-  it('受影响版本可增删：增加一行后多一组 select+input', async () => {
+  it('受影响版本可增删：增加一行后多一组类型和版本选择器', async () => {
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()
     await findButton(wrapper, '发布变更')!.trigger('click')
@@ -415,7 +444,7 @@ describe('engineering eco page', () => {
     const before = wrapper.findAll('select').length
     await findButton(wrapper, '增加一条')!.trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('select').length).toBe(before + 1)
+    expect(wrapper.findAll('select').length).toBe(before + 2)
   })
 
   it.each(['改期', '取消调度'])('计划生效可二次确认%s，期间不读取实际影响', async (action) => {
@@ -586,5 +615,48 @@ describe('engineering eco page', () => {
     // 读不到名称（无权限、清单截断或仍在加载）时说中性话，不回吐主键。
     expect(sheet.text()).toContain('暂无法显示版本名称')
     expect(sheet.text()).not.toContain('PV-GONE')
+  })
+  it('第 101 条 EBOM 可选，目录外编号和修订可直接指定', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布变更')!.trigger('click')
+    await wrapper.get('#eco-change-number').setValue('ECO-20260801-000101')
+    await wrapper.get('#eco-reason').setValue('修订物料清单')
+    await findButton(wrapper, '关联审批链')!.trigger('click')
+    await wrapper.findAll('select')[0]!.setValue('EngineeringBom')
+
+    const version = wrapper.get<HTMLSelectElement>('#eco-vid-0')
+    expect(version.find('option[value="EBOM-101:A"]').exists()).toBe(true)
+    await version.setValue('EBOM-101:A')
+    await findButton(wrapper, '预览影响')!.trigger('click')
+    expect(stub.previewImpact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-101:A' }],
+      }),
+    )
+
+    await wrapper.get('input[aria-label="编号:修订"]').setValue('EBOM-6001:B')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(stub.releaseChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-6001:B' }],
+      }),
+    )
+  })
+
+  it('对象类型切换时清空旧版本，候选显示编号、修订和父项', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布变更')!.trigger('click')
+    const kind = wrapper.findAll('select')[0]!
+    await kind.setValue('EngineeringBom')
+    await flushPromises()
+    const version = wrapper.get('#eco-vid-0')
+    expect(version.text()).toContain('EBOM-FG · 修订 A · SKU-FG')
+    await version.setValue('EBOM-FG:A')
+    await kind.setValue('Routing')
+    expect(version.text()).toContain('RT-1 · 修订 B · SKU-FG')
+    expect((version.element as HTMLSelectElement).value).toBe('')
+    expect(version.text()).not.toContain('EBOM-FG')
   })
 })

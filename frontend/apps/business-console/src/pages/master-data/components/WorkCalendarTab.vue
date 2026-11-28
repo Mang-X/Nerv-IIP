@@ -127,7 +127,7 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
 
 <template>
   <NvTabsContent value="work-calendar" class="grid gap-3">
-    <NvToolbar v-model:search="calKeyword" search-placeholder="在当前页内筛选日历编码、名称">
+    <NvToolbar v-model:search="calKeyword" search-placeholder="搜索日历编码、名称">
       <template #filters>
         <IncludeDisabledFilter v-model="includeDisabled" />
       </template>
@@ -363,7 +363,7 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
                 v-for="cell in monthCells"
                 :key="cell.key"
                 type="button"
-                class="relative aspect-square rounded-md p-1.5 text-left text-sm"
+                class="relative h-11 rounded-md p-1.5 focus-visible:ring-2 focus-visible:ring-ring text-left text-sm"
                 :class="
                   cell.inMonth
                     ? [
@@ -374,6 +374,8 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
                     : 'pointer-events-none opacity-0'
                 "
                 :title="cell.inMonth ? cell.title : undefined"
+                :aria-label="cell.inMonth ? `${cell.key}，${cell.title}` : undefined"
+                :aria-current="cell.isToday ? 'date' : undefined"
                 :disabled="!cell.inMonth"
                 @click="cell.inMonth && openManageSheet(cell.key)"
               >

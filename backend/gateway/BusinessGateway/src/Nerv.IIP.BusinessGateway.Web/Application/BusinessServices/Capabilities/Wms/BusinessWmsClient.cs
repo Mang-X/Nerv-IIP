@@ -670,7 +670,8 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             HttpMethod.Post,
             $"/api/business/v1/wms/outbound-orders/{Uri.EscapeDataString(outboundOrderId)}/inventory-posting/retry",
             request,
-            cancellationToken);
+            cancellationToken,
+            mapDownstreamServerErrorToBadGateway: true);
 
     public Task<BusinessConsoleCreateWmsCountExecutionResponse> CreateCountExecutionAsync(
         string internalBearerToken,
@@ -681,7 +682,8 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             HttpMethod.Post,
             "/api/business/v1/wms/count-executions",
             request,
-            cancellationToken);
+            cancellationToken,
+            acceptKnownExceptionCodeZero: true);
 
     public Task<BusinessConsoleWmsCountExecutionListResponse> ListCountExecutionsAsync(
         string internalBearerToken,

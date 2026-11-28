@@ -12,12 +12,20 @@ import {
   type BusinessConsoleBomDiffResponse,
   type BusinessConsoleBomWhereUsedResponse,
   type BusinessConsoleEngineeringItemRevisionItem,
-  type BusinessConsoleEngineeringItemListEnvelope,
-  type BusinessConsoleResourceListEnvelope,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
-import { computed, reactive, ref, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
+import {
+  computed,
+  nextTick,
+  onScopeDispose,
+  reactive,
+  ref,
+  shallowRef,
+  toValue,
+  watch,
+  type MaybeRefOrGetter,
+} from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -25,10 +33,12 @@ import {
 } from '../shared/businessContextBinding'
 import {
   DEFAULT_TAKE,
+  loadEngineeringCatalogPages,
   optionalQuery,
   runQueryOption,
   unwrapDetail,
   unwrapItems,
+  unwrapTotal,
 } from './engineeringShared'
 import { usePublishedEboms, usePublishedMboms } from './useEngineeringBoms'
 
@@ -53,26 +63,45 @@ export interface BomDiffInput {
   toRevision: string
 }
 
-export function useBomAnalysis() {
-  const context = useBusinessContextStore()
-  const explosion = shallowRef<BusinessConsoleBomExplosionResponse>()
-  const diff = shallowRef<BusinessConsoleBomDiffResponse>()
-  const whereUsed = shallowRef<BusinessConsoleBomWhereUsedResponse>()
-  const pending = ref(false)
-  const error = ref<unknown>()
+export type AnalysisRequest = 'explosion' | 'where-used' | 'diff'
 
-  async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
+function analysisRequest<T>() {
+  const result = shallowRef<T>()
+  const pending = ref(false)
+  const error = shallowRef<unknown>()
+  let generation = 0
+
+  async function run(work: () => Promise<T | undefined>) {
+    const request = ++generation
     pending.value = true
     error.value = undefined
+    result.value = undefined
     try {
-      return await work()
-    } catch (err) {
-      error.value = err
-      throw err
+      const response = await work()
+      if (request === generation) result.value = response
+    } catch (reason) {
+      if (request === generation) error.value = reason
     } finally {
-      pending.value = false
+      if (request === generation) pending.value = false
     }
   }
+
+  function reset() {
+    generation += 1
+    result.value = undefined
+    pending.value = false
+    error.value = undefined
+  }
+
+  return { result, pending, error, run, reset }
+}
+
+export function useBomAnalysis() {
+  const context = useBusinessContextStore()
+  const explosion = analysisRequest<BusinessConsoleBomExplosionResponse>()
+  const diff = analysisRequest<BusinessConsoleBomDiffResponse>()
+  const whereUsed = analysisRequest<BusinessConsoleBomWhereUsedResponse>()
+  const requests = { explosion, diff, 'where-used': whereUsed }
 
   function commonQuery() {
     return {
@@ -82,13 +111,14 @@ export function useBomAnalysis() {
   }
 
   return {
-    explosion,
-    diff,
-    whereUsed,
-    pending,
-    error,
+    explosion: explosion.result,
+    diff: diff.result,
+    whereUsed: whereUsed.result,
+    pendingFor: (view: AnalysisRequest) => requests[view].pending.value,
+    errorFor: (view: AnalysisRequest) => requests[view].error.value,
+    reset: (view: AnalysisRequest) => requests[view].reset(),
     loadBomDiff: (input: BomDiffInput) =>
-      run(async () => {
+      diff.run(async () => {
         const envelope = await runQueryOption(
           getBusinessConsoleEngineeringBomDiffQueryOptions({
             query: {
@@ -101,13 +131,10 @@ export function useBomAnalysis() {
             },
           }),
         )
-        diff.value = unwrapDetail<BusinessConsoleBomDiffResponse>(envelope)
-        explosion.value = undefined
-        whereUsed.value = undefined
-        return diff.value
+        return unwrapDetail<BusinessConsoleBomDiffResponse>(envelope)
       }),
     loadEngineeringExplosion: (input: BomExplosionInput) =>
-      run(async () => {
+      explosion.run(async () => {
         const envelope = await runQueryOption(
           getBusinessConsoleEngineeringBomExplosionQueryOptions({
             query: {
@@ -120,13 +147,10 @@ export function useBomAnalysis() {
             },
           }),
         )
-        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
-        diff.value = undefined
-        whereUsed.value = undefined
-        return explosion.value
+        return unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
       }),
     loadManufacturingExplosion: (input: BomExplosionInput) =>
-      run(async () => {
+      explosion.run(async () => {
         const envelope = await runQueryOption(
           getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions({
             query: {
@@ -139,13 +163,10 @@ export function useBomAnalysis() {
             },
           }),
         )
-        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
-        diff.value = undefined
-        whereUsed.value = undefined
-        return explosion.value
+        return unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
       }),
     loadEngineeringWhereUsed: (input: BomWhereUsedInput) =>
-      run(async () => {
+      whereUsed.run(async () => {
         const envelope = await runQueryOption(
           getBusinessConsoleEngineeringBomWhereUsedQueryOptions({
             query: {
@@ -155,13 +176,10 @@ export function useBomAnalysis() {
             },
           }),
         )
-        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
-        explosion.value = undefined
-        diff.value = undefined
-        return whereUsed.value
+        return unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
       }),
     loadManufacturingWhereUsed: (input: BomWhereUsedInput) =>
-      run(async () => {
+      whereUsed.run(async () => {
         const envelope = await runQueryOption(
           getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions({
             query: {
@@ -171,10 +189,7 @@ export function useBomAnalysis() {
             },
           }),
         )
-        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
-        explosion.value = undefined
-        diff.value = undefined
-        return whereUsed.value
+        return unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
       }),
   }
 }
@@ -192,18 +207,20 @@ const ENGINEERING_ITEM_STATUS_LABELS: Record<string, string> = {
   archived: '已归档',
 }
 
-/**
- * BOM 分析的物料选择目录（一次性拉取，非分页联动）：
- * - EBOM 侧取工程物料修订链（itemCode 口径，与 EBOM 爆炸 / 反查 facade 的入参一致），
- *   同一 itemCode 只保留一条（优先已发布修订）。
- * - MBOM 侧取基础数据 SKU（skuCode 口径，与 MBOM 爆炸 / 反查 facade 的入参一致）。
- * 目录加载失败不阻塞分析主流程（选择器空态引导去维护主数据）。
- */
+/** 工程物料和基础数据 SKU 共享编码的选择目录。 */
 export function useBomItemCatalog() {
   const context = useBusinessContextStore()
-  const engineeringEntries = shallowRef<BomCatalogEntry[]>([])
+  const engineeringRevisions = shallowRef<BusinessConsoleEngineeringItemRevisionItem[]>([])
+  const engineeringError = shallowRef<unknown>()
+  const skuError = shallowRef<unknown>()
+  const engineeringEntries = computed(() => dedupeEngineeringItems(engineeringRevisions.value))
   const skuEntries = shallowRef<BomCatalogEntry[]>([])
   const pending = ref(false)
+  const itemEntries = computed(() => {
+    const byCode = new Map(skuEntries.value.map((entry) => [entry.code, entry]))
+    for (const entry of engineeringEntries.value) byCode.set(entry.code, entry)
+    return [...byCode.values()]
+  })
 
   function dedupeEngineeringItems(items: BusinessConsoleEngineeringItemRevisionItem[]) {
     const byCode = new Map<string, BusinessConsoleEngineeringItemRevisionItem>()
@@ -221,42 +238,101 @@ export function useBomItemCatalog() {
     }))
   }
 
+  let generation = 0
+  let controller: AbortController | undefined
+  let requested = false
+
   async function load() {
-    if (pending.value) return
+    requested = true
+    if (pending.value || !hasBusinessContext(context)) return
+    const request = ++generation
+    controller = new AbortController()
+    const { signal } = controller
     pending.value = true
+    engineeringError.value = undefined
+    skuError.value = undefined
     const query = {
       organizationId: context.organizationId,
       environmentId: context.environmentId,
-      skip: 0,
       take: DEFAULT_TAKE,
     }
-    try {
-      const [itemEnvelope, skuEnvelope] = await Promise.all([
-        runQueryOption(listBusinessConsoleEngineeringItemsQueryOptions({ query })).catch(
-          () => undefined,
-        ),
-        runQueryOption(listBusinessConsoleSkusQueryOptions({ query })).catch(() => undefined),
-      ])
-      engineeringEntries.value = dedupeEngineeringItems(
-        unwrapItems<BusinessConsoleEngineeringItemRevisionItem>(
-          itemEnvelope as BusinessConsoleEngineeringItemListEnvelope | undefined,
-        ),
+    const [items, skus] = await Promise.allSettled([
+      loadEngineeringCatalogPages(
+        async (skip) => {
+          const envelope = await runQueryOption(
+            listBusinessConsoleEngineeringItemsQueryOptions({ query: { ...query, skip } }),
+            signal,
+          )
+          return { items: unwrapItems(envelope), total: unwrapTotal(envelope) }
+        },
+        (item) => JSON.stringify([item.itemCode, item.revision]),
+        signal,
+      ),
+      loadEngineeringCatalogPages(
+        async (skip) => {
+          const envelope = await runQueryOption(
+            listBusinessConsoleSkusQueryOptions({ query: { ...query, skip } }),
+            signal,
+          )
+          return {
+            items: envelope.success ? (envelope.data?.resources ?? []) : [],
+            total: unwrapTotal(envelope),
+          }
+        },
+        (sku) => sku.code ?? '',
+        signal,
+      ),
+    ])
+    if (
+      request !== generation ||
+      query.organizationId !== context.organizationId ||
+      query.environmentId !== context.environmentId
+    )
+      return
+
+    if (items.status === 'fulfilled') engineeringRevisions.value = items.value.items
+    else engineeringError.value = items.reason
+    if (skus.status === 'fulfilled')
+      skuEntries.value = skus.value.items.flatMap((sku) =>
+        sku.code ? [{ code: sku.code, name: sku.displayName ?? sku.code }] : [],
       )
-      const resources = (skuEnvelope as BusinessConsoleResourceListEnvelope | undefined)?.success
-        ? ((skuEnvelope as BusinessConsoleResourceListEnvelope).data?.resources ?? [])
-        : []
-      skuEntries.value = resources
-        .filter((sku) => !!sku.code)
-        .map<BomCatalogEntry>((sku) => ({
-          code: sku.code as string,
-          name: sku.displayName ?? (sku.code as string),
-        }))
-    } finally {
-      pending.value = false
-    }
+    else skuError.value = skus.reason
+    pending.value = false
   }
 
-  return { engineeringEntries, skuEntries, pending, load }
+  watch(
+    [() => context.organizationId, () => context.environmentId],
+    () => {
+      const invalidated = ++generation
+      controller?.abort()
+      engineeringRevisions.value = []
+      skuEntries.value = []
+      engineeringError.value = undefined
+      skuError.value = undefined
+      pending.value = false
+      if (requested)
+        void nextTick(() => {
+          if (invalidated === generation) void load()
+        })
+    },
+    { flush: 'sync' },
+  )
+
+  onScopeDispose(() => {
+    generation += 1
+    controller?.abort()
+  })
+
+  return {
+    engineeringEntries,
+    engineeringRevisions,
+    engineeringError,
+    skuEntries,
+    skuError,
+    itemEntries,
+    pending,
+    load,
+  }
 }
 
 export type BomVersionKind = 'engineering' | 'manufacturing'

@@ -52,6 +52,7 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
 })
 
 const overviewState = vi.hoisted(() => ({
+  hasOverview: true,
   blockers: [] as Array<{ areaCode?: string; code?: string; count?: number; message?: string }>,
   counts: [] as Array<{ count?: number; key: string }>,
   overviewError: undefined as Error | undefined,
@@ -92,6 +93,7 @@ vi.mock('@/composables/mes', () => {
     useMesOverview: () => ({
       blockers: readonlyRef(() => overviewState.blockers),
       counts: readonlyRef(() => overviewState.counts),
+      overview: readonlyRef(() => (overviewState.hasOverview ? {} : undefined)),
       overviewError: readonlyRef(() => overviewState.overviewError),
       overviewPending: readonlyRef(() => overviewState.overviewPending),
       overviewState: readonlyRef(() => overviewState.readState),
@@ -115,6 +117,7 @@ vi.mock('@/composables/mes', () => {
 
 describe('MES index page', () => {
   beforeEach(() => {
+    overviewState.hasOverview = true
     overviewState.blockers = []
     overviewState.counts = []
     overviewState.overviewError = undefined
@@ -207,6 +210,14 @@ describe('MES index page', () => {
     }
     expect(text).toContain('尚未选择业务范围')
     expect(text).toContain('—')
+  })
+
+  it('概览尚未返回时不宣称没有待办', () => {
+    overviewState.hasOverview = false
+
+    const text = mountPage().text()
+    expect(text).toContain('尚未取得待办数据')
+    expect(text).not.toContain('当前没有按角色汇总的待办')
   })
 
   it('确实读到数据且为空时才说没有阻塞', () => {

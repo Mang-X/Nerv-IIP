@@ -418,6 +418,7 @@ public sealed class ProductionVersionApiContractTests
                 CancellationToken.None);
 
         Assert.Equal(pinned.Id.Id.ToString("D"), response.ProductionVersionId);
+        Assert.Equal("MBOM-PINNED:A", response.MbomVersionId);
         Assert.Equal("ROUTE-PINNED:A", response.RoutingVersionId);
         Assert.Equal("ROUTE-PINNED", response.RoutingCode);
         Assert.Equal("active", response.ProductionVersionStatus);

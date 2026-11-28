@@ -465,6 +465,53 @@ describe('business WMS composables', () => {
     })
   })
 
+  it('核验盘点只按可信范围和目标 ID 读取，返回精确单据状态', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const row = {
+      countExecutionId: 'count-check',
+      status: 'Completed',
+      inventoryPostingStatus: 'Posted',
+      countedQuantity: 5,
+    }
+    vi.mocked(listBusinessConsoleWmsCountExecutions)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ ...row, inventoryPostingStatus: 'Pending' }] } },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ ...row, countedQuantity: 7 }] } },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ ...row, countExecutionId: 'other' }, row] } },
+      } as never)
+    const { verifyCountExecution } = useWmsCountExecutions({
+      workScopeRequired: true,
+      scopeKind: 'site',
+      scopeId: 'ST001',
+    })
+
+    await expect(verifyCountExecution('count-check', 5)).resolves.toMatchObject({ settled: false })
+    await expect(verifyCountExecution('count-check', 5)).resolves.toMatchObject({ settled: false })
+    await expect(verifyCountExecution('count-check', 5)).resolves.toEqual({
+      row,
+      settled: true,
+      postingFailed: false,
+    })
+    expect(listBusinessConsoleWmsCountExecutions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'site',
+        scopeId: 'ST001',
+        countExecutionId: 'count-check',
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: false,
+    })
+    expect(completeBusinessConsoleWmsCountExecution).not.toHaveBeenCalled()
+  })
+
   it('allows only a persisted completed-count retry with the frozen key', async () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })

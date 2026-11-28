@@ -8,6 +8,7 @@ export const DEFAULT_TAKE = 100
 export interface BusinessContextFilters extends BusinessContextFields {}
 
 export interface MasterDataListFilters extends BusinessContextFilters {
+  keyword?: string
   includeDisabled?: boolean
   skip: number
   take: number
@@ -102,5 +103,22 @@ export function withCreateIdempotency<TBody>(resourceType: string, body: TBody):
   return {
     ...body,
     idempotencyKey: newCreateIdempotencyKey(resourceType),
+  }
+}
+
+export async function fetchCompleteCatalog<T>(
+  fetchPage: (
+    skip: number,
+  ) => Promise<{ success?: boolean; data?: { items?: T[]; total?: number } | null }>,
+) {
+  const items: T[] = []
+  while (true) {
+    const page = await fetchPage(items.length)
+    if (!page.success || !page.data) throw new Error('基础数据目录读取失败，请刷新后重试。')
+    const batch = page.data.items ?? []
+    items.push(...batch)
+    const total = page.data.total ?? items.length
+    if (items.length >= total) return { success: true, data: { items, total } }
+    if (batch.length === 0) throw new Error('基础数据目录已变化，请刷新后重试。')
   }
 }

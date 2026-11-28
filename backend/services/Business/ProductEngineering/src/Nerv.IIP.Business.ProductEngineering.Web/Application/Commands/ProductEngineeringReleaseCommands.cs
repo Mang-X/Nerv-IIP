@@ -369,7 +369,7 @@ public sealed record ReleaseManufacturingBomCommand(
     string EngineeringBomRevision,
     DateOnly EffectiveDate,
     IReadOnlyCollection<ManufacturingBomMaterialLineCommand> MaterialLines,
-    IReadOnlyCollection<RecipeLineCommand> RecipeLines,
+    IReadOnlyCollection<RecipeLineCommand>? RecipeLines,
     string? IdempotencyKey = null) : ICommand<ReleasedEngineeringVersionResult>;
 
 public sealed record ManufacturingBomMaterialLineCommand(
@@ -477,7 +477,7 @@ public sealed class ReleaseManufacturingBomCommandHandler(
                     line.Backflush);
             }
 
-            foreach (var line in request.RecipeLines)
+            foreach (var line in request.RecipeLines ?? [])
             {
                 draft.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
             }

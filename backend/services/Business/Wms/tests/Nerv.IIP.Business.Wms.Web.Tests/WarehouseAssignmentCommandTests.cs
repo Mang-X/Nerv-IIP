@@ -15,7 +15,9 @@ using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing.PostgreSql;
 using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -154,13 +156,13 @@ public sealed class WarehouseAssignmentCommandTests
         };
         var assignment = await sender.Send(command);
         Assert.Equal(3, assignment.Version);
-        Assert.Equal(assignment, await sender.Send(command));
 
         var task = Assert.Single(await ReadPickingPoolAsync(dbContext, "POOL-WAREHOUSE", "user-target", "PICK-LATE"));
         Assert.Equal(taskId, task.WarehouseTaskId);
         Assert.Equal(2, task.Version);
         Assert.Equal(assignedOperator, task.AssignedOperatorUserId);
         Assert.Contains("start", task.AllowedActions);
+        Assert.Equal(assignment, await sender.Send(command));
         Assert.Empty(await ReadPickingPoolAsync(dbContext, "POOL-OTHER", "user-other", "PICK-LATE"));
 
         var forbidden = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
@@ -171,6 +173,36 @@ public sealed class WarehouseAssignmentCommandTests
         var persisted = Assert.Single(await ReadPickingPoolAsync(dbContext, "POOL-WAREHOUSE", "user-target", "PICK-LATE"));
         Assert.Equal("InProgress", persisted.Status);
         Assert.Equal(3, persisted.Version);
+    }
+
+    [WmsWorkAssignmentPostgresFact]
+    public async Task First_outbound_assignment_persists_mes_picking_pool_before_any_retry()
+    {
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_wms_mes_picking_test");
+        await using var provider = CreatePickingWorkflowProvider(database.ConnectionString);
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await dbContext.Database.MigrateAsync();
+        SeedAssignmentBoundary(dbContext);
+        await dbContext.SaveChangesAsync();
+
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        var prepared = await sender.Send(new PrepareMesMaterialIssueOutboundCommand(
+            "org-001", "env-dev", "MIR-001", "WO-001", null, "SKU-001", "pcs", 5m,
+            "SITE-001", "BIN-01", "LINE-SIDE-01", Now));
+        var outbound = await dbContext.OutboundOrders.AsNoTracking()
+            .SingleAsync(order => order.OutboundOrderNo == prepared.OutboundOrderNo);
+        await sender.Send(Command.ForOutbound(outbound.Id) with { ExpectedVersion = outbound.Version });
+
+        using var readScope = provider.CreateScope();
+        var readContext = readScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var task = Assert.Single(await ReadPickingPoolAsync(
+            readContext, "POOL-WAREHOUSE", "user-target", prepared.PickingTaskNo!));
+        Assert.Equal(2, task.Version);
+        Assert.Equal("user-target", task.AssignedOperatorUserId);
+        Assert.Contains("start", task.AllowedActions);
     }
 
     [Theory]
@@ -308,19 +340,36 @@ public sealed class WarehouseAssignmentCommandTests
             Now.AddDays(1)));
     }
 
-    private static ServiceProvider CreatePickingWorkflowProvider()
+    private static ServiceProvider CreatePickingWorkflowProvider(string? connectionString = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(new StaticTimeProvider(Now));
         services.AddScoped<WarehouseWorkScopeAuthorizer>();
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
             .AddUnitOfWorkBehaviors());
-        var databaseName = $"wms-picking-assignment-{Guid.NewGuid():N}";
-        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName)
-            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
-        services.AddUnitOfWork<ApplicationDbContext>();
+        if (connectionString is null)
+        {
+            var databaseName = $"wms-picking-assignment-{Guid.NewGuid():N}";
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName)
+                .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            services.AddUnitOfWork<ApplicationDbContext>();
+        }
+        else
+        {
+            services.AddWmsPostgreSqlPersistence(connectionString);
+        }
+
         return services.BuildServiceProvider();
+    }
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private static void SeedOtherPool(ApplicationDbContext dbContext)

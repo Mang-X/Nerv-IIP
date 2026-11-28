@@ -105,7 +105,7 @@ const readState = computed(() =>
   }),
 )
 
-const receivableLines = computed(() => rows.value.filter((row) => row.openQuantity > 0).length)
+const receivableLines = computed(() => rows.value.filter((row) => !receiptBlockReason(row)).length)
 const openQuantity = computed(() => rows.value.reduce((sum, row) => sum + row.openQuantity, 0))
 const receiptCells = computed<NvMetricStripCell[]>(() => [
   {
@@ -171,8 +171,18 @@ const receiptContextItems = computed(() => {
   ]
 })
 
+function receiptBlockReason(row: (typeof rows.value)[number]) {
+  if (row.status === 'PendingApproval') return '待审批，审批通过后可登记'
+  if (row.status === 'Cancelled') return '采购订单已取消'
+  if (row.status === 'Closed') return '采购订单已关闭'
+  if (row.status !== 'Released') return '采购订单尚未发布'
+  if (row.purchaseOrderNo === '-' || row.lineNo === '-') return '采购订单明细不完整'
+  if (row.openQuantity <= 0) return '该行已无待收数量'
+  return ''
+}
+
 function openDialog(row: (typeof rows.value)[number]) {
-  if (row.purchaseOrderNo === '-' || row.lineNo === '-') return
+  if (receiptBlockReason(row)) return
   receiptRow.value = row
   // 默认按待收数量整单收货，一线只在部分到货时改小。
   form.receivedQuantity = String(row.openQuantity > 0 ? row.openQuantity : 1)
@@ -291,10 +301,11 @@ async function submit() {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="row.openQuantity <= 0"
+          v-if="!receiptBlockReason(row)"
           @click="openDialog(row)"
           >登记收货</NvButton
         >
+        <span v-else class="text-sm text-muted-foreground">{{ receiptBlockReason(row) }}</span>
       </template>
     </NvDataTable>
 

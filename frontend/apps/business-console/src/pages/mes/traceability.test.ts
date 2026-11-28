@@ -30,6 +30,7 @@ vi.mock('@/composables/mes', () => ({
     traceability: computed(() => ({ nodes: state.nodes, edges: state.edges })),
     traceabilityError: ref(undefined),
     traceabilityPending: ref(false),
+    traceabilityState: ref('ready'),
     refreshTraceability: vi.fn(),
   }),
   useMesWorkOrders: () => ({

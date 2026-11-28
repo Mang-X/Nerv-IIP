@@ -1,8 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
@@ -13,6 +19,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesRoutingSnapshotTests
 {
     [Fact]
@@ -286,6 +293,98 @@ public sealed class MesRoutingSnapshotTests
 
         var workOrder = await dbContext.WorkOrders.AsNoTracking().SingleAsync(CancellationToken.None);
         Assert.Equal(productionVersionId, workOrder.ProductionVersionId);
+    }
+
+    [Theory]
+    [InlineData(50)]
+    [InlineData(80)]
+    public async Task Convert_plan_persists_work_order_and_material_snapshot_from_the_pinned_version(int quantity)
+    {
+        const string versionId = "01a21e6b-8dbd-74ff-8f98-680427923b02";
+        using var engineering = new HttpClient(new StubHttpMessageHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            $"/api/business/v1/engineering/production-versions/{versionId}/routing-snapshot" => JsonEnvelope(new
+            {
+                productionVersionId = versionId,
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                skuCode = "SKU-FG-1000",
+                productionVersionStatus = "active",
+                mbomVersionId = "MBOM-PINNED:A",
+                routingVersionId = "ROUTE-PINNED:A",
+                routingCode = "ROUTE-PINNED",
+                routingRevision = "A",
+                routingStatus = "published",
+                operations = new[] { new { sequence = 10, workCenterCode = "WC-FORM", operationCode = "FORM", standardMinutes = 30 } },
+            }),
+            "/api/business/v1/engineering/manufacturing-boms/MBOM-PINNED/A" => JsonEnvelope(new
+            {
+                bomCode = "MBOM-PINNED",
+                revision = "A",
+                skuCode = "SKU-FG-1000",
+                status = "published",
+                materialLines = new[] { new { skuCode = "RM-001", quantity = 2m, unitOfMeasureCode = "PCS" } },
+            }),
+            // At acceptance time the UTC date precedes eligibility. The selected planning version still has a valid route.
+            "/api/business/v1/engineering/production-versions/resolve" => JsonEnvelope<object?>(null),
+            _ => throw new InvalidOperationException($"Unexpected request {request.RequestUri}"),
+        })) { BaseAddress = new Uri("http://engineering.test") };
+        using var inventory = new HttpClient(new StubHttpMessageHandler(_ => JsonEnvelope(new
+        {
+            availableQuantity = 500m,
+        }))) { BaseAddress = new Uri("http://inventory.test") };
+        var engineeringClient = new MesProductEngineeringHttpClient(engineering);
+        var databaseName = $"mes-pinned-version-{Guid.NewGuid():N}";
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IHostedService>();
+                services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options
+                    .UseInMemoryDatabase(databaseName)
+                    .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+                services.RemoveAll<MesProductEngineeringHttpClient>();
+                services.AddSingleton(engineeringClient);
+                services.RemoveAll<IMesMaterialRequirementSnapshotProvider>();
+                services.AddScoped<IMesMaterialRequirementSnapshotProvider>(_ =>
+                    new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(engineeringClient, new MesInventoryHttpClient(inventory)));
+            });
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/mes/production-plans/SUG-001/work-orders", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuId = "SKU-FG-1000",
+            productionVersionId = versionId,
+            plannedQuantity = quantity,
+            uomCode = "PCS",
+            dueUtc = "2026-11-30T00:00:00Z",
+            requestedAtUtc = "2026-11-27T21:25:35Z",
+            sourceSystem = "DemandPlanning",
+            sourceDocumentType = "PlanningSuggestion",
+            sourceDocumentId = "SUG-001",
+            idempotencyKey = "accept-pinned-version",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Accepted", payload.RootElement.GetProperty("status").GetString());
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrder = await dbContext.WorkOrders.AsNoTracking().SingleAsync(CancellationToken.None);
+        var requirement = await dbContext.MaterialRequirements.AsNoTracking().SingleAsync(CancellationToken.None);
+        Assert.Equal(workOrder.WorkOrderId, payload.RootElement.GetProperty("referenceId").GetString());
+        Assert.Equal(versionId, workOrder.ProductionVersionId);
+        Assert.Equal((decimal)quantity, workOrder.Quantity);
+        Assert.Equal("RM-001", requirement.MaterialId);
+        Assert.Equal(2m * quantity, requirement.RequiredQuantity);
     }
 
     [Fact]

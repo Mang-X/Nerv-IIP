@@ -93,11 +93,26 @@ const candidateScope = ref<'work-center' | 'all'>('work-center')
 // 点提交才标红：未选操作员时不禁用按钮，而是标红 + 提示且不发请求。
 const showErrors = ref(false)
 
+const targetWorkCenter = computed(
+  () => props.target?.workCenterCode ?? props.target?.workCenterId ?? undefined,
+)
+const candidateWorkCenter = computed(() =>
+  candidateScope.value === 'work-center' ? targetWorkCenter.value : undefined,
+)
+const candidateSkillCode = computed(() =>
+  skillFilter.value === 'all' ? undefined : skillFilter.value,
+)
 const {
   workers,
-  workersPending,
+  workersState,
   filters: workerFilters,
-} = useBusinessWorkers({ employmentStatus: 'active' })
+} = useBusinessWorkers(
+  { employmentStatus: 'active' },
+  false,
+  () =>
+    open.value && !!props.target && (candidateScope.value === 'all' || !!targetWorkCenter.value),
+)
+const workersPending = computed(() => workersState.value === 'loading')
 const { resources: shifts } = useBusinessMasterDataResources('shift')
 // 技能筛选取「技能目录」主数据（skillCode + 中文 skillName）。
 // 曾踩坑：这里取的是「人员技能矩阵」资源，其 code 是 `userId:skillCode` 复合键、
@@ -119,26 +134,19 @@ function shiftLabel(value?: string | null): string {
   return shiftNameByCode.value.get(value) ?? value
 }
 
-const targetWorkCenter = computed(
-  () => props.target?.workCenterCode ?? props.target?.workCenterId ?? undefined,
-)
-
-// 候选查询交给服务端收敛（工作中心 → 所辖班组 → 在册成员），技能筛选同样走服务端，
-// 避免在前端对一页候选做二次过滤而把翻页外的人漏掉。
+// 工作中心与技能筛选交给服务端，保留工序自身的工作中心上下文。
 watch(
-  [open, candidateScope, targetWorkCenter, skillFilter],
-  () => {
-    const active = open.value
-    workerFilters.workCenterCode =
-      active && candidateScope.value === 'work-center' ? targetWorkCenter.value : undefined
-    workerFilters.skillCode = active && skillFilter.value !== 'all' ? skillFilter.value : undefined
+  [candidateWorkCenter, candidateSkillCode],
+  ([workCenterCode, skillCode]) => {
+    workerFilters.workCenterCode = workCenterCode
+    workerFilters.skillCode = skillCode
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 )
 
 // 有技能登记的排在前面——同一工作中心内优先派给有对应技能的人。
 const workerOptions = computed(() =>
-  workers.value
+  (workersState.value === 'ready' ? workers.value : [])
     .filter((w) => w.userId)
     .slice()
     .sort((a, b) => (b.skills?.length ?? 0) - (a.skills?.length ?? 0))
@@ -182,20 +190,22 @@ const contextItems = computed(() => {
 // 每次打开都从所选行重新带出设备/班次，并清掉上一次的选择——
 // 否则会把上一道工序的人和设备带进这一次派工。
 watch(open, (isOpen) => {
-  if (!isOpen) return
+  if (!isOpen) {
+    skillFilter.value = 'all'
+    candidateScope.value = 'work-center'
+    return
+  }
   const row = props.target
   assignedUserId.value = ''
-  skillFilter.value = 'all'
-  candidateScope.value = 'work-center'
   showErrors.value = false
   deviceAssetId.value = row?.deviceAssetCode ?? row?.deviceAssetId ?? ''
   shiftId.value = row?.shiftId ?? ''
 })
 
 // 候选是服务端按工作中心收敛后才回来的，所以「只有一个人就直接选中」必须等列表落地再判。
-watch(workerOptions, (options) => {
-  if (!open.value) return
-  if (options.length === 1) {
+watch([open, workersState, workerOptions], ([isOpen, state, options]) => {
+  if (!isOpen || state !== 'ready') return
+  if (options.length === 1 && !assignedUserId.value) {
     assignedUserId.value = options[0]!.value
     return
   }
@@ -208,7 +218,7 @@ watch(workerOptions, (options) => {
 async function submit() {
   showErrors.value = true
   const operationTaskId = props.target?.operationTaskId
-  if (!operationTaskId || !assignedUserId.value) return
+  if (!operationTaskId || workersState.value !== 'ready' || !selectedWorker.value) return
   const businessContext = useBusinessContextStore()
   const { organizationId, environmentId } = businessContext
   const principalId = auth.principal?.principalId
@@ -334,16 +344,44 @@ function formatDateTime(value?: string | null) {
                     >
                   </NvBadge>
                 </div>
-                <p
-                  v-else-if="!workersPending && workerOptions.length === 0"
-                  class="text-sm text-muted-foreground"
-                >
-                  {{
-                    candidateScope === 'work-center'
-                      ? '该工作中心暂无符合条件的在岗班组成员，可放宽到「全部在岗员工」或取消技能筛选。'
-                      : '暂无符合条件的在岗员工，请先在「基础数据 · 员工」维护人员与技能。'
-                  }}
+                <p v-if="workersState === 'error'" class="text-sm text-destructive" role="status">
+                  候选员工读取失败，请重新打开派工窗口后重试。
                 </p>
+                <div
+                  v-else-if="
+                    (workersState === 'ready' && !workerOptions.length) ||
+                    (candidateScope === 'work-center' && !targetWorkCenter)
+                  "
+                  class="flex flex-wrap items-center gap-2"
+                >
+                  <p class="text-sm text-muted-foreground">
+                    {{
+                      !targetWorkCenter && candidateScope === 'work-center'
+                        ? '该工序尚未指定工作中心。'
+                        : candidateScope === 'work-center'
+                          ? '该工作中心暂无符合条件的在岗员工。'
+                          : '暂无符合条件的在岗员工。'
+                    }}
+                  </p>
+                  <NvButton
+                    v-if="candidateScope === 'work-center'"
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    @click="candidateScope = 'all'"
+                  >
+                    查看全部在岗员工
+                  </NvButton>
+                  <NvButton
+                    v-if="skillFilter !== 'all'"
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    @click="skillFilter = 'all'"
+                  >
+                    清除技能筛选
+                  </NvButton>
+                </div>
               </NvField>
 
               <div class="grid gap-3 sm:grid-cols-2">

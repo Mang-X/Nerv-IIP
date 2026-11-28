@@ -150,6 +150,17 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WarehouseAssignmentCommandTests.cs",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The WMS MES picking assignment persistence proof uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WarehouseTaskActionConcurrencyPostgresTests.cs",
       "factoryCallCount": 2,
       "ownerships": [

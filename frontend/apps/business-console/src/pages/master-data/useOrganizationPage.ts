@@ -17,21 +17,19 @@ import {
 } from '@/utils/notify'
 
 export function useOrganizationPage() {
-  // 层级树需尽量全量拼装：用较大 take 兜底（真正全量需后端全量端点 #373）。
-  const TREE_TAKE = 200
+  const TREE_TAKE = 5000
 
-  const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest>('department')
-  const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
+  const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest>('department', {
+    all: true,
+  })
+  const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team', { all: true })
   // 班组挂靠班次：「所属班次」用班次选择器（可就地新增）；这里的列表只用来在只有一个班次时自动选中。
-  const shifts = useMasterDataResource('shift')
+  const shifts = useMasterDataResource('shift', { all: true })
   const deptActions = useMasterDataResourceActions('department')
   const teamActions = useMasterDataResourceActions('team')
   // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
   const lifecycle = useMasterDataLifecycleConfirm()
 
-  departments.filters.take = TREE_TAKE
-  teams.filters.take = TREE_TAKE
-  shifts.filters.take = TREE_TAKE
   // 停用后的部门/班组/班次默认不在列表里，「启用」入口就永远够不到；三者共用一个开关（#1594）。
   const includeDisabled = useIncludeDisabledFilter([
     departments.filters,

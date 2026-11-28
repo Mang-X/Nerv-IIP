@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   qualityItems: [] as Array<Record<string, unknown>>,
   routeQuery: {} as Record<string, string>,
   ncrState: 'ready',
+  qualityReadState: 'ready',
   ncrs: {} as Record<string, Record<string, unknown> | null>,
   organizationId: 'org-1',
   environmentId: 'prod',
@@ -18,6 +19,7 @@ const state = vi.hoisted(() => ({
   writeScopeId: 'WC-WRITE',
   writeScopeMessage: '',
 }))
+const qualityItemsPending = shallowRef(false)
 const recordDefect = vi.hoisted(() => vi.fn())
 const refreshOperationTasks = vi.hoisted(() => vi.fn())
 const refreshQualityItems = vi.hoisted(() => vi.fn())
@@ -116,7 +118,8 @@ vi.mock('@/composables/mes', () => ({
     }),
     qualityItems: computed(() => state.qualityItems),
     qualityItemsError: shallowRef(undefined),
-    qualityItemsPending: shallowRef(false),
+    qualityItemsPending,
+    qualityItemsState: computed(() => state.qualityReadState),
     qualityItemsTotal: computed(() => state.qualityItems.length),
     recordDefect,
     recordDefectPending: shallowRef(false),
@@ -137,8 +140,14 @@ vi.mock('@/composables/mes/useMesDefectNcrs', () => ({
 const passthrough = { template: '<div><slot /></div>' }
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
-  NvPageHeader: { template: '<header><slot name="actions" /></header>' },
-  NvMetricCard: true,
+  NvPageHeader: {
+    props: ['count'],
+    template: '<header>{{ count }}<slot name="actions" /></header>',
+  },
+  NvMetricCard: {
+    props: ['value', 'unit', 'footStart'],
+    template: '<div>{{ value }}{{ unit }} {{ footStart }}</div>',
+  },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
   NvDataTable: {
     props: ['rows'],
@@ -279,6 +288,8 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       }),
     ]
     state.qualityItems = []
+    state.qualityReadState = 'ready'
+    qualityItemsPending.value = false
     state.ncrState = 'ready'
     state.ncrs = {}
     state.routeQuery = {}
@@ -303,6 +314,35 @@ describe('MES 质量页 — 缺陷登记入口', () => {
         downstreamDocumentId: 'DEF-20260825-001',
       },
     })
+  })
+
+  it('质量记录加载中不显示空记录结论', () => {
+    state.qualityReadState = 'loading'
+    const wrapper = mountPage()
+    expect(wrapper.text()).not.toContain('当前没有不良记录')
+    expect(wrapper.text()).not.toContain('0 条质量项')
+    wrapper.unmount()
+  })
+
+  it('页内刷新时隐藏零值，读取完成后恢复真实零值', async () => {
+    const wrapper = mountPage()
+    expect(wrapper.text()).toContain('0 条质量项')
+    expect(wrapper.text()).toContain('0张')
+
+    refreshQualityItems.mockImplementationOnce(async () => {
+      qualityItemsPending.value = true
+    })
+    await button(wrapper, '刷新').trigger('click')
+    expect(wrapper.text()).toContain('正在读取质量记录')
+    expect(wrapper.text()).not.toContain('0 条质量项')
+    expect(wrapper.text()).not.toContain('0张')
+
+    qualityItemsPending.value = false
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('正在读取质量记录')
+    expect(wrapper.text()).toContain('0 条质量项')
+    expect(wrapper.text()).toContain('0张')
+    wrapper.unmount()
   })
 
   it('opens the real work order with the source operation using quality facts without operations permission', async () => {

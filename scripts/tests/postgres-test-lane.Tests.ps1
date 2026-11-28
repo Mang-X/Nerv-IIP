@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Validates PostgreSQL lane manifest and TRX contracts with temporary fixtures
@@ -704,10 +704,11 @@ try {
     # WMS 的 filter 逐条精确到方法。#1752 覆盖采购待收货和已提交取消投影。
     # 各测试通过共享 PostgreSqlTestDatabase 管理独立数据库，lane 校验实际执行数及冻结身份。
     $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 35) 'The WMS member must freeze exactly its thirty-five governed PostgreSQL identities.'
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 36) 'The WMS member must freeze exactly its thirty-six governed PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
     Assert-MethodScopedFilter -Member $wmsMember
     foreach ($wmsSource in @(
+            'WarehouseAssignmentCommandTests.cs',
             'WarehouseTaskActionConcurrencyPostgresTests.cs',
             'WcsDispatchConcurrencyPostgresTests.cs',
             'WcsTaskCallbackValidatorTests.cs',

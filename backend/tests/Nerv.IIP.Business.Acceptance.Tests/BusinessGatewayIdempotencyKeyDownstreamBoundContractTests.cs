@@ -858,6 +858,7 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
             Command<AssignCountExecutionCommand>(),
         ],
 
+        [typeof(BusinessConsoleConfirmWmsInboundReceiptRequest)] = [Command<ConfirmInboundReceiptCommand>()],
         [typeof(BusinessConsoleCompleteWmsInboundOrderRequest)] = [Command<CompleteInboundOrderCommand>()],
         [typeof(BusinessConsoleCompleteWmsOutboundOrderRequest)] = [Command<CompleteOutboundOrderCommand>()],
         [typeof(BusinessConsoleCompleteWmsCountExecutionRequest)] = [Command<CompleteCountExecutionCommand>()],

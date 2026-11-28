@@ -186,6 +186,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
             return;
         }
 
+        var messageTitles = new Dictionary<string, string>(StringComparer.Ordinal);
         try
         {
             if (messagesAllowed)
@@ -194,6 +195,14 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                     tokenProvider.BearerToken,
                     new BusinessConsoleNotificationListRequest(request.OrganizationId, request.EnvironmentId, principalRef, "unread", take),
                     cancellationToken);
+                foreach (var message in response.Items)
+                {
+                    if (!string.IsNullOrWhiteSpace(message.Title))
+                    {
+                        messageTitles.TryAdd(message.MessageId, message.Title);
+                    }
+                }
+
                 messages.AddRange(response.Items.Select(item => new BusinessConsoleWorkbenchMessageItem(
                     item.MessageId,
                     item.Status,
@@ -215,7 +224,8 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                     item.TaskType,
                     item.Status,
                     item.ActionRef,
-                    null)));
+                    null,
+                    messageTitles.GetValueOrDefault(item.MessageId))));
             }
 
             sourceStatuses["Notification"] = SourceAvailable(

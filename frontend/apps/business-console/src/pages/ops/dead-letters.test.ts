@@ -362,6 +362,14 @@ describe('集成事件死信运维页', () => {
     expect(document.querySelector('a[href="/mes/work-orders/WO-001"]')).not.toBeNull()
   })
 
+  it('distinguishes the server query from search in the loaded results', async () => {
+    const wrapper = await mountPage()
+    const conditions = wrapper.get('section[aria-labelledby="dead-letter-query-title"]')
+    expect(conditions.text()).toContain('查询条件')
+    expect(conditions.get('label[for="dead-letter-event-type"]').text()).toBe('完整事件类型')
+    expect(wrapper.text()).toContain('在当前结果中搜索事件类型、消费者或失败码。')
+  })
+
   it('超时与不可用对用户不是同一句话', async () => {
     state.unavailableSources = [{ service: 'Erp', reason: 'sourceTimeout' }]
     const timeoutText = (await mountPage()).text()

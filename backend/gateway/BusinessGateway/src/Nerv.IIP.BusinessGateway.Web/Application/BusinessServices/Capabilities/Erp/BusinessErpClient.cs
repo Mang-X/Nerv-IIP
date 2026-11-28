@@ -524,7 +524,8 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             HttpMethod.Post,
             "/api/business/v1/erp/sales-orders",
             request,
-            cancellationToken);
+            cancellationToken,
+            acceptKnownExceptionCodeZero: true);
 
     public Task<string> ReleaseSalesOrderCreditHoldAsync(
         string internalBearerToken,

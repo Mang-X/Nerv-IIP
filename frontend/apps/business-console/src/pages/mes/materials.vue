@@ -87,7 +87,7 @@ const columns: NvDataTableColumn<RequestRow>[] = [
     header: '物料',
     accessor: (r) => resolveSku(r.materialCode ?? r.materialId) ?? '无',
   },
-  { key: 'receivedQuantity', header: '收料进度', width: 'w-44' },
+  { key: 'receivedQuantity', header: '已收量 / 申请量', width: 'w-44' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'wmsRequestId', header: '出库单', width: 'w-28' },
   { key: 'requestedAtUtc', header: '申请时间', width: 'w-44' },
@@ -209,13 +209,13 @@ function formatDateTime(value?: string | null) {
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无领料申请。齐套检查通过后，从工单详情发起领料即会在此跟踪收料进度。"
+      empty-message="暂无领料申请。可从工单详情发起领料，在这里跟踪申请量与已收量。"
       @retry="refreshMaterialIssueRequests"
     >
       <template #cell-receivedQuantity="{ row }">
         <div class="flex flex-col gap-1">
           <span class="text-sm tabular-nums">
-            已收 {{ formatQuantity(row.receivedQuantity) }} / 应领
+            已收 {{ formatQuantity(row.receivedQuantity) }} / 申请
             {{ formatQuantity(row.requestedQuantity) }}
           </span>
           <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted" role="presentation">

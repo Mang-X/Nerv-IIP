@@ -174,6 +174,14 @@ describe('master-data reference-data page', () => {
     const wrapper = mount(ReferenceDataPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
+    const createButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '新建字典条目')!
+    expect(createButton.attributes('aria-disabled')).toBe('true')
+    expect(wrapper.get('#dictionary-add-reason').text()).toBe('此字典由系统维护，不能新增条目')
+    await createButton.trigger('click')
+    expect(document.body.textContent).not.toContain('所属字典：')
+
     // 默认 CodeSet material-type 为系统枚举（不可新增），先切到可维护分组再开新建对话框。
     const storageTab = wrapper
       .find('nav[aria-label="字典分组"]')
@@ -181,6 +189,8 @@ describe('master-data reference-data page', () => {
       .find((b) => b.text().includes('仓储条件'))!
     await storageTab.trigger('click')
     await flushPromises()
+    expect(createButton.attributes('aria-disabled')).toBe('false')
+    expect(wrapper.find('#dictionary-add-reason').exists()).toBe(false)
 
     await wrapper
       .findAll('button')

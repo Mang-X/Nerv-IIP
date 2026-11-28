@@ -203,6 +203,8 @@ public sealed partial class ErpReturnClosurePostgresAcceptanceTests
 
             var expiring = await reserve.Handle(request with { IdempotencyKey = "expire-reservation" }, ct);
             await inventory.SaveChangesAsync(ct);
+            // 用数据库持久化的时间精度同时执行查询和领域到期判断。
+            inventory.ChangeTracker.Clear();
             var expiresAt = await inventory.StockReservations.Where(x => x.Id == expiring.ReservationId)
                 .Select(x => x.ExpiresAtUtc).SingleAsync(ct);
             var expired = await new ExpiredStockReservationService(inventory, Options.Create(new StockReservationExpirationOptions()))

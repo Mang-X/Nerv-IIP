@@ -19,13 +19,13 @@ import {
   NvTabsContent,
 } from '@nerv-iip/ui'
 import { SendIcon } from '@lucide/vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { ShallowUnwrapRef } from 'vue'
 import type { useSchedulingPageController } from './useSchedulingPageController'
 
 type View = ShallowUnwrapRef<ReturnType<typeof useSchedulingPageController>>
 
-defineProps<{
+const props = defineProps<{
   attachCandidatePanel: View['attachCandidatePanel']
   canManage: View['canManage']
   candidateDraftBlockedReason: View['candidateDraftBlockedReason']
@@ -72,12 +72,36 @@ const clearDraftConfirmOpen = defineModel<View['clearDraftConfirmOpen']>('clearD
 })
 
 const horizonInput = defineModel<View['horizonInput']>('horizonInput', { required: true })
+const emptyWorkbench = computed(() => {
+  const { workbench, draft, persistence, localCandidates, insertion } = props
+  return (
+    workbench.candidatesState.value === 'ready' &&
+    !workbench.candidatesPending.value &&
+    workbench.schedulableCandidates.value.length === 0 &&
+    !draft.model.value &&
+    draft.includedOrders.value.length === 0 &&
+    persistence.savedDrafts.value.length === 0 &&
+    !persistence.busy.value &&
+    persistence.status.value !== 'error' &&
+    !workbench.generatePending.value &&
+    !workbench.revisionPending.value &&
+    !localCandidates.pending.value &&
+    !insertion.task.pending.value
+  )
+})
 </script>
 
 <template>
   <NvTabsContent value="workbench" class="grid gap-4">
     <div class="grid gap-4 rounded-lg border bg-card p-4">
-      <div class="flex flex-wrap items-center justify-between gap-3">
+      <div v-if="emptyWorkbench" class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="font-semibold">当前作业范围没有待排工单</p>
+          <p class="text-sm text-muted-foreground">MES 已下达且未完工的工单会进入待排池。</p>
+        </div>
+        <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
+      </div>
+      <div v-else class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
           <p class="text-sm text-muted-foreground">
@@ -126,7 +150,10 @@ const horizonInput = defineModel<View['horizonInput']>('horizonInput', { require
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+      <div
+        v-if="!emptyWorkbench"
+        class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground"
+      >
         <span role="status" aria-live="polite">{{ draftSaveStatus }}</span>
         <NvSelect
           v-if="persistence.savedDrafts.value.length > 0"
@@ -177,151 +204,153 @@ const horizonInput = defineModel<View['horizonInput']>('horizonInput', { require
       />
     </div>
 
-    <p
-      v-if="draft.model.value && publishCandidateBlockedReason"
-      role="status"
-      class="text-sm text-warning-strong"
-    >
-      发布受阻 · {{ publishCandidateBlockedReason }}
-    </p>
-    <p
-      v-if="!canManage"
-      class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
-      role="status"
-    >
-      当前账号只有读取权限，可查看历史方案但不能编辑或生成新版本。
-    </p>
-    <p
-      v-if="draftInvalidationReason"
-      class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
-      role="status"
-    >
-      {{ draftInvalidationReason }}
-    </p>
     <p v-if="firstPlanProgress" role="status" class="text-sm text-muted-foreground">
       {{ firstPlanProgress }}
     </p>
-    <details :open="!draft.model.value" class="rounded-lg border bg-card p-3">
-      <summary class="cursor-pointer text-sm font-medium">
-        待排工单 · 已选 {{ draft.includedOrders.value.length }} 个（展开调整）
-      </summary>
-      <SchedulingOrderPool
-        :candidates="workbench.schedulableCandidates.value"
-        :draft-orders="draft.orders.value"
-        :loading="workbench.candidatesPending.value"
-        :error="workbench.candidatesError.value"
-        :scope-ready="workbench.candidatesScopeReady.value"
-        :scope-message="workbench.candidatesScopeMessage.value"
-        :read-only="!canManage || !draftReady || workbench.generatePending.value"
-        @include="includeWorkbenchOrders"
-        :can-edit-priority="
-          permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
-        "
-        :save-order="saveWorkbenchOrderPriority"
-        @retry="workbench.refreshCandidates"
+    <template v-if="!emptyWorkbench">
+      <p
+        v-if="draft.model.value && publishCandidateBlockedReason"
+        role="status"
+        class="text-sm text-warning-strong"
       >
-        <template #scope>
-          <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
-        </template>
-      </SchedulingOrderPool>
-    </details>
-    <SchedulingDowntimeBanner
-      :impact="downtime.impact.value"
-      :model="draftDisplayModel"
-      :now="downtime.now.value"
-      :blocked-reason="downtimeCandidateBlockedReason"
-      :pending="localCandidates.pending.value"
-      :has-candidates="Boolean(localCandidates.candidates.value)"
-      @preview="previewDowntimeCandidates"
-    />
-    <SchedulingCandidatePanel
-      :ref="attachCandidatePanel"
-      :candidates="localCandidates.candidates.value"
-      :baseline-plan-id="persistedDraftPlan?.planId"
-      :can-manage="canManage && draftReady && !workbench.generatePending.value"
-      :pending="localCandidates.pending.value"
-      :blocked-reason="candidateDraftBlockedReason"
-      @preview="localCandidates.preview"
-      @select="localCandidates.select"
-    />
-    <SchedulingRushInsertionResult
-      :job="insertion.task.job.value"
-      :message="insertion.message.value"
-      :pending="insertion.task.pending.value"
-      :failed="Boolean(insertion.task.error.value)"
-      :saving="workbench.revisionPending.value"
-      :save-error="insertion.saveError.value"
-      :selected="
-        Boolean(
-          selectedInsertionId &&
-          selectedInsertionId === insertion.task.result.value?.candidatePlanId,
-        )
-      "
-      @retry="insertion.retry"
-      @select="selectInsertionCandidate"
-    />
-    <section
-      aria-label="草稿编辑操作"
-      class="sticky top-14 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3 shadow-sm"
-    >
-      <div
-        v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
-        class="flex min-w-0 flex-1 flex-wrap items-center gap-3 text-sm"
+        发布受阻 · {{ publishCandidateBlockedReason }}
+      </p>
+      <p
+        v-if="!canManage"
+        class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
         role="status"
       >
-        <span class="text-muted-foreground">
-          {{ draft.modifiedUnlockedTaskIds.value.length }}
-          道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。
-        </span>
+        当前账号只有读取权限，可查看历史方案但不能编辑或生成新版本。
+      </p>
+      <p
+        v-if="draftInvalidationReason"
+        class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+        role="status"
+      >
+        {{ draftInvalidationReason }}
+      </p>
+      <details :open="!draft.model.value" class="rounded-lg border bg-card p-3">
+        <summary class="cursor-pointer text-sm font-medium">
+          待排工单 · 已选 {{ draft.includedOrders.value.length }} 个（展开调整）
+        </summary>
+        <SchedulingOrderPool
+          :candidates="workbench.schedulableCandidates.value"
+          :draft-orders="draft.orders.value"
+          :loading="workbench.candidatesPending.value"
+          :error="workbench.candidatesError.value"
+          :scope-ready="workbench.candidatesScopeReady.value"
+          :scope-message="workbench.candidatesScopeMessage.value"
+          :read-only="!canManage || !draftReady || workbench.generatePending.value"
+          @include="includeWorkbenchOrders"
+          :can-edit-priority="
+            permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
+          "
+          :save-order="saveWorkbenchOrderPriority"
+          @retry="workbench.refreshCandidates"
+        >
+          <template #scope>
+            <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
+          </template>
+        </SchedulingOrderPool>
+      </details>
+      <SchedulingDowntimeBanner
+        :impact="downtime.impact.value"
+        :model="draftDisplayModel"
+        :now="downtime.now.value"
+        :blocked-reason="downtimeCandidateBlockedReason"
+        :pending="localCandidates.pending.value"
+        :has-candidates="Boolean(localCandidates.candidates.value)"
+        @preview="previewDowntimeCandidates"
+      />
+      <SchedulingCandidatePanel
+        :ref="attachCandidatePanel"
+        :candidates="localCandidates.candidates.value"
+        :baseline-plan-id="persistedDraftPlan?.planId"
+        :can-manage="canManage && draftReady && !workbench.generatePending.value"
+        :pending="localCandidates.pending.value"
+        :blocked-reason="candidateDraftBlockedReason"
+        @preview="localCandidates.preview"
+        @select="localCandidates.select"
+      />
+      <SchedulingRushInsertionResult
+        :job="insertion.task.job.value"
+        :message="insertion.message.value"
+        :pending="insertion.task.pending.value"
+        :failed="Boolean(insertion.task.error.value)"
+        :saving="workbench.revisionPending.value"
+        :save-error="insertion.saveError.value"
+        :selected="
+          Boolean(
+            selectedInsertionId &&
+            selectedInsertionId === insertion.task.result.value?.candidatePlanId,
+          )
+        "
+        @retry="insertion.retry"
+        @select="selectInsertionCandidate"
+      />
+      <section
+        aria-label="草稿编辑操作"
+        class="sticky top-14 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3 shadow-sm"
+      >
+        <div
+          v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
+          class="flex min-w-0 flex-1 flex-wrap items-center gap-3 text-sm"
+          role="status"
+        >
+          <span class="text-muted-foreground">
+            {{ draft.modifiedUnlockedTaskIds.value.length }}
+            道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。
+          </span>
+          <NvButton
+            size="sm"
+            variant="outline"
+            type="button"
+            :disabled="!canManage || !draftReady || workbench.generatePending.value"
+            :title="
+              canManage
+                ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
+                : '当前账号没有排产管理权限，不能锁定修改'
+            "
+            @click="draft.lockModifiedTasks"
+            >锁定全部修改</NvButton
+          >
+        </div>
+        <p
+          v-if="draft.modifiedUnlockedTaskIds.value.length === 0"
+          class="text-sm text-muted-foreground"
+        >
+          本次草案 · 已选 {{ draft.includedOrders.value.length }} 个工单 · 已锁定
+          {{ draft.lockedAssignments.value.length }} 道工序；重预览后查看变化再发布。
+        </p>
         <NvButton
           size="sm"
-          variant="outline"
+          variant="default"
           type="button"
-          :disabled="!canManage || !draftReady || workbench.generatePending.value"
-          :title="
-            canManage
-              ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
-              : '当前账号没有排产管理权限，不能锁定修改'
-          "
-          @click="draft.lockModifiedTasks"
-          >锁定全部修改</NvButton
+          :disabled="Boolean(repreviewBlockedReason)"
+          :title="repreviewDisabledReason"
+          @click="repreviewLockedDraft"
         >
-      </div>
-      <p
-        v-if="draft.modifiedUnlockedTaskIds.value.length === 0"
-        class="text-sm text-muted-foreground"
-      >
-        本次草案 · 已选 {{ draft.includedOrders.value.length }} 个工单 · 已锁定
-        {{ draft.lockedAssignments.value.length }} 道工序；重预览后查看变化再发布。
-      </p>
-      <NvButton
-        size="sm"
-        variant="default"
-        type="button"
-        :disabled="Boolean(repreviewBlockedReason)"
-        :title="repreviewDisabledReason"
-        @click="repreviewLockedDraft"
-      >
-        <NvSpinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
-      </NvButton>
-    </section>
-    <ScheduleRevisionReview :revision="revisionResult" :base-plan="revisionBasePlan" />
-    <SchedulingDraftBoard
-      :time-context="factoryTimeContext.items.value"
-      :model="downtimeDisplayModel"
-      :feedback="draft.feedback.value"
-      :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
-      :pending-operations="draft.pendingOperations.value"
-      :read-only="!canManage || !draftReady || workbench.generatePending.value"
-      :persisted-operation-keys="persistedOperationKeys"
-      :persist-pending="upsertOperationOverridePending"
-      @persist-override="persistOperationOverride"
-      @move="draft.moveTask"
-      @update="draft.updateTask"
-      @lock="draft.setLocked"
-      @locked-attempt="onLockedDragAttempt"
-      @move-to-pending="draft.moveTaskToPending"
-      @restore-pending="draft.restorePendingTask"
-    />
+          <NvSpinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
+        </NvButton>
+      </section>
+      <ScheduleRevisionReview :revision="revisionResult" :base-plan="revisionBasePlan" />
+      <SchedulingDraftBoard
+        :time-context="factoryTimeContext.items.value"
+        :model="downtimeDisplayModel"
+        :feedback="draft.feedback.value"
+        :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
+        :pending-operations="draft.pendingOperations.value"
+        :read-only="!canManage || !draftReady || workbench.generatePending.value"
+        :persisted-operation-keys="persistedOperationKeys"
+        :persist-pending="upsertOperationOverridePending"
+        @persist-override="persistOperationOverride"
+        @move="draft.moveTask"
+        @update="draft.updateTask"
+        @lock="draft.setLocked"
+        @locked-attempt="onLockedDragAttempt"
+        @move-to-pending="draft.moveTaskToPending"
+        @restore-pending="draft.restorePendingTask"
+      />
+    </template>
   </NvTabsContent>
 </template>

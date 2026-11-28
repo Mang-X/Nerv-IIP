@@ -13,6 +13,8 @@ public enum InventoryMovementRequestStatus
 
 public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId>, IAggregateRoot
 {
+    private const string CountAdjustmentMovementType = "count-adjustment";
+
     private InventoryMovementRequest()
     {
     }
@@ -39,6 +41,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         DateOnly? expiryDate,
         bool publishCreatedEvent = true,
         decimal? unitCost = null,
+        bool countWithoutVariance = false,
         bool matchReceiptStockDates = false)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
@@ -56,7 +59,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         QualityStatus = WmsText.Required(qualityStatus, nameof(qualityStatus)).ToLowerInvariant();
         OwnerType = WmsText.Required(ownerType, nameof(ownerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(ownerId);
-        Quantity = WmsText.NonZero(quantity, nameof(quantity));
+        Quantity = countWithoutVariance ? 0m : WmsText.NonZero(quantity, nameof(quantity));
         UnitCost = unitCost;
         InventoryReservationId = WmsText.Optional(inventoryReservationId);
         ProductionDate = productionDate;
@@ -168,7 +171,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         return new InventoryMovementRequest(
             organizationId,
             environmentId,
-            "count-adjustment",
+            CountAdjustmentMovementType,
             sourceDocumentId,
             null,
             idempotencyKey,
@@ -201,9 +204,11 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string qualityStatus,
         string ownerType,
         decimal quantity,
-        string inventoryMovementId,
+        string? inventoryMovementId,
         string? lotNo = null)
     {
+        var countWithoutVariance = movementType == CountAdjustmentMovementType &&
+            quantity == 0m && inventoryMovementId is null;
         var receipt = new InventoryMovementRequest(
             organizationId,
             environmentId,
@@ -224,8 +229,17 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             null,
             null,
             null,
-            publishCreatedEvent: false);
-        receipt.MarkPosted(inventoryMovementId);
+            publishCreatedEvent: false,
+            countWithoutVariance: countWithoutVariance);
+        if (countWithoutVariance)
+        {
+            receipt.Status = InventoryMovementRequestStatus.Posted;
+            receipt.PostedAtUtc = DateTime.UtcNow;
+        }
+        else
+        {
+            receipt.MarkPosted(inventoryMovementId!);
+        }
         return receipt;
     }
 

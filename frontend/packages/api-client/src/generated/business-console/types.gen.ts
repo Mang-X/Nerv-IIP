@@ -39,6 +39,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     status?: string;
     referenceId?: string | null;
     dueAtUtc?: string | null;
+    notificationTitle?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchMessageSummary = {
@@ -7007,8 +7008,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     userId: string;
     skillCode: string;
     level: string;
-    effectiveFrom?: string;
-    effectiveTo?: string;
+    effectiveFrom: string;
+    effectiveTo: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsolePersonnelSkillMatrixResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7064,7 +7065,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     updatedAtUtc?: string;
 };
 
-export type NervIipContractsCodingScopeDimension = 'organization' | 'environment' | 'site';
+export type NervIipContractsCodingScopeDimension = 'organization' | 'environment' | 'site' | 'organization, environment' | 'organization, site' | 'environment, site' | 'organization, environment, site';
 
 export type NervIipContractsCodingCodeRuleSegment = {
     type?: NervIipContractsCodingSegmentType;
@@ -8622,6 +8623,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     skuCode?: string;
     uomCode?: string;
     quantity?: number;
+    siteCode?: string;
     requiredDate?: string;
 };
 
@@ -20534,6 +20536,7 @@ export type ListBusinessConsoleSkusData = {
         includeDisabled?: boolean;
         skip?: number;
         take?: number;
+        keyword?: string | null;
     };
     url: '/api/business-console/v1/master-data/skus';
 };

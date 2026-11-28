@@ -13,6 +13,7 @@ const apiState = vi.hoisted(() => ({
   detailFetchCount: 0,
   failDetail: false,
   failListRefetch: false,
+  failList: false,
   listFetchCount: 0,
 }))
 const routerState = vi.hoisted(() => ({
@@ -92,7 +93,7 @@ vi.mock('@nerv-iip/api-client', () => {
       query: vi.fn(async () => {
         apiState.listFetchCount += 1
 
-        if (apiState.failListRefetch && apiState.listFetchCount > 1) {
+        if (apiState.failList || (apiState.failListRefetch && apiState.listFetchCount > 1)) {
           throw new Error('list refresh failed')
         }
 
@@ -126,6 +127,7 @@ describe('Console index page', () => {
     apiState.detailFetchCount = 0
     apiState.failDetail = false
     apiState.failListRefetch = false
+    apiState.failList = false
     apiState.listFetchCount = 0
     routerState.push.mockReset()
   })
@@ -232,6 +234,24 @@ describe('Console index page', () => {
     expect(wrapper.text()).toContain('无法加载实例详情')
     expect(wrapper.text()).toContain('detail retry still failed')
     expect(wrapper.text()).not.toContain('选择一个实例以查看其运行时信息。')
+  })
+
+  it('shows a retryable error instead of an empty list when the initial load fails', async () => {
+    apiState.failList = true
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('无法加载实例列表')
+    expect(wrapper.text()).not.toContain('该环境暂无实例')
+    apiState.failList = false
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '重试')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Demo API')
+    expect(wrapper.text()).not.toContain('无法加载实例列表')
   })
 
   it('keeps restart success visible when list refetch fails after invalidation', async () => {

@@ -288,6 +288,14 @@ function isNonEmpty(value: string) {
       :column-settings="false"
       empty-message="当前范围内没有库存流水。库存移动一般由收货、完工入库、领料或盘点自动产生；确需补录时点右上角新建移动。"
     >
+      <template #cell-sourceDocumentId="{ row }">
+        <div class="grid gap-0.5">
+          <span>{{ sourceDocumentLabel(row) || '—' }}</span>
+          <span class="whitespace-normal break-all text-xs text-muted-foreground">
+            {{ row.sourceDocumentLineId?.trim() || '未记录来源行' }}
+          </span>
+        </div>
+      </template>
       <template #cell-skuCode="{ row }">
         <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" />
       </template>

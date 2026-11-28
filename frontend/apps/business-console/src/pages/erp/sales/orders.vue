@@ -44,7 +44,7 @@ import { LockOpenIcon, PlusIcon, RefreshCwIcon, RouteIcon, TruckIcon } from '@lu
 import { computed, nextTick, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { errorStatusCode, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
   erpReadState,
@@ -354,7 +354,18 @@ function openDialog() {
   open.value = true
 }
 
+watch(
+  () => firstQueryParam(route.query.quotationNo),
+  (quotationNo) => {
+    if (!quotationNo) return
+    openDialog()
+    form.quotationNo = quotationNo
+  },
+  { immediate: true },
+)
+
 async function submit() {
+  if (orders.createSalesOrderPending.value) return
   showErrors.value = true
   if (!canSubmit.value) return
   try {
@@ -373,9 +384,10 @@ async function submit() {
       )
     }
   } catch (error) {
+    const failure = orders.createSalesOrderError.value ?? error
     notifyOperationFailure(
       '创建销售订单失败',
-      orders.createSalesOrderError.value ?? error,
+      (errorStatusCode(failure) ?? 0) >= 500 ? undefined : failure,
       '创建销售订单失败，请稍后重试。',
     )
   }

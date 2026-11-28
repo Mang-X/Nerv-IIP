@@ -189,12 +189,6 @@ public static class MasterDataDictionaryRules
         if (defaultBarcodeRuleCode is not null) yield return new("barcode-rule", defaultBarcodeRuleCode, "DefaultBarcodeRuleCode");
     }
 
-    public static IEnumerable<ControlledReferenceData> GetPersonnelSkillReferences(string skillCode, string level)
-    {
-        yield return new("skill", skillCode, "SkillCode");
-        yield return new("skill-level", level, "Level");
-    }
-
     public static bool IsSystemManagedReferenceData(string codeSet, string code)
     {
         return StandardReferenceData.Any(x =>

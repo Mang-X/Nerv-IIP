@@ -10,6 +10,7 @@ import {
 } from '@nerv-iip/api-client'
 import {
   acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
   useScopeBoundListResponse,
@@ -68,19 +69,76 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
   const completeCountExecutionPending = shallowRef(false)
   const completeCountExecutionError = shallowRef<unknown>()
 
-  async function completeCountExecution(
-    countExecutionId: string,
-    countedQuantity: number,
-    idempotencyKey = createWmsIdempotencyKey(),
-    options: WmsCompletionAttemptOptions = { attempt: 'initial' },
-  ) {
-    const scope = {
+  function completionIntent(countExecutionId: string, countedQuantity: number) {
+    return {
       principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
       operationType: 'wms.count-execution.complete',
       payloadFingerprint: `${countExecutionId}:${countedQuantity}`,
     }
+  }
+
+  async function readCountExecution(
+    countExecutionId: string,
+    tenant: { organizationId: string; environmentId: string },
+    commandScope: ReturnType<typeof trustedWorkScope>,
+  ) {
+    const response = await listBusinessConsoleWmsCountExecutions({
+      query: {
+        organizationId: tenant.organizationId,
+        environmentId: tenant.environmentId,
+        ...commandScope,
+        countExecutionId,
+        skip: 0,
+        take: 2,
+      },
+      throwOnError: false,
+    })
+    return exactSuccessfulItem<BusinessConsoleWmsCountExecutionItem>(
+      response,
+      (candidate) => candidate.countExecutionId === countExecutionId,
+    )
+  }
+
+  async function verifyCountExecution(countExecutionId: string, countedQuantity: number) {
+    const scope = completionIntent(countExecutionId, countedQuantity)
+    const restored = peekPendingBusinessIntent(scope)
+    const commandScope = trustedWorkScope(filters, restored?.payloadSnapshot)
+    const found = await readCountExecution(countExecutionId, scope, commandScope)
+    const current = completionIntent(countExecutionId, countedQuantity)
+    if (
+      !found ||
+      current.principalId !== scope.principalId ||
+      current.organizationId !== scope.organizationId ||
+      current.environmentId !== scope.environmentId
+    ) {
+      throw new Error('无法核验当前盘点单，请重试。')
+    }
+    const postingStatus = found.inventoryPostingStatus?.toLowerCase()
+    const postingFailed = postingStatus === 'failed'
+    const matchesSubmittedQuantity =
+      typeof found.countedQuantity === 'number' && found.countedQuantity === countedQuantity
+    const settled =
+      matchesSubmittedQuantity &&
+      (postingStatus === 'posted' ||
+        postingFailed ||
+        found.status === 'PendingApproval' ||
+        found.status === 'RecountRequired')
+    if (settled) {
+      clearPendingBusinessIntent(scope)
+      void refetchWithWmsListScope(filters, countExecutionsQuery)
+    }
+    return { row: found, settled, postingFailed }
+  }
+
+  async function completeCountExecution(
+    countExecutionId: string,
+    countedQuantity: number,
+    idempotencyKey = createWmsIdempotencyKey(),
+    options: WmsCompletionAttemptOptions = { attempt: 'initial' },
+  ) {
+    const scope = completionIntent(countExecutionId, countedQuantity)
     const restored = peekPendingBusinessIntent(scope)
     const commandScope = trustedWorkScope(filters, restored?.payloadSnapshot)
     let authoritative: BusinessConsoleWmsCountExecutionItem | undefined
@@ -91,21 +149,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
       const result = await completePendingBusinessIntent(scope, async () => {
         const envelope = await executeLifecycleAction({
           readLatest: async () => {
-            const response = await listBusinessConsoleWmsCountExecutions({
-              query: {
-                organizationId: filters.organizationId,
-                environmentId: filters.environmentId,
-                ...commandScope,
-                countExecutionId,
-                skip: 0,
-                take: 2,
-              },
-              throwOnError: false,
-            })
-            authoritative = exactSuccessfulItem<BusinessConsoleWmsCountExecutionItem>(
-              response,
-              (candidate) => candidate.countExecutionId === countExecutionId,
-            )
+            authoritative = await readCountExecution(countExecutionId, scope, commandScope)
             return authoritative
               ? {
                   domain: 'wms-count' as const,
@@ -189,6 +233,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     createCountExecutionPending: createMutation.isLoading,
     createCountExecutionError: createMutation.error,
     completeCountExecution,
+    verifyCountExecution,
     completeCountExecutionPending,
     completeCountExecutionError,
   }

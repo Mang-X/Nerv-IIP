@@ -87,13 +87,13 @@ export function useApprovalPage() {
    * 单据类型码值 → 中文。
    *
    * 两级查表：先查发起审批的受控值（措辞必须与新建下拉一致），再退到跨域显示词表——
-   * 审批列表会回显历史链路上的其它单据类型，那些不在受控值里，但同样不能把英文码印上屏。
+   * 审批列表会回显历史链路上的其它单据类型，那些不在受控值里，未知类型保留原码供排查。
    */
-  function documentTypeLabel(value?: string | null, fallback = '') {
+  function documentTypeLabel(value?: string | null, fallback = '未指定') {
     const code = (value ?? '').trim()
     if (!code) return fallback
     const controlled = documentTypeOptions.find((option) => option.value === code)?.label
-    return controlled ?? labelFor(DOCUMENT_TYPE_LABELS, code, fallback || '—')
+    return controlled ?? labelFor(DOCUMENT_TYPE_LABELS, code, `未识别类型（${code}）`)
   }
 
   // 委托的「单据范围」可留空代表全部单据；NvSelect 不接受空串值，用 `all` 哨兵代理。
@@ -175,7 +175,7 @@ export function useApprovalPage() {
     {
       key: 'documentType',
       header: '单据类型',
-      accessor: (row) => documentTypeLabel(row.documentType, '—'),
+      accessor: (row) => documentTypeLabel(row.documentType),
     },
     { key: 'dueAtUtc', header: '到期时间', accessor: (row) => formatDateTime(row.dueAtUtc) },
     { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
@@ -238,7 +238,7 @@ export function useApprovalPage() {
     {
       key: 'documentType',
       header: '单据类型',
-      accessor: (row) => documentTypeLabel(row.documentType, '—'),
+      accessor: (row) => documentTypeLabel(row.documentType),
     },
     {
       key: 'version',
@@ -409,7 +409,7 @@ export function useApprovalPage() {
     if (!row) return []
     return [
       { label: '单据', value: documentLabel(row) },
-      { label: '单据类型', value: documentTypeLabel(row.documentType, '—') },
+      { label: '单据类型', value: documentTypeLabel(row.documentType) },
       {
         label: '当前步骤',
         value: row.stepName ?? (row.stepNo ? `第 ${row.stepNo} 步` : undefined),

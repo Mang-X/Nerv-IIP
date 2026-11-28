@@ -86,6 +86,7 @@ const {
 const {
   operationTasks,
   operationTasksPending,
+  operationTasksError,
   operationListScopeMessage,
   operationListScopeReady,
   refreshOperationTasks,
@@ -237,8 +238,21 @@ const columns: NvDataTableColumn<DowntimeRow>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
   { key: 'recoveredAtUtc', header: '恢复', width: 'w-44' },
-  { key: 'actions', header: '操作', width: 'w-24', sortable: false, accessor: () => '' },
+  {
+    key: 'actions',
+    header: '操作',
+    width: 'w-24',
+    sortable: false,
+    accessor: () => '',
+    headerClass: 'sticky right-0 z-20 bg-card shadow-[-1px_0_0_0_var(--border)]',
+    cellClass: 'sticky right-0 z-10 bg-card shadow-[-1px_0_0_0_var(--border)]',
+  },
 ]
+const tableColumns = computed(() =>
+  downtimeEvents.value.length
+    ? columns
+    : columns.map((column) => ({ ...column, width: undefined })),
+)
 
 // ── 恢复停机（#1323：恢复通道从只读页断掉，这里补权威入口）──────────────
 const auth = useAuthStore()
@@ -246,6 +260,9 @@ const canManageDowntime = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesDowntimeManage),
 )
 const canRecover = canManageDowntime
+const canReadOperations = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesOperationsRead),
+)
 const canReadWorkOrders = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesWorkOrdersRead),
 )
@@ -314,6 +331,7 @@ const recordEntryBlocker = computed(() => {
   if (!filters.organizationId.trim() || !filters.environmentId.trim()) {
     return '尚未确定当前组织'
   }
+  if (!canReadOperations.value) return '没有工序上下文读取权限'
   if (downtimeWriteScopePending.value) return '正在核验停机登记范围'
   if (!downtimeWriteScopeReady.value) {
     return downtimeWriteScopeMessage.value || '停机登记范围未就绪'
@@ -321,6 +339,7 @@ const recordEntryBlocker = computed(() => {
   if (!operationListScopeReady.value) {
     return operationListScopeMessage.value || '工序可见范围未就绪'
   }
+  if (operationTasksError?.value) return '可用工序读取失败，请刷新后重试'
   if (operationTasksPending.value) return '正在读取可登记停机的工序'
   if (downtimeReasonsPending.value) return '正在读取停机原因'
   if (downtimeReasonsMessage.value) return downtimeReasonsMessage.value
@@ -539,15 +558,28 @@ function formatDateTime(value?: string | null) {
         >
           <RouterLink :to="sourceWorkOrderRoute">返回工单 {{ contextWorkOrderId }}</RouterLink>
         </NvButton>
-        <NvButton
-          size="sm"
-          type="button"
-          :disabled="Boolean(recordEntryBlocker)"
-          :title="recordEntryBlocker || '登记设备停机'"
-          @click="openRecordDialog"
-        >
-          登记停机
-        </NvButton>
+        <div class="flex flex-wrap items-center gap-2">
+          <NvButton
+            size="sm"
+            type="button"
+            :disabled="Boolean(recordEntryBlocker)"
+            :title="recordEntryBlocker || undefined"
+            @click="openRecordDialog"
+          >
+            登记停机
+          </NvButton>
+          <span v-if="recordEntryBlocker" class="text-xs text-muted-foreground" role="status">
+            {{ recordEntryBlocker }}
+          </span>
+          <NvButton
+            v-if="recordEntryBlocker && canReadOperations && !contextWorkOrderId"
+            size="sm"
+            variant="outline"
+            as-child
+          >
+            <RouterLink to="/mes/operation-tasks">去工序执行</RouterLink>
+          </NvButton>
+        </div>
         <NvButton
           size="sm"
           type="button"
@@ -658,7 +690,7 @@ function formatDateTime(value?: string | null) {
       :total-items="downtimeEventsTotal"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
-      :columns="columns"
+      :columns="tableColumns"
       :rows="downtimeEvents"
       row-key="downtimeEventId"
       :loading="downtimeEventsPending"
@@ -666,7 +698,7 @@ function formatDateTime(value?: string | null) {
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无停机事件。点击上方「登记停机」记录设备异常，登记后可在这里跟进恢复与影响范围。"
+      empty-message="暂无停机事件。"
       @retry="refreshDowntimeEvents"
     >
       <template #cell-deviceAssetId="{ row }">

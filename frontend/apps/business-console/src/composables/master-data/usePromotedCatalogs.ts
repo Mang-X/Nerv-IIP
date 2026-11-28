@@ -16,8 +16,10 @@ import {
   createBusinessConsoleProductCategoryMutationOptions,
   createBusinessConsoleQualityReasonCodeMutationOptions,
   createBusinessConsoleSkillMutationOptions,
+  listBusinessConsoleProductCategories,
   listBusinessConsoleProductCategoriesQueryOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions,
+  listBusinessConsoleSkills,
   listBusinessConsoleSkillsQueryOptions,
   updateBusinessConsoleProductCategoryMutationOptions,
   updateBusinessConsoleQualityReasonCodeMutationOptions,
@@ -32,9 +34,10 @@ import {
   type BusinessConsoleUpdateQualityReasonRequest,
   type BusinessConsoleUpdateSkillRequest,
 } from '@nerv-iip/api-client'
+import { fetchCompleteCatalog } from './masterDataShared'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, type UseMutationOptions } from '@pinia/colada'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import {
   bindBusinessContext,
   refetchWithBusinessContext,
@@ -82,7 +85,7 @@ function unwrapTotal(
 const asVars = (fn: unknown) => fn as unknown as (vars: unknown) => Promise<unknown>
 
 // ── 产品分类（分类树）────────────────────────────────────────────
-export function useProductCategories() {
+export function useProductCategories(all = false) {
   const context = useBusinessContextStore()
   const filters = bindBusinessContext(
     reactive<PromotedListFilters>({
@@ -94,21 +97,35 @@ export function useProductCategories() {
       take: DEFAULT_TAKE,
     }),
   )
-  const listQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleProductCategoriesQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('enabled', filters.enabled),
-          ...optionalQuery('search', filters.search),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
+  const listQuery = useQuery(() => {
+    const query = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      ...optionalQuery('enabled', filters.enabled),
+      ...optionalQuery('search', filters.search),
+      skip: filters.skip,
+      take: filters.take,
+    }
+    const options = listBusinessConsoleProductCategoriesQueryOptions({ query })
+    return withBusinessContextEnabled(
+      all
+        ? {
+            ...options,
+            key: [...options.key, 'all'],
+            query: ({ signal }) =>
+              fetchCompleteCatalog<BusinessConsoleProductCategoryItem>(async (skip) => {
+                const response = await listBusinessConsoleProductCategories({
+                  query: { ...query, skip, take: DEFAULT_TAKE },
+                  signal,
+                  throwOnError: true,
+                })
+                return response.data
+              }),
+          }
+        : options,
       filters,
-    ),
-  )
+    )
+  })
   const refresh = () => refetchWithBusinessContext(filters, listQuery)
   const createMutation = useMutation({
     ...createBusinessConsoleProductCategoryMutationOptions(),
@@ -223,7 +240,7 @@ export function useQualityReasonCodes() {
 }
 
 // ── 技能（分组目录）──────────────────────────────────────────────
-export function useSkillCatalog() {
+export function useSkillCatalog(all = false) {
   const context = useBusinessContextStore()
   const filters = bindBusinessContext(
     reactive<PromotedListFilters>({
@@ -236,22 +253,36 @@ export function useSkillCatalog() {
       take: DEFAULT_TAKE,
     }),
   )
-  const listQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleSkillsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('enabled', filters.enabled),
-          ...optionalQuery('search', filters.search),
-          ...optionalQuery('groupName', filters.groupName),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
+  const listQuery = useQuery(() => {
+    const query = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      ...optionalQuery('enabled', filters.enabled),
+      ...optionalQuery('search', filters.search),
+      ...optionalQuery('groupName', filters.groupName),
+      skip: filters.skip,
+      take: filters.take,
+    }
+    const options = listBusinessConsoleSkillsQueryOptions({ query })
+    return withBusinessContextEnabled(
+      all
+        ? {
+            ...options,
+            key: [...options.key, 'all'],
+            query: ({ signal }) =>
+              fetchCompleteCatalog<BusinessConsoleSkillItem>(async (skip) => {
+                const response = await listBusinessConsoleSkills({
+                  query: { ...query, skip, take: DEFAULT_TAKE },
+                  signal,
+                  throwOnError: true,
+                })
+                return response.data
+              }),
+          }
+        : options,
       filters,
-    ),
-  )
+    )
+  })
   const refresh = () => refetchWithBusinessContext(filters, listQuery)
   const createMutation = useMutation({
     ...createBusinessConsoleSkillMutationOptions(),

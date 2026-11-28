@@ -204,7 +204,7 @@ async function submitRemoveMember(principalId?: string | null) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建作业池</NvDialogTitle>
-          <NvDialogDescription class="sr-only">作业池编码由系统生成。</NvDialogDescription>
+          <NvDialogDescription>作业池编码在创建后自动生成。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup>

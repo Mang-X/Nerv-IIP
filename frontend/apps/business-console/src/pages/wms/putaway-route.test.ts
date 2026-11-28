@@ -66,6 +66,10 @@ const state = vi.hoisted(() => ({
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 
 vi.mock('vue-router', () => ({
+  RouterLink: {
+    props: ['to'],
+    template: '<a :data-to="JSON.stringify(to)"><slot /></a>',
+  },
   useRoute: () => ({ query: state.routeQuery }),
 }))
 
@@ -138,6 +142,23 @@ describe('WMS putaway route handoff', () => {
     document.body.innerHTML = ''
     state.createPutaway.mockResolvedValue(undefined)
     state.permissionCodes = ['business.wms.receipts.read', 'business.wms.receipts.manage']
+  })
+
+  it('空态可接续查看当前工厂的入库单', async () => {
+    const previous = state.routeQuery
+    state.routeQuery = {}
+    try {
+      const wrapper = mountPutaway()
+      await flushPromises()
+      const link = wrapper.findAll('a[data-to]').find((item) => item.text() === '查看入库单')!
+      expect(JSON.parse(link.attributes('data-to') ?? 'null')).toEqual({
+        path: '/wms/inbound',
+        query: { siteCode: 'SITE-001' },
+      })
+      wrapper.unmount()
+    } finally {
+      state.routeQuery = previous
+    }
   })
 
   it('opens the create flow with the real inbound order id and submits it unchanged', async () => {

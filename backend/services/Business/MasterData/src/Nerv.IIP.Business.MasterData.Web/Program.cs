@@ -18,6 +18,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Application.OpenApi;
+using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Caching;
@@ -100,7 +101,14 @@ try
     #region 模型验证器
 
     builder.Services.AddFluentValidationAutoValidation();
-    builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+    builder.Services.AddValidatorsFromAssembly(
+        Assembly.GetExecutingAssembly(),
+        filter: result =>
+            result.InterfaceType.GenericTypeArguments[0].IsAssignableTo(typeof(MediatR.IBaseRequest)) &&
+            !typeof(Validator<>).MakeGenericType(result.InterfaceType.GenericTypeArguments[0])
+                .IsAssignableFrom(result.ValidatorType));
+    // The reference query is both an endpoint request and a MediatR query.
+    builder.Services.AddSingleton<IValidator<ResolveMasterDataReferencesQuery>, ResolveMasterDataReferencesQueryValidator>();
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
 

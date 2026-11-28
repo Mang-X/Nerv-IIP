@@ -152,6 +152,7 @@ const lifecycle = useMasterDataLifecycleConfirm()
 
 // 量纲下拉「实时拉取 + 常量兜底」：取数据字典 uom-dimension，实时为空回退常量。
 const { resources: dimensionResources } = useBusinessMasterDataResources('reference-data', {
+  all: true,
   codeSet: 'uom-dimension',
 })
 const dimensionOptions = computed<Option[]>(() =>
@@ -212,10 +213,10 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
-// 单位编码 → 名称：用本页已取的单位列表解析，列表里没有则回退编码本身。
+// 单位编码 → 名称：用独立单位目录解析，列表里没有则回退编码本身。
 const uomNameByCode = computed<Map<string, string>>(() => {
   const map = new Map<string, string>()
-  for (const u of uoms.value) {
+  for (const u of uomCandidates.value) {
     if (u.code) map.set(u.code, u.displayName ?? u.code)
   }
   return map
@@ -225,8 +226,10 @@ function uomName(code?: string | null): string {
   return uomNameByCode.value.get(code) ?? code
 }
 // 单位下拉选项（换算表单选 from/to 单位用，显示名称、值为编码）。
+const { resources: uomCandidates, refreshResources: refreshUomCandidates } =
+  useBusinessMasterDataResources('unit-of-measure', { all: true })
 const uomSelectOptions = computed<Option[]>(() =>
-  uoms.value
+  uomCandidates.value
     .filter((u) => !!u.code)
     .map((u) => ({ value: u.code as string, label: u.displayName ?? (u.code as string) })),
 )
@@ -297,13 +300,7 @@ function uomDetailFields(row: BusinessConsoleResourceItem) {
   ]
 }
 
-const listRows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return uoms.value
-  return uoms.value.filter((row) =>
-    [row.code, row.displayName].some((value) => (value ?? '').toLowerCase().includes(kw)),
-  )
-})
+const listRows = uoms
 const canCreateUom = computed(
   () =>
     isNonEmpty(createForm.name) &&
@@ -313,16 +310,7 @@ const canCreateUom = computed(
 )
 const listErrorMessage = computed(() => inlineErrorMessage(uomsError.value))
 
-const conversionRows = computed(() => {
-  const kw = conversionKeyword.value.trim().toLowerCase()
-  if (!kw) return conversions.value
-  return conversions.value.filter((row) => {
-    const c = asConversion(row)
-    return [uomName(c.fromUomCode), uomName(c.toUomCode), c.fromUomCode, c.toUomCode].some(
-      (value) => (value ?? '').toLowerCase().includes(kw),
-    )
-  })
-})
+const conversionRows = conversions
 // fromUom≠toUom 且 factor>0；factor 必填且为正数。
 const canCreateConversion = computed(
   () =>
@@ -340,6 +328,8 @@ watch(createOpen, (open) => {
   if (open) createShowErrors.value = false
 })
 watch([keyword, pageSize], () => {
+  filters.skip = 0
+  filters.keyword = keyword.value.trim() || undefined
   page.value = 1
 })
 watch(
@@ -355,6 +345,8 @@ watch(conversionOpen, (open) => {
   if (open) conversionShowErrors.value = false
 })
 watch([conversionKeyword, conversionPageSize], () => {
+  conversionFilters.skip = 0
+  conversionFilters.keyword = conversionKeyword.value.trim() || undefined
   conversionPage.value = 1
 })
 watch(
@@ -443,6 +435,7 @@ async function submitUom() {
 
 function refreshAll() {
   void refreshUoms()
+  void refreshUomCandidates()
   void refreshConversions()
 }
 function resetConversionForm() {
@@ -520,7 +513,7 @@ async function submitConversion() {
 
       <!-- 计量单位 -->
       <NvTabsContent value="units" class="grid gap-3">
-        <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称">
+        <NvToolbar v-model:search="keyword" search-placeholder="搜索编码、名称">
           <template #filters>
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>
@@ -685,10 +678,7 @@ async function submitConversion() {
           换算关系定义两个单位间的折算：1 源单位 = 系数 ×
           目标单位（可带偏移量）。源单位与目标单位显示其单位名称。
         </p>
-        <NvToolbar
-          v-model:search="conversionKeyword"
-          search-placeholder="在当前页内筛选源 / 目标单位"
-        >
+        <NvToolbar v-model:search="conversionKeyword" search-placeholder="搜索源 / 目标单位">
           <template #filters>
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>

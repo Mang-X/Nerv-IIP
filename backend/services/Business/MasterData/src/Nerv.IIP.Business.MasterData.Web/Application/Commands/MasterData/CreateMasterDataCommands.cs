@@ -702,29 +702,16 @@ public sealed record AssignPersonnelSkillCommand(
     DateOnly EffectiveFrom,
     DateOnly EffectiveTo) : ICommand<MasterDataResourceResult>;
 
-public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignPersonnelSkillCommand, MasterDataResourceResult>
+public sealed class AssignPersonnelSkillCommandHandler(
+    IPersonnelSkillRepository repository,
+    IReferenceDataCodeRepository referenceDataRepository,
+    ISkillRepository skills) : ICommandHandler<AssignPersonnelSkillCommand, MasterDataResourceResult>
 {
-    private readonly IPersonnelSkillRepository _repository;
-    private readonly IReferenceDataCodeRepository? _referenceDataRepository;
-
-    public AssignPersonnelSkillCommandHandler(IPersonnelSkillRepository repository)
-    {
-        _repository = repository;
-    }
-
-    public AssignPersonnelSkillCommandHandler(
-        IPersonnelSkillRepository repository,
-        IReferenceDataCodeRepository referenceDataRepository)
-    {
-        _repository = repository;
-        _referenceDataRepository = referenceDataRepository;
-    }
-
     public async Task<MasterDataResourceResult> Handle(AssignPersonnelSkillCommand request, CancellationToken cancellationToken)
     {
         await ValidateControlledReferenceDataAsync(request, cancellationToken);
 
-        if (await _repository.ExistsAsync(
+        if (await repository.ExistsAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.UserId,
@@ -743,27 +730,38 @@ public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignP
             request.Level,
             request.EffectiveFrom,
             request.EffectiveTo);
-        await _repository.AddAsync(skill, cancellationToken);
+        await repository.AddAsync(skill, cancellationToken);
         return new MasterDataResourceResult("personnel-skill", $"{skill.UserId}:{skill.SkillCode}", skill.Level);
     }
 
+    private static readonly DateOnly PermanentEffectiveToSentinel = new(9999, 12, 31);
+
     private async Task ValidateControlledReferenceDataAsync(AssignPersonnelSkillCommand request, CancellationToken cancellationToken)
     {
-        if (_referenceDataRepository is null)
+        var skillCode = request.SkillCode.Trim();
+        var catalogSkill = await skills.FindByCodeAsync(
+            request.OrganizationId, request.EnvironmentId, skillCode, cancellationToken);
+        // 技能目录优先，只有目录尚未收录的旧技能码走历史字典。
+        if (catalogSkill is not null)
         {
-            return;
+            if (catalogSkill.Disabled)
+            {
+                throw new KnownException($"人员技能字段 'SkillCode' 的值 '{request.SkillCode}' 不存在或未启用。");
+            }
+
+            if (catalogSkill.RequiresCertification && request.EffectiveTo >= PermanentEffectiveToSentinel)
+            {
+                throw new KnownException("持证技能必须填写明确的证书到期日，不能登记为长期有效。");
+            }
+        }
+        else if (!await referenceDataRepository.ExistsActiveAsync(
+            request.OrganizationId, request.EnvironmentId, "skill", skillCode, cancellationToken))
+        {
+            throw new KnownException($"人员技能字段 'SkillCode' 的值 '{request.SkillCode}' 不存在或未启用。");
         }
 
-        foreach (var reference in MasterDataDictionaryRules.GetPersonnelSkillReferences(request.SkillCode, request.Level))
-        {
-            await EnsureActiveReferenceDataAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                reference.CodeSet,
-                reference.Code,
-                reference.Field,
-                cancellationToken);
-        }
+        await EnsureActiveReferenceDataAsync(
+            request.OrganizationId, request.EnvironmentId, "skill-level", request.Level, nameof(request.Level), cancellationToken);
     }
 
     private async Task EnsureActiveReferenceDataAsync(
@@ -780,7 +778,7 @@ public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignP
         }
 
         var trimmedCode = code.Trim();
-        var exists = await _referenceDataRepository!.ExistsActiveAsync(
+        var exists = await referenceDataRepository.ExistsActiveAsync(
             organizationId,
             environmentId,
             codeSet,

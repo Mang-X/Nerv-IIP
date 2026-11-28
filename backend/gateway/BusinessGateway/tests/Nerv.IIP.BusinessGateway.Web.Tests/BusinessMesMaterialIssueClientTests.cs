@@ -108,17 +108,37 @@ public sealed class BusinessMesMaterialIssueClientTests
         Assert.Equal("mes-return-intent-1", handler.LastRequest!.Headers.GetValues("Idempotency-Key").Single());
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.OK, HttpStatusCode.BadRequest, "MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 需求7L，候选库位合计可用2L。")]
+    [InlineData(HttpStatusCode.InternalServerError, HttpStatusCode.BadGateway, "downstream-request-failed")]
+    public async Task Line_side_receipt_distinguishes_stock_shortage_from_service_fault(
+        HttpStatusCode downstreamStatus, HttpStatusCode expectedStatus, string expectedMessage)
+    {
+        using var httpClient = new HttpClient(new StubHandler(
+            """{"success":false,"code":400,"message":"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 需求7L，候选库位合计可用2L。"}""",
+            downstreamStatus)) { BaseAddress = new Uri("http://mes") };
+        var client = new HttpBusinessMesClient(httpClient);
+        var request = new BusinessConsoleMesConfirmLineSideReceiptRequest(
+            "MIR-000123", "org", "env", null, 7m, null);
+
+        var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ConfirmLineSideMaterialReceiptAsync("token", "MIR-000123", request, CancellationToken.None));
+
+        Assert.Equal(expectedStatus, error.StatusCode);
+        Assert.Equal(expectedMessage, error.Message);
+    }
+
     private static HttpBusinessMesClient ClientReturning(string json) =>
         new(new HttpClient(new StubHandler(json)) { BaseAddress = new Uri("http://mes") });
 
-    private sealed class StubHandler(string json) : HttpMessageHandler
+    private sealed class StubHandler(string json, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
     {
         public HttpRequestMessage? LastRequest { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             LastRequest = request;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult(new HttpResponseMessage(status)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
             });

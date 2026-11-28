@@ -141,7 +141,12 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
-            .Where(x => keyword == null || x.FromUomCode.ToLower().Contains(keyword) || x.ToUomCode.ToLower().Contains(keyword))
+            .Where(x => keyword == null || x.FromUomCode.ToLower().Contains(keyword) || x.ToUomCode.ToLower().Contains(keyword) ||
+                dbContext.UnitsOfMeasure.Any(unit =>
+                    unit.OrganizationId == tenant.OrganizationId &&
+                    unit.EnvironmentId == tenant.EnvironmentId &&
+                    (unit.Code == x.FromUomCode || unit.Code == x.ToUomCode) &&
+                    unit.Name.ToLower().Contains(keyword)))
             .OrderBy(x => x.FromUomCode)
             .ThenBy(x => x.ToUomCode)
             .Select(x => Item(
@@ -187,7 +192,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.PartnerType) || x.PartnerType == request.PartnerType || x.PartnerRoles.Contains(request.PartnerType))
-            .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
+            .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword) || (x.TaxId != null && x.TaxId.ToLower().Contains(keyword)))
             .OrderBy(x => x.Code)
             .Select(x => new MasterDataResourceItem(
                 resourceType,

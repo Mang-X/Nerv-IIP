@@ -55,6 +55,7 @@ const {
   qualityItems,
   qualityItemsError,
   qualityItemsPending,
+  qualityItemsState,
   qualityItemsTotal,
   recordDefect,
   recordDefectPending,
@@ -63,10 +64,24 @@ const {
 const {
   operationTasks,
   operationTasksPending,
+  operationTasksError,
   operationListScopeMessage,
   operationListScopeReady,
   refreshOperationTasks,
 } = useMesOperationTasks()
+const qualityReadPending = computed(
+  () => qualityItemsPending.value || qualityItemsState.value === 'loading',
+)
+const qualityReadReady = computed(
+  () => qualityItemsState.value === 'ready' && !qualityReadPending.value,
+)
+const qualityReadError = computed(
+  () =>
+    qualityItemsError.value ??
+    (qualityItemsState.value === 'error'
+      ? new Error('质量记录读取失败，请刷新后重试。')
+      : undefined),
+)
 const qualityWriteScope = useMesWorkScopeSelection(P.mesQualityWrite)
 const refreshQualityWriteScope = qualityWriteScope.refreshScope
 const auth = useAuthStore()
@@ -97,7 +112,7 @@ const statusFilter = computed({
     filters.status = value === 'all' ? undefined : value
   },
 })
-const errorMessage = computed(() => inlineErrorMessage(qualityItemsError.value))
+const errorMessage = computed(() => inlineErrorMessage(qualityReadError.value))
 // 上下文穿透：从工单/工序带入时显示来源并提供返回链接。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 const contextOperationTaskId = computed(() => firstQuery(route.query.operationTaskId))
@@ -125,8 +140,9 @@ const qualityRows = computed(() =>
 )
 const ncrCount = computed(() => qualityRows.value.filter((row) => row.ncrId).length)
 const ncrNote = computed(() => {
-  if (qualityItemsError.value) return '质量记录读取失败，无法判断 NCR 关联。'
-  if (qualityItemsPending.value) return '正在读取质量记录。'
+  if (qualityReadError.value) return '质量记录读取失败，无法判断 NCR 关联。'
+  if (qualityReadPending.value) return '正在读取质量记录。'
+  if (!qualityReadReady.value) return '请选择有效业务范围后查看质量记录。'
   if (qualityItems.value.length === 0) return '当前没有不良记录。'
   if (ncrState.value === 'error') return 'NCR 关联读取失败，请刷新重试。'
   if (ncrState.value === 'idle') return '未选择业务范围。'
@@ -283,6 +299,7 @@ const defectEntryBlocker = computed(() => {
   if (!operationListScopeReady.value) {
     return operationListScopeMessage.value || '工序可见范围未就绪'
   }
+  if (operationTasksError?.value) return '可用工序读取失败，请刷新后重试'
   if (operationTasksPending.value) return '正在读取可登记缺陷的工序'
   if (eligibleOperationTasks.value.length === 0) return '当前授权范围内暂无可登记缺陷的工序'
   return ''
@@ -418,18 +435,31 @@ async function submitDefect() {
     <NvPageHeader
       title="质量与不良"
       :breadcrumbs="[{ label: '制造执行' }]"
-      :count="`${qualityItemsTotal} 条质量项`"
+      :count="!qualityReadReady ? undefined : `${qualityItemsTotal} 条质量项`"
     >
       <template #actions>
-        <NvButton
-          size="sm"
-          type="button"
-          :disabled="Boolean(defectEntryBlocker)"
-          :title="defectEntryBlocker || '登记生产过程缺陷'"
-          @click="openDefectDialog"
-        >
-          登记缺陷
-        </NvButton>
+        <div class="flex flex-wrap items-center gap-2">
+          <NvButton
+            size="sm"
+            type="button"
+            :disabled="Boolean(defectEntryBlocker)"
+            :title="defectEntryBlocker || undefined"
+            @click="openDefectDialog"
+          >
+            登记缺陷
+          </NvButton>
+          <span v-if="defectEntryBlocker" class="text-xs text-muted-foreground" role="status">
+            {{ defectEntryBlocker }}
+          </span>
+          <NvButton
+            v-if="defectEntryBlocker && canReadOperationContext && !contextWorkOrderId"
+            size="sm"
+            variant="outline"
+            as-child
+          >
+            <RouterLink to="/mes/operation-tasks">去工序执行</RouterLink>
+          </NvButton>
+        </div>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
             >返回工单 {{ contextWorkOrderId }}</RouterLink
@@ -439,7 +469,7 @@ async function submitDefect() {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="qualityItemsPending || ncrAssociations.pending.value"
+          :disabled="qualityReadPending || ncrAssociations.pending.value"
           @click="refreshQuality"
         >
           <RefreshCwIcon aria-hidden="true" />
@@ -452,19 +482,15 @@ async function submitDefect() {
       <NvMetricCard
         variant="breakdown"
         label="质量项"
-        :value="qualityItemsTotal"
+        :value="!qualityReadReady ? '—' : qualityItemsTotal"
         unit="条"
-        :segments="qualitySegments"
+        :segments="!qualityReadReady ? undefined : qualitySegments"
       />
       <NvMetricCard
         variant="alert"
         label="当前页已开不合格品单"
         :value="
-          qualityItemsPending ||
-          qualityItemsError ||
-          (qualityItems.length > 0 && ncrState !== 'ready')
-            ? '—'
-            : ncrCount
+          !qualityReadReady || (qualityItems.length > 0 && ncrState !== 'ready') ? '—' : ncrCount
         "
         unit="张"
         :tone="ncrCount > 0 ? 'danger' : 'neutral'"
@@ -508,12 +534,13 @@ async function submitDefect() {
       :columns="columns"
       :rows="qualityRows"
       row-key="qualityItemId"
-      :loading="qualityItemsPending"
-      :error="qualityItemsError"
+      :loading="qualityReadPending"
+      :error="qualityReadError"
+      :awaiting-scope="qualityItemsState === 'idle'"
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无质量或不良记录。点击上方「登记缺陷」记录生产过程中的不良，登记后可在这里跟进处置与关闭。"
+      empty-message="暂无质量或不良记录。检验记录可从工序执行录入。"
       @retry="refreshQuality"
     >
       <template #cell-qualityItemId="{ row }">

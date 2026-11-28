@@ -46,7 +46,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
@@ -178,64 +178,87 @@ const orderCells = computed<NvMetricStripCell[]>(() => [
 ])
 
 const open = shallowRef(false)
-const form = reactive({
-  supplierCode: '',
-  siteCode: '',
-  skuCode: '',
-  uomCode: '',
-  quantity: '1',
-  unitPrice: '0',
-  promisedDate: '',
-})
-// 采购单位默认跟随物料的基本单位；用户仍可改成采购包装单位。
-// 除了换物料，也跟着「所选物料的基本单位」变：就地新建的物料要等物料目录刷新回来才查得到。
-watch([() => form.skuCode, () => baseUomBySku.value.get(form.skuCode.trim())], ([, baseUom]) => {
-  if (baseUom) form.uomCode = baseUom
-})
-// 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
+const form = reactive({ supplierCode: '', siteCode: '' })
+let nextLineId = 0
+function newLine() {
+  return {
+    id: ++nextLineId,
+    skuCode: '',
+    uomCode: '',
+    quantity: '1',
+    promisedDate: '',
+    unitPrice: '',
+  }
+}
+const lines = ref([newLine()])
+watch(
+  () =>
+    lines.value.map((line) => ({
+      id: line.id,
+      sku: line.skuCode,
+      uom: baseUomBySku.value.get(line.skuCode.trim()),
+    })),
+  (defaults, previous) => {
+    const previousById = new Map(previous.map((entry) => [entry.id, entry]))
+    defaults.forEach(({ id, sku, uom }, index) => {
+      const before = previousById.get(id)
+      if (uom && (before?.sku !== sku || before?.uom !== uom)) lines.value[index]!.uomCode = uom
+    })
+  },
+)
 const showErrors = shallowRef(false)
 const invalid = computed(() => ({
   supplierCode: !form.supplierCode.trim(),
   siteCode: !form.siteCode.trim(),
-  skuCode: !form.skuCode.trim(),
-  uomCode: !form.uomCode.trim(),
-  promisedDate: !form.promisedDate,
-  quantity: !(Number(form.quantity) > 0),
-  unitPrice: !(Number(form.unitPrice) >= 0),
 }))
-const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
+const invalidLines = computed(() =>
+  lines.value.map((line) => ({
+    skuCode: !line.skuCode.trim(),
+    uomCode: !line.uomCode.trim(),
+    promisedDate: !line.promisedDate,
+    quantity: !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0,
+    unitPrice:
+      String(line.unitPrice).trim() === '' ||
+      !Number.isFinite(Number(line.unitPrice)) ||
+      Number(line.unitPrice) <= 0,
+  })),
+)
+const canSubmit = computed(
+  () =>
+    !Object.values(invalid.value).some(Boolean) &&
+    invalidLines.value.every((line) => !Object.values(line).some(Boolean)),
+)
+const draftTotal = computed(() =>
+  lines.value.reduce(
+    (total, line) => total + (Number(line.quantity) * Number(line.unitPrice) || 0),
+    0,
+  ),
+)
 
 function openDialog() {
   form.supplierCode = ''
   form.siteCode = ''
-  form.skuCode = ''
-  form.uomCode = ''
-  form.quantity = '1'
-  form.unitPrice = '0'
-  form.promisedDate = ''
+  lines.value = [newLine()]
   showErrors.value = false
   open.value = true
 }
 
 async function submit() {
+  if (orders.createPurchaseOrderPending.value) return
   showErrors.value = true
   if (!canSubmit.value) return
-  const quantity = Number(form.quantity)
-  const unitPrice = Number(form.unitPrice)
   try {
     await orders.createPurchaseOrder({
       supplierCode: form.supplierCode.trim(),
       siteCode: form.siteCode.trim(),
-      lines: [
-        {
-          lineNo: '10',
-          skuCode: form.skuCode.trim(),
-          uomCode: form.uomCode.trim(),
-          quantity,
-          unitPrice,
-          promisedDate: form.promisedDate,
-        },
-      ],
+      lines: lines.value.map((line, index) => ({
+        lineNo: String((index + 1) * 10),
+        skuCode: line.skuCode.trim(),
+        uomCode: line.uomCode.trim(),
+        quantity: Number(line.quantity),
+        promisedDate: line.promisedDate,
+        unitPrice: Number(line.unitPrice),
+      })),
     })
     open.value = false
     notifySuccess('采购订单已创建')
@@ -509,12 +532,12 @@ async function submitRevision() {
     </NvDialog>
 
     <NvDialog v-model:open="open">
-      <NvDialogContent>
+      <NvDialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>新建采购订单</NvDialogTitle>
           <NvDialogDescription class="sr-only">向供应商下达单项物料采购。</NvDialogDescription>
         </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submit">
+        <form novalidate class="grid gap-4" @submit.prevent="submit">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="erp-po-supplier">
@@ -548,76 +571,108 @@ async function submitRevision() {
                 :class="pickerInvalidClass(showErrors && invalid.siteCode)"
               />
             </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-po-sku">
-                物料 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <DirectoryPicker
-                id="erp-po-sku"
-                v-model="form.skuCode"
-                directory-type="material"
-                creatable
-                :class="pickerInvalidClass(showErrors && invalid.skuCode)"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-po-uom">
-                单位 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvEntityPicker
-                id="erp-po-uom"
-                v-model="form.uomCode"
-                :options="uomOptions"
-                title="选择单位"
-                placeholder="选择采购单位"
-                empty-text="暂无计量单位，请先在「基础数据 · 计量单位」维护"
-                :loading="uomsPending"
-                aria-label="单位"
-                :class="pickerInvalidClass(showErrors && invalid.uomCode)"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-po-qty">
-                数量 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvInput
-                id="erp-po-qty"
-                v-model="form.quantity"
-                type="number"
-                min="1"
-                step="1"
-                :data-invalid="showErrors && invalid.quantity ? '' : undefined"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-po-price">
-                单价（元） <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvInput
-                id="erp-po-price"
-                v-model="form.unitPrice"
-                type="number"
-                min="0"
-                step="0.01"
-                :data-invalid="showErrors && invalid.unitPrice ? '' : undefined"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="erp-po-date">
-                承诺日期 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvDatePicker
-                id="erp-po-date"
-                v-model="form.promisedDate"
-                :locale="locale"
-                clearable
-                :aria-invalid="showErrors && invalid.promisedDate"
-                :class="pickerInvalidClass(showErrors && invalid.promisedDate)"
-              />
-            </NvField>
           </NvFieldGroup>
+          <fieldset
+            v-for="(line, index) in lines"
+            :key="line.id"
+            class="grid gap-3 rounded-md border p-3"
+          >
+            <legend class="px-1 text-sm font-medium">物料明细 {{ index + 1 }}</legend>
+            <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+              <NvField>
+                <NvFieldLabel :for="`erp-po-sku-${line.id}`">
+                  物料 <span class="text-destructive">*</span>
+                </NvFieldLabel>
+                <DirectoryPicker
+                  :id="`erp-po-sku-${line.id}`"
+                  v-model="line.skuCode"
+                  directory-type="material"
+                  creatable
+                  :class="pickerInvalidClass(showErrors && invalidLines[index]?.skuCode)"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel :for="`erp-po-uom-${line.id}`">
+                  单位 <span class="text-destructive">*</span>
+                </NvFieldLabel>
+                <NvEntityPicker
+                  :id="`erp-po-uom-${line.id}`"
+                  v-model="line.uomCode"
+                  :options="uomOptions"
+                  title="选择单位"
+                  placeholder="选择采购单位"
+                  empty-text="暂无计量单位，请先在「基础数据 · 计量单位」维护"
+                  :loading="uomsPending"
+                  aria-label="单位"
+                  :class="pickerInvalidClass(showErrors && invalidLines[index]?.uomCode)"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel :for="`erp-po-qty-${line.id}`">
+                  数量 <span class="text-destructive">*</span>
+                </NvFieldLabel>
+                <NvInput
+                  :id="`erp-po-qty-${line.id}`"
+                  v-model="line.quantity"
+                  type="number"
+                  step="any"
+                  :invalid="showErrors && invalidLines[index]?.quantity"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel :for="`erp-po-price-${line.id}`">
+                  单价（元） <span class="text-destructive">*</span>
+                </NvFieldLabel>
+                <NvInput
+                  :id="`erp-po-price-${line.id}`"
+                  v-model="line.unitPrice"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  :invalid="showErrors && invalidLines[index]?.unitPrice"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel :for="`erp-po-date-${line.id}`">
+                  承诺日期 <span class="text-destructive">*</span>
+                </NvFieldLabel>
+                <NvDatePicker
+                  :id="`erp-po-date-${line.id}`"
+                  v-model="line.promisedDate"
+                  :locale="locale"
+                  clearable
+                  :aria-invalid="showErrors && invalidLines[index]?.promisedDate"
+                  :class="pickerInvalidClass(showErrors && invalidLines[index]?.promisedDate)"
+                />
+              </NvField>
+            </NvFieldGroup>
+            <NvButton
+              type="button"
+              variant="outline"
+              class="justify-self-start"
+              :disabled="lines.length === 1"
+              :aria-label="`删除第 ${index + 1} 行`"
+              @click="lines.splice(index, 1)"
+              >删除行</NvButton
+            >
+            <p
+              v-if="showErrors && Object.values(invalidLines[index] ?? {}).some(Boolean)"
+              role="alert"
+              class="text-sm text-destructive"
+            >
+              请核对第 {{ index + 1 }} 行标出的字段。
+            </p>
+          </fieldset>
+          <NvButton
+            type="button"
+            variant="outline"
+            class="justify-self-start"
+            @click="lines.push(newLine())"
+            >添加明细</NvButton
+          >
+          <p class="text-sm font-medium" aria-live="polite">合计 {{ formatAmount(draftTotal) }}</p>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请选择供应商、工厂、物料、单位，填写承诺日期，并给出正数数量与非负单价。
+            请选择供应商、工厂、物料、单位，填写承诺日期，并给出正数数量与正数单价。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

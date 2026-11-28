@@ -51,6 +51,11 @@ const sourceLabels: Record<string, string> = {
 export function materialDeliverySourceLabel(value?: string) {
   return value ? (sourceLabels[value] ?? value) : '—'
 }
+export function primaryMaterialDeliveryReason(reasons?: readonly string[] | null) {
+  const reason = reasons?.find((value) => value !== 'plan-not-selected')
+  return reason ? materialDeliverySourceLabel(reason) : ''
+}
+
 /** 时间事实统一以 UTC 展示，日期事实仍保留来源原日期；title 保留原始值。 */
 export function materialDeliveryUtc(value?: string | null) {
   return value ? `${new Date(value).toISOString().slice(0, 19).replace('T', ' ')} UTC` : '—'

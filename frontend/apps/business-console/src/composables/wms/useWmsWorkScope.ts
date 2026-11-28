@@ -10,7 +10,8 @@ import {
   type WmsWorkScopeCatalogKind,
 } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
-import { computed, reactive, watch } from 'vue'
+import { computed, hasInjectionContext, inject, reactive, ref, watch } from 'vue'
+import { routeLocationKey } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -47,12 +48,16 @@ function writeRememberedWmsWorkScope(selectionKey: string, value: string) {
 }
 
 export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
+  const route = hasInjectionContext() ? inject(routeLocationKey, undefined) : undefined
   const context = useBusinessContextStore()
   const auth = useAuthStore()
   const organizationId = computed(() => context.organizationId)
   const environmentId = computed(() => context.environmentId)
   const hasTenant = computed(() => Boolean(organizationId.value && environmentId.value))
 
+  const principalKey = computed(
+    () => auth.principal?.principalId?.trim() || auth.sessionId?.trim() || 'unrestored-session',
+  )
   const catalogQuery = useQuery(() => {
     const options = {
       query: {
@@ -69,6 +74,7 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
 
     return {
       ...queryOptions,
+      key: [...queryOptions.key, principalKey.value],
       enabled: hasTenant.value,
     }
   })
@@ -77,17 +83,28 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
     () => catalogQuery.data.value as BusinessConsoleWmsWorkScopeCatalogEnvelope | undefined,
   )
   const catalogData = computed(() =>
-    envelope.value?.success === true && envelope.value.data ? envelope.value.data : undefined,
+    !catalogQuery.error.value && envelope.value?.success === true && envelope.value.data
+      ? envelope.value.data
+      : undefined,
   )
   const scopeOptions = computed(() => toWmsWorkScopeOptions(catalogData.value?.items ?? []))
 
   const selectionKey = computed(() =>
-    [
-      auth.principal?.principalId?.trim() || auth.sessionId?.trim() || 'unrestored-session',
-      organizationId.value,
-      environmentId.value,
-      catalog,
-    ].join('|'),
+    [principalKey.value, organizationId.value, environmentId.value, catalog].join('|'),
+  )
+
+  const deepLink = computed(() => {
+    const raw = route?.query.siteCode
+    const site = (Array.isArray(raw) ? raw[0] : raw)?.trim()
+    return site ? `site:${site}` : undefined
+  })
+  const dismissedDeepLink = ref<string>()
+  watch(
+    [deepLink, selectionKey],
+    () => {
+      dismissedDeepLink.value = undefined
+    },
+    { flush: 'sync' },
   )
 
   // 生效选择整条由「授权清单 × 当前 selectionKey 的记忆」推导，不留可变的本地选择状态：
@@ -97,14 +114,23 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
     get: () => {
       const options = scopeOptions.value
       if (options.length === 0) return undefined
+      const includes = (value?: string) => options.some((option) => option.value === value)
+      if (deepLink.value !== dismissedDeepLink.value && includes(deepLink.value)) {
+        return deepLink.value
+      }
       const remembered =
         sharedWmsWorkScopeSelections.get(selectionKey.value) ??
         readRememberedWmsWorkScope(selectionKey.value)
-      // 记住的选择仍在授权清单里才作数；否则回落清单首项，兜底不写入记忆。
-      return options.some((option) => option.value === remembered) ? remembered : options[0]?.value
+      if (includes(remembered)) return remembered
+      const currentSite = `site:${context.siteCode?.trim() ?? ''}`
+      if (includes(currentSite)) return currentSite
+      const sites = options.filter((option) => parseWorkScopeKey(option.value)?.kind === 'site')
+      if (sites.length === 1) return sites[0]?.value
+      return options.length === 1 ? options[0]?.value : undefined
     },
     set: (value) => {
-      if (!value) return
+      if (!value || !scopeOptions.value.some((option) => option.value === value)) return
+      dismissedDeepLink.value = deepLink.value
       sharedWmsWorkScopeSelections.set(selectionKey.value, value)
       writeRememberedWmsWorkScope(selectionKey.value, value)
     },
@@ -151,6 +177,16 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
     scopeKey,
     scopeKind: computed(() => (hasSelection.value ? parsedSelection.value?.kind : undefined)),
     scopeId: computed(() => (hasSelection.value ? parsedSelection.value?.id : undefined)),
+    siteCode: computed(() => {
+      if (!hasSelection.value) return undefined
+      const selection = parsedSelection.value
+      if (selection?.kind === 'site') return selection.id
+      return (
+        catalogData.value?.items
+          ?.find((item) => item.scopeKind === selection?.kind && item.scopeId === selection?.id)
+          ?.siteCode?.trim() || undefined
+      )
+    }),
     scopeOptions,
     selectedScopeLabel: computed(
       () =>

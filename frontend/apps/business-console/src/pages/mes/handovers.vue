@@ -39,7 +39,6 @@ import {
   NvToolbar,
   NvSpinner,
 } from '@nerv-iip/ui'
-import { incomingUserLabel, outgoingUserLabel } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch } from 'vue'
 import { useBusinessMasterDataResources } from '@/composables/master-data'
 import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/mes'
@@ -63,6 +62,7 @@ import {
   notifySuccess,
 } from '@/utils/notify'
 import HandoverSnapshotTables from './components/HandoverSnapshotTables.vue'
+import { incomingUserLabel, outgoingUserLabel } from './handoverDetailPresentation'
 
 definePage({
   meta: {
@@ -225,14 +225,18 @@ const columns: NvDataTableColumn<HandoverRow>[] = [
   },
   { key: 'openIssueCount', header: '未结事项', align: 'end', width: 'w-24' },
   { key: 'createdAtUtc', header: '创建时间', width: 'w-44' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
+  {
+    key: 'actions',
+    header: '操作',
+    align: 'end',
+    width: 'w-24',
+    headerClass: 'sticky right-0 z-20 bg-card shadow-[-1px_0_0_0_var(--border)]',
+    cellClass: 'sticky right-0 z-10 bg-card shadow-[-1px_0_0_0_var(--border)]',
+  },
 ]
-
-// 交接人显示名（四态：姓名 / 姓名未知 / 未记录 / 待接班）来自 `@nerv-iip/business-core`。
-// **判据是身份 id 在不在，不是姓名在不在**：目录解不出名字时读面仍有 `outgoing/incomingUserId`，
-// 那说明人记在案（问责链完整），只是名字显示不出来——写「未记录」会在一张「已接班」的单子上
-// 断言「没有这个人」，与数据相反（#3475）。用户 id 是 IAM 主体标识符，四态里都不上屏。
-// PDA 侧读的是同一份判据和同一组文案，两屏不再各说各话。
+const tableColumns = computed(() =>
+  handovers.value.length ? columns : columns.map((column) => ({ ...column, width: undefined })),
+)
 
 const detailOpen = ref(false)
 // 抽屉正文只认详情读面，不用列表行垫底：详情取数失败时 `handoverDetail` 为空而列表行还在，
@@ -557,7 +561,7 @@ function formatDateTime(value?: string | null) {
       :total-items="handoversTotal"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
-      :columns="columns"
+      :columns="tableColumns"
       :rows="handovers"
       row-key="handoverId"
       :loading="handoversPending"
@@ -838,6 +842,14 @@ function formatDateTime(value?: string | null) {
             <div class="flex justify-between gap-4">
               <dt class="text-muted-foreground">班组</dt>
               <dd class="font-medium">{{ acceptTargetTeamLabel }}</dd>
+            </div>
+            <div v-if="acceptTarget" class="flex justify-between gap-3">
+              <dt class="text-muted-foreground">交班人</dt>
+              <dd class="font-medium">{{ outgoingUserLabel(acceptTarget) }}</dd>
+            </div>
+            <div v-if="acceptTarget" class="flex justify-between gap-3">
+              <dt class="text-muted-foreground">接班人</dt>
+              <dd class="font-medium">{{ incomingUserLabel(acceptTarget) }}</dd>
             </div>
           </dl>
           <p v-if="acceptOutcomeUnknown" class="text-sm text-destructive" role="alert">

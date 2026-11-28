@@ -1887,6 +1887,13 @@ public sealed class MasterDataApiContractTests
 
         Assert.Equal(3, response.Total);
         Assert.Equal("SKU-002", Assert.Single(response.Resources).Code);
+
+        var match = await new ListMasterDataResourcesQueryHandler(dbContext).Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Take: 1, Keyword: "SKU-003"),
+            CancellationToken.None);
+
+        Assert.Equal(1, match.Total);
+        Assert.Equal("SKU-003", Assert.Single(match.Resources).Code);
     }
 
     [Fact]
@@ -1897,6 +1904,8 @@ public sealed class MasterDataApiContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"));
         dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "mass", 3, "half-up"));
+        dbContext.Skills.Add(Skill.Create("org-001", "env-dev", "weighing", "Weighing", "Production", false, null, null));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var scopeAudit = new MasterDataIntegrationEventContext("corr-create-core", "cause-create-core", "user:test", "op-create-core");
 
@@ -1934,7 +1943,8 @@ public sealed class MasterDataApiContractTests
                     null,
                     new("corr-add-1", "cause-add-1", "user:test", "op-add-1")),
                 CancellationToken.None),
-            await new AssignPersonnelSkillCommandHandler(new PersonnelSkillRepository(dbContext)).Handle(
+            await new AssignPersonnelSkillCommandHandler(
+                new PersonnelSkillRepository(dbContext), new ReferenceDataCodeRepository(dbContext), new SkillRepository(dbContext)).Handle(
                 new AssignPersonnelSkillCommand("org-001", "env-dev", "user-001", "weighing", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
                 CancellationToken.None),
             await new CreateSiteCommandHandler(new SiteRepository(dbContext), dbContext: dbContext).Handle(
@@ -2448,22 +2458,34 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("计量单位 'box' 到 'ea' 缺少启用的直接换算关系。", exception.Message);
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(0, false)]
+    [InlineData(12, true)]
+    public async Task Certified_skill_request_requires_positive_validity_months(int? months, bool expected)
+    {
+        var request = new CreateSkillRequest("org-001", "env-dev", "SK-WELD", "焊接", "生产", true, months, null);
+        var validation = await new CreateSkillRequestValidator().ValidateAsync(request);
+        Assert.Equal(expected, validation.IsValid);
+    }
+
     [Fact]
-    public async Task Assign_personnel_skill_command_validates_skill_and_level_reference_data_when_repository_is_available()
+    public async Task Assign_personnel_skill_command_validates_enabled_skill_catalog_and_level_dictionary()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new AssignPersonnelSkillCommandHandler(
             new PersonnelSkillRepository(dbContext),
-            new ReferenceDataCodeRepository(dbContext));
+            new ReferenceDataCodeRepository(dbContext),
+            new SkillRepository(dbContext));
 
         var missingSkill = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
             CancellationToken.None));
         Assert.Equal("人员技能字段 'SkillCode' 的值 'welding' 不存在或未启用。", missingSkill.Message);
 
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", "welding", "焊接"));
+        dbContext.Skills.Add(Skill.Create("org-001", "env-dev", "welding", "焊接", "生产", true, 12, null));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var missingLevel = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
@@ -2480,10 +2502,39 @@ public sealed class MasterDataApiContractTests
 
         Assert.Equal("personnel-skill", created.ResourceType);
         Assert.Equal("worker-001:welding", created.Code);
+        await dbContext.SaveChangesAsync();
+        Assert.True(await dbContext.PersonnelSkills.AnyAsync(x => x.SkillCode == "welding"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", "welding", "焊接"));
+        dbContext.Skills.Local.Single().Disable("归档");
+        await dbContext.SaveChangesAsync();
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-002", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Assign_personnel_skill_preserves_enabled_legacy_code_without_catalog_entry()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", "welding", "焊接"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
+        await dbContext.SaveChangesAsync();
+        var handler = new AssignPersonnelSkillCommandHandler(
+            new PersonnelSkillRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext),
+            new SkillRepository(dbContext));
+
+        var created = await handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None);
+
+        Assert.Equal("worker-001:welding", created.Code);
     }
 
     [Theory]
-    [InlineData("", "senior", "SkillCode", "skill")]
+    [InlineData("", "senior", "SkillCode", "不存在或未启用")]
     [InlineData("welding", "", "Level", "skill-level")]
     public async Task Assign_personnel_skill_command_rejects_blank_controlled_reference_fields(
         string skillCode,
@@ -2496,10 +2547,11 @@ public sealed class MasterDataApiContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new AssignPersonnelSkillCommandHandler(
             new PersonnelSkillRepository(dbContext),
-            new ReferenceDataCodeRepository(dbContext));
+            new ReferenceDataCodeRepository(dbContext),
+            new SkillRepository(dbContext));
         if (!string.IsNullOrWhiteSpace(skillCode))
         {
-            dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", skillCode, skillCode));
+            dbContext.Skills.Add(Skill.Create("org-001", "env-dev", skillCode, skillCode, "生产", false, null, null));
         }
 
         if (!string.IsNullOrWhiteSpace(level))
@@ -2514,7 +2566,47 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None));
 
         Assert.Contains($"人员技能字段 '{expectedField}'", exception.Message, StringComparison.Ordinal);
-        Assert.Contains($"'{expectedCodeSet}'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedCodeSet, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Assign_personnel_skill_command_rejects_permanent_effective_to_for_certified_skill()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Skills.Add(Skill.Create("org-001", "env-dev", "SK-CERT-01", "高压安规测试", "质量检测", true, 12, null));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new AssignPersonnelSkillCommandHandler(
+            new PersonnelSkillRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext),
+            new SkillRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand(
+                "org-001",
+                "env-dev",
+                "worker-001",
+                "SK-CERT-01",
+                "senior",
+                new DateOnly(2026, 11, 28),
+                new DateOnly(9999, 12, 31)),
+            CancellationToken.None));
+
+        Assert.Contains("持证技能必须填写明确的证书到期日", exception.Message, StringComparison.Ordinal);
+
+        var created = await handler.Handle(
+            new AssignPersonnelSkillCommand(
+                "org-001",
+                "env-dev",
+                "worker-001",
+                "SK-CERT-01",
+                "senior",
+                new DateOnly(2026, 11, 28),
+                new DateOnly(2027, 11, 28)),
+            CancellationToken.None);
+        Assert.Equal("worker-001:SK-CERT-01", created.Code);
     }
 
     [Fact]

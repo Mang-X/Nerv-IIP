@@ -70,6 +70,7 @@ vi.mock('@/composables/master-data', () => ({
   }),
   useBusinessWorkers: () => ({
     workers: ref([]),
+    workersState: ref('ready'),
     workersPending: ref(false),
     filters: reactive({}),
   }),
@@ -99,6 +100,7 @@ vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
 vi.mock('@/composables/mes', () => ({
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
   useMesWorkScopeSelection: () => ({
+    scopeReadState: ref('ready'),
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
     scopeReady: ref(true),
@@ -289,6 +291,7 @@ vi.mock('@/composables/mes', () => ({
       traceability: ref({ edges: [], nodes: mesSpies.traceabilityNodes }),
       traceabilityError: ref(undefined),
       traceabilityPending: ref(false),
+      traceabilityState: ref('ready'),
     }
   },
   useMesWorkOrderDetail: () => ({

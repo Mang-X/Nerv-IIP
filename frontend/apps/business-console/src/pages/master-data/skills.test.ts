@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 const stub = vi.hoisted(() => ({
   assign: vi.fn().mockResolvedValue({}),
   matrixRefresh: vi.fn(),
+  matrixError: undefined as Error | undefined,
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   // 可被各用例覆写的矩阵数据源（默认含一名工人 + 一项技能）。
@@ -94,7 +95,7 @@ function stubSkillMatrix() {
     refresh: stub.matrixRefresh,
     skillCodes: computed(() => stub.skillCodes),
     rows: computed(() => stub.rows),
-    matrixError: shallowRef(undefined),
+    matrixError: shallowRef(stub.matrixError),
     matrixPending: shallowRef(false),
   }
 }
@@ -119,7 +120,7 @@ vi.mock('@/composables/master-data/usePromotedCatalogs', () => ({
   useSkillCatalog: () => ({
     skills: computed(() => [
       { skillCode: 'SKILL-A', skillName: '焊接技能', enabled: true },
-      { skillCode: 'SKILL-WELD', skillName: '电焊', enabled: true },
+      { skillCode: 'SKILL-WELD', skillName: '电焊', enabled: true, requiresCertification: true },
     ]),
     skillsPending: shallowRef(false),
     refresh: vi.fn(),
@@ -185,6 +186,9 @@ describe('master-data skills page (matrix)', () => {
     expect(wrapper.text()).not.toContain('SKILL-A')
     // level → 中文。
     expect(wrapper.text()).toContain('高级')
+    expect(wrapper.text()).toContain('已登记资格中无临期或过期项')
+    await wrapper.get('input[placeholder="搜索工人姓名 / 工号 / 部门"]').setValue('没有匹配的姓名')
+    expect(wrapper.text()).toContain('没有符合条件的工人')
     // 已删除「建设中」文案。
     expect(wrapper.text()).not.toContain('建设中')
   })
@@ -200,6 +204,21 @@ describe('master-data skills page (matrix)', () => {
 
     expect(wrapper.text()).toContain('临期')
     expect(wrapper.html()).toContain('text-warning')
+  })
+
+  it('keeps a skill valid through its certificate expiry date', async () => {
+    resetMatrix()
+    const now = new Date()
+    const effectiveTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    stub.rows = [
+      { userId: 'usr-1', skills: [{ skillCode: 'SKILL-A', level: 'senior', effectiveTo }] },
+    ]
+    const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain(`至 ${effectiveTo}`)
+    expect(wrapper.text()).toContain('临期')
+    expect(wrapper.text()).not.toContain('已过期')
   })
 
   it('highlights past-expired cells with 已过期 badge and destructive token', async () => {
@@ -221,9 +240,24 @@ describe('master-data skills page (matrix)', () => {
     const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('还没有任何技能登记')
+    expect(wrapper.text()).toContain('尚未登记技能')
     const goBtn = wrapper.findAll('button').find((b) => b.text().includes('去登记技能'))
     expect(goBtn).toBeTruthy()
+    expect(
+      wrapper.findAll('button').filter((button) => button.text().includes('登记技能')),
+    ).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('已登记资格中无临期或过期项')
+  })
+
+  it('读取失败时显示失败反馈，避免误报零登记', async () => {
+    resetMatrix()
+    stub.matrixError = new Error('offline')
+    const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
+    stub.matrixError = undefined
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('技能矩阵加载失败')
+    expect(wrapper.text()).not.toContain('尚未登记技能')
+    expect(wrapper.text()).not.toContain('已登记资格中无临期或过期项')
   })
 
   it('blocks assignment on empty required fields with summary alert and no assign call', async () => {
@@ -269,7 +303,7 @@ describe('master-data skills page (matrix)', () => {
       await wrapper
         .findAll('select')
         .find((s) => s.html().includes('SKILL-WELD'))!
-        .setValue('SKILL-WELD')
+        .setValue('SKILL-A')
       await wrapper
         .findAll('select')
         .find((s) => s.html().includes('senior'))!
@@ -300,7 +334,20 @@ describe('master-data skills page (matrix)', () => {
       expect(wrapper.get('#skill-from').text()).toBe('选择日期')
       await wrapper.get('form').trigger('submit')
       await flushPromises()
-      expect(stub.assign.mock.calls.at(-1)?.[0]).toMatchObject({ effectiveFrom: undefined })
+      expect(stub.assign.mock.calls.at(-1)?.[0]).toMatchObject({
+        effectiveFrom: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+        effectiveTo: '9999-12-31',
+      })
+      stub.assign.mockRejectedValueOnce({
+        message: 'request-payload-invalid',
+        code: 400,
+        errorData: [{ name: 'effectiveTo', reason: '有效期截止日期不能早于生效日期。' }],
+      })
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(stub.toastError).toHaveBeenCalledWith(
+        '登记人员技能失败：有效期截止日期不能早于生效日期。',
+      )
     } finally {
       wrapper.unmount()
       i18n.global.locale.value = previousLocale
@@ -313,6 +360,7 @@ describe('master-data skills page (matrix)', () => {
     stub.matrixRefresh.mockClear()
     stub.toastSuccess.mockClear()
     const wrapper = mount(SkillsPage, {
+      attachTo: document.body,
       global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
     })
     await flushPromises()
@@ -329,10 +377,22 @@ describe('master-data skills page (matrix)', () => {
     const levelSelect = wrapper.findAll('select').find((s) => s.html().includes('senior'))!
     await levelSelect.setValue('senior')
     await flushPromises()
-    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('证书到期日')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.text()).toContain('请选择证书到期日')
+    expect(stub.assign).not.toHaveBeenCalled()
+    await wrapper.get('#skill-to').trigger('click')
+    await flushPromises()
+    await Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === '今天')!
+      .click()
+    await wrapper.get('form').trigger('submit')
     await flushPromises()
 
     expect(stub.assign).toHaveBeenCalledTimes(1)
+    expect(stub.assign.mock.calls[0]?.[0]).toMatchObject({
+      effectiveTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    })
     const body = stub.assign.mock.calls[0]![0] as {
       userId: string
       skillCode: string

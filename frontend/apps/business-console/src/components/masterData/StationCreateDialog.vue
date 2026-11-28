@@ -43,7 +43,11 @@ const businessContext = useBusinessContextStore()
 const stations = useCreateMasterDataResource<BusinessConsoleCreateStationRequest>('station')
 const { resolveLine } = useMasterDataDisplayNames({ lines: true })
 
-const form = reactive({ name: '', lineCode: carriedLineCode, workCenterCode: '' })
+const form = reactive({
+  name: '',
+  lineCode: carriedLineCode,
+  workCenterCode: props.context?.workCenterCode?.trim() ?? '',
+})
 const showErrors = shallowRef(false)
 const canSubmit = computed(() => !!form.name.trim() && !!form.lineCode.trim())
 const carriedLineName = computed(() => resolveLine(carriedLineCode) ?? carriedLineCode)

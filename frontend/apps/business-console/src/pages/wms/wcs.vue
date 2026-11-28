@@ -30,6 +30,11 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   NvMetricCard,
   NvMetricStrip,
   NvPageHeader,
@@ -290,6 +295,14 @@ function adapterTypeLabel(value?: string | null) {
   }
   return name || value
 }
+const taskStatuses = ['Dispatched', 'Completed', 'Failed', 'Cancelled'] as const
+const statusFilter = computed({
+  get: () => filters.status ?? 'all',
+  set: (status: string) => {
+    filters.status = status === 'all' ? undefined : status
+    filters.skip = 0
+  },
+})
 function statusLabel(value?: string | null) {
   return labelFor(WCS_TASK_STATUS_LABELS, value, '未知状态')
 }
@@ -344,12 +357,15 @@ function formatDateTime(value?: string | null) {
           placeholder="仓库任务"
           aria-label="仓库任务"
         />
-        <NvInput
-          v-model="filters.status"
-          class="h-9 w-28"
-          placeholder="状态（可选）"
-          aria-label="任务状态"
-        />
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="w-32" aria-label="任务状态"><NvSelectValue /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部状态</NvSelectItem>
+            <NvSelectItem v-for="status in taskStatuses" :key="status" :value="status">
+              {{ statusLabel(status) }}
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
       </template>
     </NvToolbar>
 

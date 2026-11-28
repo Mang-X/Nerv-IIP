@@ -44,6 +44,7 @@ vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   useMesWorkScopeSelection: () => ({
+    scopeReadState: ref('ready'),
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
     scopeReady: ref(true),

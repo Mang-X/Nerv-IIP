@@ -25,6 +25,7 @@ definePage({
 })
 const costs = useErpWorkOrderCostVariance()
 const draft = ref('')
+const hasQuery = computed(() => costs.ready.value && Boolean(costs.workOrder.id))
 const order = computed(() =>
   costs.workOrderPending.value || costs.workOrderError.value
     ? undefined
@@ -154,15 +155,17 @@ function resize(pageSize: number) {
         :page="costs.workOrder.page"
         :page-size="costs.workOrder.pageSize"
         :total-items="order?.totalOperations ?? 0"
-        :loading="costs.workOrderPending.value"
-        :error="Boolean(costs.workOrderError.value)"
+        :loading="hasQuery && costs.workOrderPending.value"
+        :error="hasQuery && Boolean(costs.workOrderError.value)"
         :error-message="
           inlineErrorMessage(costs.workOrderError.value, '工单成本读取失败，请重试。')
         "
         :searchable="false"
         :column-settings="false"
-        :awaiting-scope="!costs.ready.value || !costs.workOrder.id"
-        awaiting-scope-message="请选择业务范围并选择工单。"
+        :awaiting-scope="!hasQuery"
+        :awaiting-scope-message="
+          costs.ready.value ? '选择工单后，点击「查询工单」。' : '请选择业务范围。'
+        "
         empty-message="暂无有效人工结算；冲销后请重新结算。"
         @retry="costs.refreshWorkOrder"
         @update:page="costs.workOrder.page = $event"

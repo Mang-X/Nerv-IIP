@@ -569,17 +569,25 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
-    public async Task Master_data_credit_reader_wraps_non_json_error_responses_as_known_exception()
+    public async Task Master_data_credit_reader_propagates_upstream_5xx_and_wraps_4xx_as_known_exception()
     {
-        using var httpClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.BadGateway, "<html>bad gateway</html>", "text/html"))
+        using var serverErrorClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.BadGateway, "<html>bad gateway</html>", "text/html"))
         {
             BaseAddress = new Uri("http://masterdata.test"),
         };
-        var reader = new HttpCustomerCreditProfileReader(httpClient, new TestInternalServiceTokenProvider());
+        var serverErrorReader = new HttpCustomerCreditProfileReader(serverErrorClient, new TestInternalServiceTokenProvider());
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => reader.GetAsync("org-001", "env-dev", "CUST-001", CancellationToken.None));
+        var serverError = await Assert.ThrowsAsync<HttpRequestException>(() => serverErrorReader.GetAsync("org-001", "env-dev", "CUST-001", CancellationToken.None));
+        Assert.Equal(HttpStatusCode.BadGateway, serverError.StatusCode);
 
-        Assert.Contains("客户『CUST-001』的信用额度主数据不可用", exception.Message, StringComparison.Ordinal);
+        using var badRequestClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.BadRequest, "bad request", "text/plain"))
+        {
+            BaseAddress = new Uri("http://masterdata.test"),
+        };
+        var badRequestReader = new HttpCustomerCreditProfileReader(badRequestClient, new TestInternalServiceTokenProvider());
+
+        var businessError = await Assert.ThrowsAsync<KnownException>(() => badRequestReader.GetAsync("org-001", "env-dev", "CUST-001", CancellationToken.None));
+        Assert.Contains("客户『CUST-001』的信用额度主数据不可用", businessError.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -694,9 +702,14 @@ public sealed class ErpSalesFinanceEndpointContractTests
             new ApproveQuotationCommand("org-001", "env-dev", "QUO-CREDIT-PASS"),
             CancellationToken.None);
 
-        var salesOrderId = await new CreateSalesOrderCommandHandler(
-                dbContext,
-                new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 250m, "CNY"))).Handle(
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.OK, """
+            {"success":true,"code":0,"data":{"organizationId":"org-001","environmentId":"env-dev","customerCode":"CUST-001","creditLimit":250,"currencyCode":"CNY","updatedAtUtc":"2026-11-28T00:00:00Z"}}
+            """, "application/json"))
+        {
+            BaseAddress = new Uri("http://masterdata.test"),
+        };
+        var creditReader = new HttpCustomerCreditProfileReader(httpClient, new TestInternalServiceTokenProvider());
+        var salesOrderId = await new CreateSalesOrderCommandHandler(dbContext, creditReader).Handle(
                 new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-PASS", "QUO-CREDIT-PASS", "SITE-001"),
                 CancellationToken.None);
 

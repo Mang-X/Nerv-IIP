@@ -25,6 +25,7 @@ const {
   listError,
   listPending,
   refreshDetail,
+  refreshInstances,
   selectInstance,
 } = useConsoleInstances()
 
@@ -44,6 +45,14 @@ async function handleRestart(instanceKey: string) {
   }
 }
 
+async function handleRefreshInstances() {
+  try {
+    await refreshInstances()
+  } catch {
+    // The query error state renders the failure message.
+  }
+}
+
 async function handleRefreshDetail() {
   try {
     await refreshDetail()
@@ -59,12 +68,27 @@ async function handleRefreshDetail() {
       <NvPageHeader
         :title="t('nav.instances')"
         :breadcrumbs="[{ label: t('nav.platform') }]"
-        :count="`${instances.length} 个实例`"
+        :count="listError || listPending ? undefined : `${instances.length} 个实例`"
       />
 
       <div class="grid items-start gap-4 lg:grid-cols-[1fr_22rem] xl:grid-cols-[1fr_26rem]">
         <div class="flex min-w-0 flex-col gap-3">
+          <Alert v-if="listError" variant="destructive" class="flex flex-col gap-3">
+            <AlertTitle>{{ t('home.unableToLoadInstances') }}</AlertTitle>
+            <AlertDescription>{{ listError.message }}</AlertDescription>
+            <Button
+              :disabled="listPending"
+              size="sm"
+              type="button"
+              variant="outline"
+              class="self-start"
+              @click="handleRefreshInstances"
+            >
+              {{ t('action.retry') }}
+            </Button>
+          </Alert>
           <InstanceTable
+            v-else
             :instances="instances"
             :pending="listPending"
             :restart-pending="restartPending"
@@ -73,9 +97,6 @@ async function handleRefreshDetail() {
             @select-instance="selectInstance"
           />
 
-          <Alert v-if="listError" variant="destructive">
-            <AlertDescription>{{ listError.message }}</AlertDescription>
-          </Alert>
           <Alert v-if="restartError" variant="destructive">
             <AlertDescription>{{ restartError.message }}</AlertDescription>
           </Alert>

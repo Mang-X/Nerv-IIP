@@ -95,6 +95,7 @@ const {
 const {
   scopeKey,
   scopeOptions,
+  siteCode: workSiteCode,
   hasSelection: outboundScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
@@ -200,7 +201,7 @@ function openCreate() {
   createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.sourceDocumentType = ''
   createForm.sourceDocumentId = ''
-  createForm.siteCode = ''
+  createForm.siteCode = workSiteCode.value ?? ''
   createForm.lines = [emptyLine()]
   createError.value = ''
   createOpen.value = true
@@ -630,11 +631,17 @@ function refreshAll() {
             type="button"
             variant="outline"
             :aria-label="`完成复核 ${row.outboundOrderNo ?? ''}`"
-            :disabled="!canComplete(row) || !row.outboundOrderId"
+            :disabled="!canComplete(row) || !row.outboundOrderId || !row.assignedPoolCode"
             @click="openReview(row)"
           >
             完成复核
           </NvButton>
+          <span
+            v-if="canComplete(row) && !row.assignedPoolCode"
+            class="text-xs text-muted-foreground"
+          >
+            请先分配出库作业池
+          </span>
         </div>
       </template>
     </NvDataTable>
@@ -662,6 +669,9 @@ function refreshAll() {
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitReview">
           <CarriedContextSummary label="复核对象" :items="reviewContextItems" />
+          <p class="text-sm text-muted-foreground">
+            请先在拣货任务页完成该出库单的拣货。未分配的拣货任务可由有权限的负责人补派。
+          </p>
           <NvFieldGroup>
             <NvField
               orientation="horizontal"

@@ -43,7 +43,7 @@ foreach ($case in @(
         Assert-ProductionComposeInternalPorts -ServiceBlocks (Get-ComposeServiceBlocks -ComposeText $changed)
     }
     catch {
-        if ($_.Exception.Message -cne "服务 $($case.Service) 不得发布宿主机端口。") { throw }
+        if (-not [string]::Equals($_.Exception.Message, "服务 $($case.Service) 不得发布宿主机端口。", [StringComparison]::Ordinal)) { throw }
         $rejected = $true
     }
     if (-not $rejected) { throw "Production Compose accepted a host port on $($case.Service)." }

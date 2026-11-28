@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
@@ -23,6 +24,8 @@ import {
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { useWmsCreateIntent } from '@/composables/wms/useWmsCreateIntent'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import {
@@ -55,7 +58,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -82,11 +85,39 @@ const {
 const {
   scopeKey,
   scopeOptions,
+  siteCode: workSiteCode,
   hasSelection: pickingScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
+const auth = useAuthStore()
+const canManagePickingAssignment = computed(() => {
+  const permissions = auth.principal?.permissionCodes ?? []
+  return (
+    permissions.includes(P.wmsWorkPoolsManage) &&
+    permissions.includes('business.wms.shipments.manage')
+  )
+})
+const assignOpen = shallowRef(false)
+const assignTarget = shallowRef<PickingRow>()
+function canAssign(row: PickingRow) {
+  const reasons = row.blockReasons ?? []
+  return (
+    canManagePickingAssignment.value &&
+    Boolean(row.warehouseTaskId && row.siteCode) &&
+    Number.isInteger(row.version) &&
+    !row.assignedPoolCode &&
+    reasons.includes('TASK_NOT_ASSIGNED_TO_WORK_POOL') &&
+    !reasons.includes('TASK_EXECUTION_CLAIMED_BY_WCS') &&
+    row.status?.toLowerCase() === 'open'
+  )
+}
+function openAssign(row: PickingRow) {
+  assignTarget.value = row
+  assignOpen.value = true
+}
+
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
 const route = useRoute()
 const { page, pageSize } = usePagedList(filters, {
@@ -274,7 +305,7 @@ async function submitCreate() {
  * 在 PC 端永远凑不齐，发货链结构性走不通。后端的动作端点、网关 facade、SDK 早就齐了，
  * 缺的只是这一段接线。
  *
- * 可否操作**一律以服务端的 `allowedActions` 为准**，不在前端另算一套状态机：
+ * 开始、完成拣货**以服务端的 `allowedActions` 为准**，不在前端另算一套状态机：
  * 那份结论已经把状态、派工、作业范围合并算过了。不可操作时把 `blockReasons` 翻成中文
  * 显示出来——页面必须指路，不能只是「没有按钮」。
  */
@@ -583,9 +614,17 @@ function firstQuery(value: unknown) {
       "
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无拣货任务。领料齐套或出库拣货时由系统派生，或在此手工登记。"
+      empty-message="当前范围暂无拣货任务。"
       @retry="refreshPickingTasks"
     >
+      <template #empty>
+        <p>当前筛选范围暂无拣货任务。</p>
+        <NvButton as-child size="sm">
+          <RouterLink :to="{ path: '/wms/outbound', query: { siteCode: workSiteCode } }">
+            查看出库单
+          </RouterLink>
+        </NvButton>
+      </template>
       <template #cell-status="{ row }"
         ><NvStatusBadge
           :value="row.status"
@@ -607,7 +646,20 @@ function firstQuery(value: unknown) {
         </span>
       </template>
       <template #cell-actions="{ row }">
-        <div v-if="taskActions(row).length > 0" class="flex flex-wrap items-center gap-2">
+        <div
+          v-if="taskActions(row).length > 0 || canAssign(row)"
+          class="flex flex-wrap items-center gap-2"
+        >
+          <NvButton
+            v-if="canAssign(row)"
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`分配作业池 ${row.taskNo ?? ''}`"
+            @click="openAssign(row)"
+          >
+            分配作业池
+          </NvButton>
           <NvButton
             v-if="taskActions(row).includes('start')"
             size="sm"
@@ -644,6 +696,17 @@ function firstQuery(value: unknown) {
         />
       </template>
     </NvDataTable>
+
+    <WmsAssignWorkPoolDialog
+      v-if="assignOpen && canManagePickingAssignment"
+      v-model:open="assignOpen"
+      target="picking"
+      :resource-id="assignTarget?.warehouseTaskId"
+      :resource-label="`拣货任务 ${assignTarget?.taskNo ?? ''}`"
+      :site-code="assignTarget?.siteCode"
+      :version="assignTarget?.version"
+      @assigned="refreshPickingTasks"
+    />
 
     <NvDialog v-model:open="completeOpen">
       <NvDialogContent>

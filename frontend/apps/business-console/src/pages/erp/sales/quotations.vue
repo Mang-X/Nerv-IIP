@@ -8,6 +8,8 @@ import { usePagedList } from '@/composables/shared/usePagedList'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { RouterLink } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { i18n } from '@/i18n'
 import {
   NvButton,
@@ -57,6 +59,16 @@ definePage({
 })
 
 const quotations = useErpQuotations()
+const auth = useAuthStore()
+function canConvert(row: BusinessConsoleErpQuotationItem) {
+  return (
+    auth.principal?.permissionCodes?.includes('business.erp.sales.manage') &&
+    row.status === 'Approved' &&
+    Boolean(row.quotationNo?.trim()) &&
+    !row.convertedSalesOrderNo?.trim() &&
+    Boolean(row.expiresOn && row.expiresOn >= new Date().toISOString().slice(0, 10))
+  )
+}
 // 客户与物料从主数据目录里选，报价一开出就挂在真实客户与真实物料上。
 const { customerOptions, partnersPending } = useErpPartnerCatalog()
 const { uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
@@ -316,7 +328,12 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >
       <template #cell-actions="{ row }">
-        <NvRowActions v-if="isApprovable(row)" :label="`报价单操作 ${row.quotationNo ?? ''}`">
+        <NvButton v-if="canConvert(row)" as-child size="sm" variant="outline">
+          <RouterLink :to="{ path: '/erp/sales/orders', query: { quotationNo: row.quotationNo } }">
+            转为销售订单
+          </RouterLink>
+        </NvButton>
+        <NvRowActions v-else-if="isApprovable(row)" :label="`报价单操作 ${row.quotationNo ?? ''}`">
           <NvDropdownMenuItem
             :disabled="quotations.approveQuotationPending.value"
             @click="approve(row)"

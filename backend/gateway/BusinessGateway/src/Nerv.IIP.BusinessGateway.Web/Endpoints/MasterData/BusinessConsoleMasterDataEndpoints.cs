@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -90,7 +92,8 @@ public sealed class ListBusinessConsoleSkusEndpoint(
                 "sku",
                 request.IncludeDisabled,
                 request.Skip,
-                request.Take),
+                request.Take,
+                Keyword: request.Keyword),
             cancellationToken);
 }
 
@@ -491,7 +494,10 @@ public sealed class BusinessConsoleCreateSkillRequestValidator : Validator<Busin
         RuleFor(x => x.SkillCode).MaximumLength(100);
         RuleFor(x => x.SkillName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ValidityMonths).GreaterThan(0).When(x => x.ValidityMonths.HasValue);
+        RuleFor(x => x.ValidityMonths)
+            .Must(value => value is > 0)
+            .WithMessage("需持证上岗时，证书有效期必须为正整数月。")
+            .When(x => x.RequiresCertification);
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
@@ -506,7 +512,10 @@ public sealed class BusinessConsoleUpdateSkillRequestValidator : Validator<Busin
         RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SkillName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ValidityMonths).GreaterThan(0).When(x => x.ValidityMonths.HasValue);
+        RuleFor(x => x.ValidityMonths)
+            .Must(value => value is > 0)
+            .WithMessage("需持证上岗时，证书有效期必须为正整数月。")
+            .When(x => x.RequiresCertification);
         RuleFor(x => x.Description).MaximumLength(500);
     }
 }
@@ -813,7 +822,9 @@ public sealed class BusinessConsoleAssignPersonnelSkillRequestValidator : Valida
         RuleFor(x => x.UserId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Level).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EffectiveTo).GreaterThanOrEqualTo(x => x.EffectiveFrom);
+        RuleFor(x => x.EffectiveFrom).NotEmpty().WithMessage("请选择生效日期。");
+        RuleFor(x => x.EffectiveTo).Cascade(CascadeMode.Stop).NotEmpty().WithMessage("请选择有效期截止日期。")
+            .GreaterThanOrEqualTo(x => x.EffectiveFrom).WithMessage("有效期截止日期不能早于生效日期。");
     }
 }
 
@@ -1575,6 +1586,14 @@ public sealed class CreateBusinessConsoleReferenceDataCodeEndpoint(
         masterData.CreateReferenceDataCodeAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+internal static class BusinessConsoleCodeRuleJson
+{
+    internal static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+}
+
 [Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/code-rules")]
 [BusinessGatewayOperationId("listBusinessConsoleCodeRules")]
@@ -1586,6 +1605,8 @@ public sealed class ListBusinessConsoleCodeRulesEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesRead)
 {
+    protected override JsonSerializerOptions ResponseJsonOptions => BusinessConsoleCodeRuleJson.Options;
+
     protected override string OrganizationId(BusinessConsoleCodeRuleContextRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleCodeRuleContextRequest request) => request.EnvironmentId;
@@ -1608,6 +1629,8 @@ public sealed class GetBusinessConsoleCodeRuleEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesRead)
 {
+    protected override JsonSerializerOptions ResponseJsonOptions => BusinessConsoleCodeRuleJson.Options;
+
     protected override string OrganizationId(BusinessConsoleCodeRuleRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleCodeRuleRequest request) => request.EnvironmentId;
@@ -1630,6 +1653,8 @@ public sealed class CreateBusinessConsoleCodeRuleVersionEndpoint(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
 {
+    protected override JsonSerializerOptions ResponseJsonOptions => BusinessConsoleCodeRuleJson.Options;
+
     protected override string OrganizationId(BusinessConsoleCreateCodeRuleVersionRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleCreateCodeRuleVersionRequest request) => request.EnvironmentId;

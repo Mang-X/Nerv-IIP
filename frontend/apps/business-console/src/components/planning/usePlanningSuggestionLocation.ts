@@ -98,8 +98,13 @@ export function usePlanningSuggestionLocation(
   const sourceRunId = computed(() =>
     typeof route.query.runId === 'string' ? route.query.runId.trim() : '',
   )
+  const sourceSuggestionType = computed(() => {
+    const type = route.query.suggestionType
+    return type === 'planned-purchase' || type === 'planned-work-order' ? type : ''
+  })
   watch(
     [
+      sourceSuggestionType,
       sourceSuggestionId,
       sourceRunId,
       sourceOrder,
@@ -108,12 +113,14 @@ export function usePlanningSuggestionLocation(
       canReadMps,
       canReadDeliveries,
     ],
-    ([suggestionId, runId]) => {
+    ([suggestionType, suggestionId, runId]) => {
       suggestionFilters.status = 'all'
-      suggestionTypeFilter.type = 'all'
+      suggestionTypeFilter.type = canReadMrp.value && suggestionType ? suggestionType : 'all'
       focusedSuggestionId.value = ''
       activeTab.value =
-        (suggestionId || runId) && canReadMrp.value ? 'suggestions' : defaultTab.value
+        (suggestionId || runId || suggestionType) && canReadMrp.value
+          ? 'suggestions'
+          : defaultTab.value
       manualSuggestionRunId.value = runId || 'latest'
     },
     { immediate: true },

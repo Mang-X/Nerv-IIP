@@ -22,7 +22,10 @@ import {
 
 export function useShiftCalendarPage() {
   const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
-  const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')
+  const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>(
+    'work-calendar',
+    { all: true },
+  )
   const shiftActions = useMasterDataResourceActions('shift')
   const calActions = useMasterDataResourceActions('work-calendar')
   // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
@@ -56,15 +59,6 @@ export function useShiftCalendarPage() {
   function isNonEmpty(value: string) {
     return value.trim().length > 0
   }
-  function filterRows(items: BusinessConsoleResourceItem[], keyword: string) {
-    const kw = keyword.trim().toLowerCase()
-    if (!kw) return items
-    return items.filter((row) =>
-      [row.code, row.displayName, row.snapshotVersion].some((value) =>
-        (value ?? '').toLowerCase().includes(kw),
-      ),
-    )
-  }
   function refreshAll() {
     void shifts.refresh()
     void calendars.refresh()
@@ -82,9 +76,11 @@ export function useShiftCalendarPage() {
   const shiftOpen = shallowRef(false)
   const shiftSession = shallowRef(0)
   const shiftEditing = shallowRef<BusinessConsoleResourceItem>()
-  const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.value))
+  const shiftRows = shifts.items
   const shiftListError = computed(() => inlineErrorMessage(shifts.error.value))
   watch([shiftKeyword, shiftPageSize], () => {
+    shifts.filters.skip = 0
+    shifts.filters.keyword = shiftKeyword.value.trim() || undefined
     shiftPage.value = 1
   })
   watch(
@@ -107,20 +103,20 @@ export function useShiftCalendarPage() {
 
   // ---- 工作日历 ----
   const calKeyword = ref('')
+  watch(calKeyword, (value) => {
+    calendars.filters.keyword = value.trim() || undefined
+  })
   const calOpen = ref(false)
   const calShowErrors = ref(false)
   const calEditingCode = shallowRef<string | null>(null)
   const calEditLoading = shallowRef(false)
   const calForm = reactive({ code: '', name: '' })
-  const calRows = computed(() => filterRows(calendars.items.value, calKeyword.value))
+  const calRows = calendars.items
   const canCreateCal = computed(() => isNonEmpty(calForm.name))
   const calListError = computed(() => inlineErrorMessage(calendars.error.value))
   watch(calOpen, (open) => {
     if (open) calShowErrors.value = false
   })
-  // 日历用整行可点列表（无分页），一次取足；通常数量很少。
-  calendars.filters.skip = 0
-  calendars.filters.take = 200
   function resetCalForm() {
     Object.assign(calForm, { code: '', name: '' })
   }
@@ -152,6 +148,9 @@ export function useShiftCalendarPage() {
     try {
       if (calEditingCode.value) {
         await calActions.update(calEditingCode.value, { name: calForm.name.trim() })
+        if (calEditingCode.value === selectedCalCode.value) {
+          selectedCalDisplayName.value = calForm.name.trim()
+        }
         notifySuccess(`工作日历「${calForm.name.trim()}」已更新。`)
       } else {
         await calendars.create({
@@ -192,6 +191,7 @@ export function useShiftCalendarPage() {
   }
 
   const selectedCalCode = shallowRef<string | null>(null)
+  const selectedCalDisplayName = shallowRef<string>()
   const calDetailLoading = shallowRef(false)
   const calDetailLoaded = shallowRef(false)
   // 选中日历的真实明细（全部读自 fetchDetail，不画假数据）。
@@ -336,6 +336,7 @@ export function useShiftCalendarPage() {
   async function selectCalendar(row: BusinessConsoleResourceItem) {
     if (!row.code) return
     selectedCalCode.value = row.code
+    selectedCalDisplayName.value = row.displayName ?? undefined
     await loadCalendarDetail(row.code)
   }
   async function loadCalendarDetail(code: string) {
@@ -381,6 +382,7 @@ export function useShiftCalendarPage() {
   const selectedCalName = computed(
     () =>
       calendars.items.value.find((c) => c.code === selectedCalCode.value)?.displayName ??
+      selectedCalDisplayName.value ??
       selectedCalCode.value ??
       '',
   )

@@ -191,7 +191,7 @@ async function submit(row: BusinessConsoleMesAndonCallResponse, action: AndonAct
     :loading="pending"
     :error="error"
     :error-message="inlineErrorMessage(error, '安灯队列读取失败，请重试。')"
-    empty-message="暂无安灯呼叫"
+    empty-message="暂无待响应安灯"
     :searchable="false"
     :client-sort="false"
     manual
@@ -212,7 +212,8 @@ async function submit(row: BusinessConsoleMesAndonCallResponse, action: AndonAct
         <NvButton variant="outline" @click="clearFilters">清空筛选</NvButton>
       </template>
       <template v-else>
-        <p class="text-sm text-muted-foreground">暂无待响应呼叫</p>
+        <p class="text-sm font-medium">暂无待响应安灯</p>
+        <p class="text-xs text-muted-foreground">现场人员可从 PDA 的工序执行页发起安灯呼叫。</p>
         <NvButton variant="outline" @click="changeFilters({ queue: 'all' })">查看全部呼叫</NvButton>
       </template>
     </template>

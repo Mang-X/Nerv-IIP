@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  coverageRate,
+  suggestionsPerDemand,
   runHorizonLabel,
   peggingTypeLabel,
   isComponentRow,
@@ -89,8 +89,8 @@ defineProps<{
       <template #cell-suggestionCount="{ row }"
         ><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template
       >
-      <template #cell-coverage="{ row }"
-        ><span class="tabular-nums font-medium">{{ coverageRate(row) }}</span></template
+      <template #cell-suggestionsPerDemand="{ row }"
+        ><span class="tabular-nums font-medium">{{ suggestionsPerDemand(row) }}</span></template
       >
       <template #cell-availabilityCount="{ row }"
         ><span class="tabular-nums">{{ row.availabilityCount ?? 0 }}</span></template

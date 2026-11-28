@@ -9,12 +9,14 @@ import {
   normalizeReferenceToken,
 } from '@/composables/planning/fulfillment'
 
-// MRP 运行覆盖率 = 建议数 / 需求数（除零保护）。
-export function coverageRate(run: BusinessConsoleMrpRunItem): string {
+export function suggestionsPerDemand(run: BusinessConsoleMrpRunItem): string {
   const demandCount = run.demandCount ?? 0
   if (demandCount <= 0) return '—'
-  const pct = Math.round(((run.suggestionCount ?? 0) / demandCount) * 100)
-  return `${pct}%`
+  const suggestionCount = run.suggestionCount ?? 0
+  const average = Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(
+    suggestionCount / demandCount,
+  )
+  return `${average} 条/需求（${suggestionCount} ÷ ${demandCount}）`
 }
 
 // 运行的人读锚点：以「计划范围」作追溯标题，避免裸 GUID。
@@ -128,6 +130,7 @@ export function reasonLabel(value?: string | null) {
     material_shortage: '物料不足',
     demand_pegging: '需求驱动',
     safety_stock: '安全库存',
+    'net-requirement': '需求存在净缺口',
     'finished-good-net-requirement': '成品净需求',
     'component-net-requirement': '组件净需求',
     'safety-stock-replenishment': '安全库存低于下限，建议补货',
@@ -230,12 +233,6 @@ export function formatPercent(value?: number | null) {
  * `scrap/yield` 是英文码直出（#1418 顺带项），且信息与下方「废品率/良率」重复——
  * 展示时只取分号前的算式部分，比率交给下方中文行。存量建议无需重算即可生效。
  */
-export function formulaMathPart(formula?: string | null) {
-  if (!formula) return '—'
-  const [mathPart] = formula.split(';')
-  return (mathPart ?? formula).trim()
-}
-
 export function inputDegradationLabel(sources?: readonly string[] | null) {
   return sources && sources.length > 0
     ? sources.map(inputDegradationSourceLabel).join('、')

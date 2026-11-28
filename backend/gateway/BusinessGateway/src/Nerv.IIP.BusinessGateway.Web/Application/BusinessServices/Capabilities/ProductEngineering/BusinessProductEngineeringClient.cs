@@ -409,13 +409,19 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             "/api/business/v1/engineering/boms/diff?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
-                ("bomKind", request.BomKind),
+                ("bomKind", request.BomKind switch
+                {
+                    "engineering" => "EngineeringBom",
+                    "manufacturing" => "ManufacturingBom",
+                    _ => request.BomKind,
+                }),
                 ("fromBomCode", request.FromBomCode),
                 ("fromRevision", request.FromRevision),
                 ("toBomCode", request.ToBomCode),
                 ("toRevision", request.ToRevision)),
             null,
-            cancellationToken);
+            cancellationToken,
+            acceptKnownExceptionCodeZero: true);
 
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,

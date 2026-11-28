@@ -67,7 +67,7 @@ function Get-NervCiImpactPlan {
     # Assert-FullChainProjectReferenceCoverage 从 .csproj 的 ProjectReference **派生**出来看守：
     # 新增一条 ProjectReference 而忘了更新本集合，那条契约立刻红。别手工往这里加而不跑那条契约。
     $fullChainReferencedBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@('Erp', 'DemandPlanning', 'Maintenance', 'Mes', 'Wms'),
+        [string[]]@('Erp', 'DemandPlanning', 'Inventory', 'Maintenance', 'Mes', 'Quality', 'Wms'),
         [StringComparer]::Ordinal)
     $acceptanceScenarioMatrixOwningPathSet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@(

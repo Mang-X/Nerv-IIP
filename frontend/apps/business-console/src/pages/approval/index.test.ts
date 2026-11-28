@@ -375,7 +375,10 @@ describe('approval center page permissions and actions', () => {
 describe('approval display identities', () => {
   it.each([
     ['purchase-order', '采购订单'],
-    ['unregistered-system-type', '—'],
+    ['sales-order-credit-release', '销售订单信用解冻'],
+    ['inventory-count-variance', '库存盘点差异'],
+    ['', '未指定'],
+    ['unregistered-system-type', '未识别类型（unregistered-system-type）'],
   ])('translates the rejection document type %s', async (code, label) => {
     approvalState.taskDocumentType = code
     const wrapper = mountApproval(['business.approvals.manage'])
@@ -386,7 +389,6 @@ describe('approval display identities', () => {
       .trigger('click')
     const context = wrapper.findComponent({ name: 'CarriedContextSummary' })
     expect(context.text()).toContain(label)
-    expect(context.text()).not.toContain(code)
   })
 
   it('shows personnel business information, searches and delegates with the original identity', async () => {

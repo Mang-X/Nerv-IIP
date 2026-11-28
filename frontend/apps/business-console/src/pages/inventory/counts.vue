@@ -129,8 +129,6 @@ watch(
     filters.countTaskCode = firstQuery(query.countTaskCode) || undefined
     const sku = firstQuery(query.skuCode) || firstQuery(query.skuId)
     if (sku) taskForm.skuCode = sku
-    const site = firstQuery(query.siteCode)
-    if (site) taskForm.siteCode = site
     const location = firstQuery(query.locationCode)
     if (location) taskForm.locationCode = location
     const lot = firstQuery(query.lotNo) || firstQuery(query.materialLotId)
@@ -142,7 +140,11 @@ watch(
 )
 
 // 工厂给默认值、单位跟随物料，仓管只需要选物料与库位。
-const { siteOptions, sitesPending } = useInventoryScopeDefaults(taskForm)
+const { siteSelection, siteOptions, sitesPending } = useInventoryScopeDefaults(
+  taskForm,
+  () => firstQuery(route.query.siteCode) ?? '',
+  { rememberSite: false },
+)
 // 寄售库存的货主是业务伙伴：客户寄售选客户、供应商寄售选供应商；其余货主类型没有货主可选。
 const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
 const ownerPartner = computed(() => {
@@ -510,7 +512,7 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="count-task-site">工厂</NvFieldLabel>
               <NvEntityPicker
                 id="count-task-site"
-                v-model="taskForm.siteCode"
+                v-model="siteSelection"
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"

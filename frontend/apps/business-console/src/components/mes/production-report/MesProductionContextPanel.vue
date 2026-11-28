@@ -69,7 +69,9 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
       <div class="flex items-start justify-between gap-3">
         <div>
           <h2 class="text-sm font-semibold text-foreground">当前在制</h2>
-          <p class="mt-1 text-xs text-muted-foreground">按当前工作中心筛选展示，不参与产量统计。</p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            按所选工作中心展示当前在制，不受日报日期范围限制。
+          </p>
         </div>
         <NvBadge v-if="canReadWip && wipState === 'ready'" variant="neutral">
           {{ wipTotal }} 个在制工序

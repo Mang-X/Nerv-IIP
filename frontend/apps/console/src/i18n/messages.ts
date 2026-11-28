@@ -41,6 +41,7 @@ export const messages = {
     },
     home: {
       latestOperationTask: '最新操作任务',
+      unableToLoadInstances: '无法加载实例列表',
       unableToLoadInstanceDetail: '无法加载实例详情',
     },
   },
@@ -86,6 +87,7 @@ export const messages = {
     },
     home: {
       latestOperationTask: 'Latest operation task',
+      unableToLoadInstances: 'Unable to load instances',
       unableToLoadInstanceDetail: 'Unable to load instance detail',
     },
   },

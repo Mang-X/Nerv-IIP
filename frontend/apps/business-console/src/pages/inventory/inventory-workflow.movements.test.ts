@@ -18,6 +18,20 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 describe('inventory workflow pages', () => {
   beforeEach(resetFixture)
 
+  it('在来源单据下显示真实来源行，缺失时说明未记录', () => {
+    inventoryState.movementRows = [
+      { movementId: 'mov-1', sourceDocumentId: 'IN-101', sourceDocumentLineId: '20' },
+      { movementId: 'mov-2', sourceDocumentId: 'IN-102' },
+    ]
+    const wrapper = mountInventoryPage(MovementsPage)
+    const sourceCells = wrapper.findAll('[data-cell="sourceDocumentId"]').map((cell) => cell.text())
+    expect(sourceCells[0]).toContain('IN-101')
+    expect(sourceCells[0]).toContain('20')
+    expect(sourceCells[1]).toContain('IN-102')
+    expect(sourceCells[1]).toContain('未记录来源行')
+    wrapper.unmount()
+  })
+
   // #3832 审核 R3-2：库位选择器的工厂只从表单工厂来（候选收窄与就地新增都用它），每页一条轻量断言。
   // 批次 / 序列号不可新增，漏传工厂不会在界面上显形，只能靠这里逐字段钉住（审核 R4-1）。
   it.each([

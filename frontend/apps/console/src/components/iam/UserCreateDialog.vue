@@ -14,6 +14,7 @@ import {
   FieldGroup,
   FieldLabel,
   NvInput,
+  NvDatePicker,
 } from '@nerv-iip/ui'
 import { reactive, watch } from 'vue'
 
@@ -148,10 +149,10 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-account-expires">账号有效期</FieldLabel>
-            <NvInput
+            <NvDatePicker
               id="iam-create-account-expires"
               v-model="form.accountExpiresDate"
-              type="date"
+              clearable
             />
           </Field>
 
@@ -167,7 +168,8 @@ function toUtcEndOfDay(value: string) {
           </Field>
         </FieldGroup>
 
-        <NvDialogFooter show-close-button>
+        <NvDialogFooter>
+          <Button type="button" variant="outline" @click="open = false">取消</Button>
           <Button type="submit"> 新建用户 </Button>
         </NvDialogFooter>
       </form>

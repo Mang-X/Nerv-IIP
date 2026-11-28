@@ -43,7 +43,7 @@ describe('物料交付页内事实', () => {
           coveredQuantity: 12,
           uncoveredQuantity: 18,
           status: 'yellow',
-          reasons: ['supply-insufficient', 'expected-start-missing'],
+          reasons: ['plan-not-selected', 'supply-insufficient', 'expected-start-missing'],
           demandSources: [
             {
               demandSourceId: 'demand-1',
@@ -139,7 +139,16 @@ describe('物料交付页内事实', () => {
     const wrapper = render()
     expect(wrapper.text()).toContain('紧张')
     expect(wrapper.text()).toContain('供应不足')
-    expect(wrapper.text()).toContain('缺少实际排程开始')
+    expect(wrapper.text()).toContain('未选择 APS 方案，部分排程时间不可用')
+    const reasonDetails = wrapper
+      .findAll('details')
+      .find((item) => item.get('summary').text() === '查看原因')!
+    expect(reasonDetails.attributes('open')).toBeUndefined()
+    expect(reasonDetails.element.previousElementSibling?.textContent).toContain('供应不足')
+    await reasonDetails.get('summary').trigger('click')
+    expect(reasonDetails.attributes('open')).toBeDefined()
+    expect(reasonDetails.text()).toContain('未选择 APS 方案')
+    expect(reasonDetails.text()).toContain('缺少实际排程开始')
     expect(wrapper.find('[data-expected-start]').text()).toBe('—')
     expect(wrapper.find('[data-expected-arrival]').text()).toBe('—')
     state.data.items![0]!.status = 'red'

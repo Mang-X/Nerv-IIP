@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, reactive } from 'vue'
+import { routeLocationKey } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -68,12 +69,12 @@ function resolveCatalog(index: number, items: Array<Record<string, string>>) {
   })
 }
 
-function createHarness() {
+function createHarness(siteCode?: string, principalId = 'user-admin') {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
   auth.principal = {
-    principalId: 'user-admin',
+    principalId,
     organizationId: 'org-001',
     environmentId: 'env-dev',
   } as never
@@ -97,7 +98,10 @@ function createHarness() {
     },
   })
   const wrapper = mount(Harness, {
-    global: { plugins: [pinia, [PiniaColada, { queryOptions: { gcTime: 300_000 } }]] },
+    global: {
+      plugins: [pinia, [PiniaColada, { queryOptions: { gcTime: 300_000 } }]],
+      provide: { [routeLocationKey as symbol]: { query: { siteCode } } },
+    },
   })
   if (!scope) throw new Error('WMS 作业范围 composable 未初始化')
   return { wrapper, filters, scope, auth }
@@ -109,8 +113,8 @@ describe('PC WMS 作业范围选择闭环 (#1343)', () => {
     localStorage.clear()
   })
 
-  it('目录返回后自动选择首项、绑定可信范围并重置分页', async () => {
-    const { wrapper, filters, scope } = createHarness()
+  it('目录返回后自动选择唯一工厂、绑定可信范围并重置分页', async () => {
+    const { wrapper, filters, scope } = createHarness(undefined, 'user-switch')
 
     // 目录未返回：不带任何范围参数，列表侧 gate 保持关闭。
     expect(filters.scopeKind).toBeUndefined()
@@ -122,22 +126,22 @@ describe('PC WMS 作业范围选择闭环 (#1343)', () => {
 
     expect(scope.hasSelection.value).toBe(true)
     expect(scope.unreadyMessage.value).toBe('')
-    expect(filters.scopeKind).toBe('work-pool')
-    expect(filters.scopeId).toBe('WMS-SITE-001-RECEIVING')
+    expect(filters.scopeKind).toBe('site')
+    expect(filters.scopeId).toBe('SITE-001')
     expect(filters.skip).toBe(0)
 
     // 显式切换：范围参数跟着换，并被记住。
     filters.skip = 20
-    scope.scopeKey.value = 'site:SITE-001'
+    scope.scopeKey.value = 'work-pool:WMS-SITE-001-RECEIVING'
     await flushPromises()
-    expect(filters.scopeKind).toBe('site')
-    expect(filters.scopeId).toBe('SITE-001')
+    expect(filters.scopeKind).toBe('work-pool')
+    expect(filters.scopeId).toBe('WMS-SITE-001-RECEIVING')
     expect(filters.skip).toBe(0)
     expect(
       localStorage.getItem(
-        'nerv-iip.business-console.wms-work-scope.v1:user-admin|org-001|env-dev|receipts',
+        'nerv-iip.business-console.wms-work-scope.v1:user-switch|org-001|env-dev|receipts',
       ),
-    ).toBe('site:SITE-001')
+    ).toBe('work-pool:WMS-SITE-001-RECEIVING')
   })
 
   it('记住的选择仍被授权时优先于目录首项', async () => {
@@ -190,11 +194,27 @@ describe('PC WMS 作业范围选择闭环 (#1343)', () => {
     expect(filters.scopeId).toBe('SITE-001')
 
     // 换主体：上一个主体的选择即便仍在授权清单里也不能继续沿用——新主体没有记忆，
-    // 应回落清单首项。
+    // 应等待新主体的目录。
     auth.principal = { principalId: 'user-emp-049' } as never
     await flushPromises()
 
-    expect(filters.scopeKind).toBe('work-pool')
-    expect(filters.scopeId).toBe('WMS-SITE-001-RECEIVING')
+    expect(filters.scopeKind).toBeUndefined()
+    resolveCatalog(1, [POOL_SCOPE, SITE_SCOPE, { ...SITE_SCOPE, scopeId: 'ST001' }])
+    await flushPromises()
+    expect(filters.scopeId).toBeUndefined()
+  })
+
+  it('合法深链优先于默认工厂，多工厂无可继承范围时要求选择', async () => {
+    const { filters, wrapper } = createHarness('ST001')
+    resolveCatalog(0, [SITE_SCOPE, { ...SITE_SCOPE, scopeId: 'ST001' }])
+    await flushPromises()
+    expect(filters.scopeId).toBe('ST001')
+    wrapper.unmount()
+
+    const withoutLink = createHarness()
+    resolveCatalog(1, [SITE_SCOPE, { ...SITE_SCOPE, scopeId: 'ST001' }])
+    await flushPromises()
+    expect(withoutLink.filters.scopeId).toBeUndefined()
+    expect(withoutLink.wrapper.text()).toContain('请先在上方选择作业范围')
   })
 })

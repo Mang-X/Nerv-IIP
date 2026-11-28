@@ -93,6 +93,51 @@ public sealed class GatewayInstanceTests
         Assert.Contains("AppHub unavailable", await response.Content.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task AppHub_http_client_authenticates_list_and_detail_with_internal_service_credentials()
+    {
+        using var httpClient = new HttpClient(new InternalAppHubHandler()) { BaseAddress = new Uri("http://apphub.local") };
+        var client = new HttpAppHubClient(httpClient, new AppHubTestTokenProvider());
+
+        var list = await client.QueryInstancesAsync(new InstanceListQuery("org-001", "env-dev", 1, 20, null, null, null), CancellationToken.None);
+        var detail = await client.GetInstanceAsync("org-001", "env-dev", "demo-api-001", CancellationToken.None);
+
+        Assert.Equal("demo-api-001", Assert.Single(list.Items).InstanceKey);
+        Assert.Equal("demo-api-001", detail.InstanceKey);
+    }
+
+    private sealed class AppHubTestTokenProvider : IInternalServiceTokenProvider
+    {
+        public string BearerToken => "apphub-test-token";
+    }
+
+    private sealed class InternalAppHubHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Headers.Authorization?.ToString() != "Bearer apphub-test-token")
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+
+            var appHub = new FakeAppHubClient();
+            object data;
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/internal/apphub/v1/instances/query")
+            {
+                var query = await request.Content!.ReadFromJsonAsync<InstanceListQuery>(cancellationToken);
+                data = await appHub.QueryInstancesAsync(query!, cancellationToken);
+            }
+            else
+            {
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.Equal("/internal/apphub/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev", request.RequestUri!.PathAndQuery);
+                data = await appHub.GetInstanceAsync("org-001", "env-dev", "demo-api-001", cancellationToken);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { success = true, data }) };
+        }
+    }
+
     private sealed class FakeAppHubClient : IAppHubClient
     {
         public int ListCalls { get; private set; }

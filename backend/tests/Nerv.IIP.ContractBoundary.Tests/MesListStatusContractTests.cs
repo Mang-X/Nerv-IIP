@@ -160,6 +160,8 @@ public sealed class MesListStatusContractTests
                 "生产统计降级原因（DegradedReason），是原因码不是状态值域。"),
             Exempt(["available", "forbidden"],
                 "工单商业来源读取状态（BusinessConsoleMesCommercialSourceStatus），表达来源读取权限与事实可用性，不是 MES 聚合生命周期状态。"),
+            Exempt(["pending-decision", "auto-rebound", "blocked-for-manual-confirmation", "continue-with-archived-version", "abort-work-order"],
+                "工程变更对工单的处置结果，归工程变更影响读面，与工单生命周期状态独立。"),
             Exempt(["GET"], "工序动作回执里的 HTTP 方法字面量。"),
             Exempt(["confirmed"], "工序动作回执的确认位字面量。"),
             Exempt(["accepted"], "工单转序回执的受理位字面量。"));

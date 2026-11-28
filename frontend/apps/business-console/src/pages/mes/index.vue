@@ -43,6 +43,7 @@ definePage({
 const {
   blockers,
   counts,
+  overview,
   overviewError,
   overviewPending,
   overviewState,
@@ -53,7 +54,7 @@ const {
 // 这一页的结论（有没有阻塞、能不能放行）只有在真的读到数据时才成立。
 // 读面失败 / 未读取时，`blockers` 是空数组、各项计数是 0——若照直渲染，屏幕就会对着车间管理者
 // 断言「现场无阻塞」。所以本页所有数字与结论一律以 overviewState 为准，非 ready 一律显式说「取不到」。
-const isReady = computed(() => overviewState.value === 'ready')
+const isReady = computed(() => overviewState.value === 'ready' && overview.value != null)
 const stateNote = computed(() => readStateNote(overviewState.value))
 const errorMessage = computed(() => inlineErrorMessage(overviewError.value))
 // facade 回的 count key 是 kebab-case（work-orders / operation-tasks）。
@@ -87,7 +88,7 @@ function metricCell(
   return {
     key,
     label,
-    value: readStateValue(overviewState.value, value),
+    value: readStateValue(isReady.value ? 'ready' : 'loading', value),
     unit: isReady.value ? unit : undefined,
     valueTone: isReady.value ? tone : undefined,
     meta: stateNote.value || undefined,
@@ -331,6 +332,7 @@ const pendingEmptyMessage = computed(() => {
   if (overviewState.value === 'loading') return '正在读取按角色汇总的待办。'
   if (overviewState.value === 'error')
     return '待办获取失败，无法判断各角色是否有待办。请点右上角「刷新」重试。'
+  if (!isReady.value) return '尚未取得待办数据。'
   return '当前没有按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。'
 })
 

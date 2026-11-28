@@ -52,7 +52,7 @@ defineProps<{
       :loading="materialIssueRequestsPending"
       :error="materialIssueRequestsError"
       :error-message="materialIssueRequestsErrorMessage"
-      empty-message="本工单还没有领料单。缺料时在上方「发起领料」，仓库接单后这里会出现出库单号。"
+      empty-message="本工单暂无领料申请。可按需发起领料，在这里查看申请量、已收量和关联出库单。"
       :searchable="false"
       :column-settings="false"
       data-testid="material-issue-requests"

@@ -7,6 +7,7 @@ import MbomPage from './mbom.vue'
 const stub = vi.hoisted(() => ({
   releaseMbom: vi.fn().mockResolvedValue({ data: {} }),
   fetchMbomDetail: vi.fn(),
+  fetchEbomDetail: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -18,6 +19,13 @@ const mbomRow = {
   status: 'Published',
   effectiveDate: '2026-01-01',
   materialLines: [{ skuCode: 'SKU-2', quantity: 2, unitOfMeasureCode: 'PCS', scrapRate: 0.05 }],
+}
+
+const ebomA = { bomCode: 'EBOM-1', revision: 'A', parentItemCode: 'SKU-1', status: 'Published' }
+const sources = shallowRef([ebomA])
+const sourceDetail = {
+  ...ebomA,
+  lines: [{ childItemCode: 'SKU-2', quantity: 2, unitOfMeasureCode: 'PCS' }],
 }
 
 const filters = reactive({
@@ -43,9 +51,8 @@ vi.mock('@/composables/engineering', () => ({
     fetchMbomDetail: stub.fetchMbomDetail,
   }),
   usePublishedEboms: () => ({
-    eboms: computed(() => [
-      { bomCode: 'EBOM-1', revision: 'A', parentItemCode: 'SKU-1', status: 'Published' },
-    ]),
+    eboms: sources,
+    fetchEbomDetail: stub.fetchEbomDetail,
     ebomsPending: shallowRef(false),
     ebomsError: shallowRef(undefined),
     refreshEboms: vi.fn(),
@@ -107,6 +114,15 @@ const datePickerStub = {
   },
 }
 const formSelectStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'disabled'],
+    emits: ['update:modelValue'],
+    template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)">
+      <option value=""></option>
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>`,
+  },
+
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -139,7 +155,9 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 beforeEach(() => {
-  stub.releaseMbom.mockClear()
+  sources.value = [ebomA]
+  stub.fetchEbomDetail.mockReset().mockResolvedValue(sourceDetail)
+  stub.releaseMbom.mockReset().mockResolvedValue({ data: {} })
   stub.fetchMbomDetail.mockReset()
   stub.fetchMbomDetail.mockResolvedValue(undefined)
   stub.toastSuccess.mockClear()
@@ -192,17 +210,12 @@ describe('engineering mbom page', () => {
     await findButton(wrapper, '发布新版本')!.trigger('click')
     await flushPromises()
 
-    const selects = wrapper.findAll('select')
-    // 顺序：引用EBOM、产出物料、物料行物料、物料行单位……
-    await selects[0]!.setValue('EBOM-1::A')
-    await selects[1]!.setValue('SKU-1')
-    await wrapper.find('#mbom-rev').setValue('B')
+    expect(stub.fetchEbomDetail).toHaveBeenCalledWith('EBOM-1', 'A')
+    expect(wrapper.get('#mbom-sku').attributes('readonly')).toBeDefined()
+    expect(wrapper.text()).toContain('已带入 1 行')
+    await wrapper.get('#mbom-rev').setValue('B')
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
-    const after = wrapper.findAll('select')
-    await after[2]!.setValue('SKU-2') // 物料
-    await after[3]!.setValue('PCS') // 单位
-    await wrapper.findAll('input[type="number"]')[0]!.setValue('4') // 数量
-    await flushPromises()
+    expect((wrapper.get('#mbom-qty-0').element as HTMLInputElement).value).toBe('2')
 
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -215,7 +228,7 @@ describe('engineering mbom page', () => {
     expect(body.revision).toBe('B')
     const lines = body.materialLines as Array<Record<string, unknown>>
     expect(lines[0]!.skuCode).toBe('SKU-2')
-    expect(lines[0]!.quantity).toBe(4)
+    expect(lines[0]).toMatchObject({ quantity: 2, unitOfMeasureCode: 'PCS' })
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
@@ -225,10 +238,10 @@ describe('engineering mbom page', () => {
     await findButton(wrapper, '发布新版本')!.trigger('click')
     await flushPromises()
 
-    const ebomSelect = wrapper.findAll('select')[0]!
+    const ebomSelect = wrapper.get('#mbom-ebom')
     const options = ebomSelect.findAll('option')
-    expect(options.length).toBe(1)
-    expect(options[0]!.attributes('value')).toBe('EBOM-1::A')
+    expect(options.length).toBe(2)
+    expect(options[1]!.attributes('value')).toBe('EBOM-1::A')
   })
 
   it('校验拦截：必填未填点发布出现汇总提示且不发请求', async () => {
@@ -250,12 +263,11 @@ describe('engineering mbom page', () => {
     await findButton(wrapper, '发布新版本')!.trigger('click')
     await flushPromises()
 
-    // 引用EBOM(0)、产出物料(1)、物料行物料(2)、物料行单位(3)
-    const selects = wrapper.findAll('select')
-    await selects[2]!.setValue('SKU-2') // 选物料
+    await wrapper.get('#mbom-mat-0').setValue('SKU-1')
+    await wrapper.get('#mbom-mat-0').setValue('SKU-2')
     await flushPromises()
 
-    const uomSelect = wrapper.findAll('select')[3]!
+    const uomSelect = wrapper.findAll('select')[2]!
     expect((uomSelect.element as HTMLSelectElement).value).toBe('PCS')
   })
 
@@ -276,19 +288,97 @@ describe('engineering mbom page', () => {
     await findButton(wrapper, '发布新版本')!.trigger('click')
     await flushPromises()
 
-    const selects = wrapper.findAll('select')
-    await selects[0]!.setValue('EBOM-1::A')
-    await selects[1]!.setValue('SKU-1') // 产出物料
-    await wrapper.find('#mbom-rev').setValue('B')
-    const after = wrapper.findAll('select')
-    await after[2]!.setValue('SKU-1') // 物料 = 产出物料
-    await wrapper.findAll('input[type="number"]')[0]!.setValue('1')
-    await flushPromises()
+    await wrapper.get('#mbom-rev').setValue('B')
+    await wrapper.get('#mbom-mat-0').setValue('SKU-1')
 
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(wrapper.text()).toContain('物料不能与产出物料')
     expect(stub.releaseMbom).not.toHaveBeenCalled()
+  })
+  it('切换来源先保护修改，确认后只替换物料行并保留配方', async () => {
+    const ebomB = { ...ebomA, revision: 'B' }
+    sources.value = [ebomA, ebomB]
+    stub.fetchEbomDetail.mockResolvedValueOnce(sourceDetail).mockResolvedValueOnce({
+      ...ebomB,
+      lines: [{ childItemCode: 'SKU-2', quantity: 6, unitOfMeasureCode: 'SET' }],
+    })
+    const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await wrapper.get('#mbom-ebom').setValue('EBOM-1::A')
+    await flushPromises()
+    await wrapper.get('#mbom-qty-0').setValue('7')
+    await findButton(wrapper, '增加配方')!.trigger('click')
+    await wrapper.get('#mbom-param-0').setValue('温度')
+    await wrapper.get('#mbom-ebom').setValue('EBOM-1::B')
+    expect(stub.fetchEbomDetail).toHaveBeenCalledTimes(1)
+    await findButton(wrapper, '保留当前来源')!.trigger('click')
+    expect((wrapper.get('#mbom-qty-0').element as HTMLInputElement).value).toBe('7')
+    await wrapper.get('#mbom-ebom').setValue('EBOM-1::B')
+    await findButton(wrapper, '更换来源')!.trigger('click')
+    await flushPromises()
+    expect(stub.fetchEbomDetail).toHaveBeenLastCalledWith('EBOM-1', 'B')
+    expect((wrapper.get('#mbom-qty-0').element as HTMLInputElement).value).toBe('6')
+    expect((wrapper.get('#mbom-param-0').element as HTMLInputElement).value).toBe('温度')
+  })
+
+  it('来源晚到不覆盖新版本，失败可重试当前精确修订', async () => {
+    const ebomB = { ...ebomA, revision: 'B' }
+    sources.value = [ebomA, ebomB]
+    let resolveA!: (value: typeof sourceDetail) => void
+    stub.fetchEbomDetail
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveA = resolve
+          }),
+      )
+      .mockRejectedValueOnce(new Error('读取失败'))
+      .mockResolvedValueOnce({ ...sourceDetail, revision: 'B', parentItemCode: 'SKU-2', lines: [] })
+    const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await wrapper.get('#mbom-ebom').setValue('EBOM-1::A')
+    await wrapper.get('#mbom-ebom').setValue('EBOM-1::B')
+    await flushPromises()
+    await findButton(wrapper, '重试读取来源')!.trigger('click')
+    await flushPromises()
+    resolveA(sourceDetail)
+    await flushPromises()
+    expect(stub.fetchEbomDetail).toHaveBeenLastCalledWith('EBOM-1', 'B')
+    expect(wrapper.text()).toContain('EBOM-1 · 修订 B，已带入 0 行')
+    expect((wrapper.get('#mbom-sku').element as HTMLInputElement).value).toContain('主控板')
+  })
+  it('发布失败保留来源、物料行和配方输入，修正后可重试', async () => {
+    stub.releaseMbom.mockRejectedValueOnce(new Error('暂时无法发布'))
+    const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+    await wrapper.get('#mbom-rev').setValue('B')
+    await wrapper.get('#mbom-qty-0').setValue('8')
+    await findButton(wrapper, '增加配方')!.trigger('click')
+    await wrapper.get('#mbom-param-0').setValue('温度')
+    await wrapper.get('#mbom-target-0').setValue('180')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(stub.toastError).toHaveBeenCalled()
+    expect((wrapper.get('#mbom-ebom').element as HTMLSelectElement).value).toBe('EBOM-1::A')
+    expect((wrapper.get('#mbom-qty-0').element as HTMLInputElement).value).toBe('8')
+    expect((wrapper.get('#mbom-target-0').element as HTMLInputElement).value).toBe('180')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(stub.releaseMbom).toHaveBeenCalledTimes(2)
+  })
+  it('单位目录尚无对应项时仍显示来源物料行的单位', async () => {
+    stub.fetchEbomDetail.mockResolvedValueOnce({
+      ...sourceDetail,
+      lines: [{ childItemCode: 'SKU-2', quantity: 3, unitOfMeasureCode: 'BOX' }],
+    })
+    const wrapper = mount(MbomPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+    const unit = wrapper.findAll('select')[2]!
+    expect((unit.element as HTMLSelectElement).value).toBe('BOX')
+    expect(unit.get('option[value="BOX"]').text()).toBe('BOX')
   })
 })

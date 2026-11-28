@@ -298,7 +298,7 @@ describe('master-data organization (department tree) page', () => {
     expect(carried.text()).toContain('总装部')
   })
 
-  it('在此部门下新建班组 carries the department as read-only context', async () => {
+  it('新建班组 carries the department as read-only context', async () => {
     const wrapper = mount(OrganizationPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
     })
@@ -307,10 +307,11 @@ describe('master-data organization (department tree) page', () => {
     await findNodeButton(wrapper, '总装部')!.trigger('click')
     await flushPromises()
 
-    await wrapper
+    const createTeam = wrapper
       .findAll('button')
-      .find((b) => b.text().includes('在此部门下新建班组'))!
-      .trigger('click')
+      .filter((button) => button.text().includes('新建班组'))
+    expect(createTeam).toHaveLength(1)
+    await createTeam[0]!.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('新建班组')
@@ -382,7 +383,7 @@ describe('master-data organization (department tree) page', () => {
     await flushPromises()
     await wrapper
       .findAll('button')
-      .find((b) => b.text().includes('在此部门下新建班组'))!
+      .find((b) => b.text().includes('新建班组'))!
       .trigger('click')
     await flushPromises()
 

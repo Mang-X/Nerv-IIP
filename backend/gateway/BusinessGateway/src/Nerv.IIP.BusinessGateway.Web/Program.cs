@@ -43,7 +43,7 @@ builder.Services
             // 读取依赖包 XML 文档（如 FastEndpoints.xml）。本机缓存是否解出过 XML
             // （NUGET_XMLDOC_MODE）会导致导出快照与 CI 重生成结果漂移。
             s.SchemaSettings.ResolveExternalXmlDocumentation = false;
-            s.SchemaSettings.SchemaProcessors.Add(new CodeRuleSegmentOpenApiSchemaProcessor());
+            s.SchemaSettings.SchemaProcessors.Add(new CodeRuleOpenApiSchemaProcessor());
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MachineOverheadOpenApiDocumentProcessor());

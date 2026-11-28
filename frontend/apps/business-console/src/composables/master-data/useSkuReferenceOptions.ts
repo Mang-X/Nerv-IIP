@@ -22,24 +22,32 @@ import {
  */
 export function useSkuReferenceOptions() {
   const { categories: productCategories, categoriesPending: productCategoryPending } =
-    useProductCategories()
+    useProductCategories(true)
   const { resources: materialTypeResources, resourcesPending: materialTypePending } =
-    useBusinessMasterDataResources('reference-data', { codeSet: 'material-type' })
+    useBusinessMasterDataResources('reference-data', { all: true, codeSet: 'material-type' })
   const { resources: batchPolicyResources, resourcesPending: batchPolicyPending } =
-    useBusinessMasterDataResources('reference-data', { codeSet: 'batch-tracking-policy' })
+    useBusinessMasterDataResources('reference-data', {
+      all: true,
+      codeSet: 'batch-tracking-policy',
+    })
   const { resources: serialPolicyResources, resourcesPending: serialPolicyPending } =
-    useBusinessMasterDataResources('reference-data', { codeSet: 'serial-tracking-policy' })
+    useBusinessMasterDataResources('reference-data', {
+      all: true,
+      codeSet: 'serial-tracking-policy',
+    })
   const { resources: shelfLifePolicyResources, resourcesPending: shelfLifePolicyPending } =
-    useBusinessMasterDataResources('reference-data', { codeSet: 'shelf-life-policy' })
+    useBusinessMasterDataResources('reference-data', { all: true, codeSet: 'shelf-life-policy' })
   const { resources: storageConditionResources, resourcesPending: storageConditionPending } =
-    useBusinessMasterDataResources('reference-data', { codeSet: 'storage-condition' })
+    useBusinessMasterDataResources('reference-data', { all: true, codeSet: 'storage-condition' })
   const { resources: barcodeRuleResources, resourcesPending: barcodeRulePending } =
-    useBusinessMasterDataResources('reference-data', { codeSet: 'barcode-rule' })
+    useBusinessMasterDataResources('reference-data', { all: true, codeSet: 'barcode-rule' })
   const { resources: complianceTagResources, resourcesPending: complianceTagPending } =
-    useBusinessMasterDataResources('reference-data', { codeSet: 'compliance-tag' })
+    useBusinessMasterDataResources('reference-data', { all: true, codeSet: 'compliance-tag' })
   // 基本单位实时取真实 unit-of-measure 实体（非写死常量子集），实时为空回退 UOM_OPTIONS。
-  const { resources: uomResources, resourcesPending: uomPending } =
-    useBusinessMasterDataResources('unit-of-measure')
+  const { resources: uomResources, resourcesPending: uomPending } = useBusinessMasterDataResources(
+    'unit-of-measure',
+    { all: true },
+  )
 
   // 产品分类选项来自分类主数据：value=categoryCode，label=分类名（带编码）。
   const productCategoryOptions = computed(() =>

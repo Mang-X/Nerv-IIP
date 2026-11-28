@@ -412,7 +412,9 @@ if (Test-IsLinkedWorktree) {
     $arguments += '--isolated'
 }
 
+# Local walkthrough services run in separate processes and must share CAP transport.
 $appHostEnvironment = @{
+    Messaging__Provider = if ([string]::IsNullOrWhiteSpace($env:Messaging__Provider)) { 'Redis' } else { $env:Messaging__Provider }
     ASPNETCORE_ENVIRONMENT = 'Development'
     DOTNET_ENVIRONMENT = 'Development'
 }

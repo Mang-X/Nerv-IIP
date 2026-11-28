@@ -108,7 +108,7 @@ describe('business workbench page', () => {
         ],
         todos: {
           status: 'available',
-          total: 2,
+          total: 3,
           items: [
             {
               source: 'BusinessApproval',
@@ -123,7 +123,13 @@ describe('business workbench page', () => {
               itemId: 'task-1',
               itemType: 'inventory-count',
               status: 'open',
-              referenceId: 'COUNT-260701-0002',
+              notificationTitle: '盘点结果待复核',
+            },
+            {
+              source: 'Notification',
+              itemId: '095af8c1-42f3-4e4d-a9ae-fb2471758df8',
+              itemType: 'review',
+              status: 'open',
             },
           ],
         },
@@ -216,10 +222,11 @@ describe('business workbench page', () => {
     expect(text).toContain('已下达工单')
     expect(text).toContain('7')
     expect(text).toContain('未关闭质量异常')
-    expect(text).toContain('待办事项')
+    expect(text).toContain('盘点结果待复核')
+    expect(text).toContain('通知复核 · 71758df8')
     expect(text).toContain('未解除设备预警')
-    // 页头汇总 = 待办 2 + 未读 1 + 预警 1
-    expect(text).toContain('4 项待处理')
+    // 页头汇总 = 待办 3 + 未读 1 + 预警 1
+    expect(text).toContain('5 项待处理')
     // 行动卡条目展示 facade 返回的人读编码，而不是内部 id
     expect(text).toContain('PO-260701-0001')
     expect(text).toContain('WO-260701-0001')
@@ -300,7 +307,8 @@ describe('business workbench page', () => {
     expect(text).not.toContain('019f9c8b')
     // GUID 不可读 → 回落到业务口径，而不是把内部 id 摆到主行
     expect(text).toContain('审批流转')
-    expect(text).toContain('审批 · 采购单据')
+    expect(wrapper.get('[data-focus="待办"]').text()).toContain('采购单据')
+    expect(wrapper.get('[data-focus="待办"]').text()).toContain('审批 · 待处理')
     // 条目状态用条目自己的词表：unread → 未读、pending → 待处理，不是来源状态的兜底
     expect(text).toContain('未读')
     expect(text).toContain('待处理')

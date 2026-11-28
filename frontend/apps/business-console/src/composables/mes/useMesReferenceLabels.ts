@@ -210,6 +210,7 @@ function warnMissingStatusLabel(value: string) {
 export function useMesReferenceLabels() {
   function statusLabel(value?: string | null) {
     if (!value) return '—'
+    if (value === 'Source') return '来源'
     // 直查，不做大小写归一化：见本文件 RECEIPT_STATUS_LABELS 上方的说明。
     // 查不到就显示「—」并告警，而不是换个拼写再试一次 —— 那层兼容正是
     // `contracts-and-codegen.md`「不得用前端临时适配掩盖后端漂移」所禁止的。

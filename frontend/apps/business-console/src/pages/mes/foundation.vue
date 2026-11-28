@@ -295,8 +295,6 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
         :tone="overall.tone"
         :status="readinessStatusPill"
         :foot-start="readinessGuidance"
-        :action="{ label: '重新检查' }"
-        @action="refreshReadiness"
       />
       <NvMetricCard
         v-if="issueTotal > 0"

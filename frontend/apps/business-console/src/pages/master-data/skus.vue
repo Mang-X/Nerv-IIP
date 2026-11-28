@@ -52,23 +52,14 @@ const pageSize = ref('10')
 // server — otherwise the created SKU would appear twice with a colliding rowKey.
 const pendingLocalSkus = computed(() => {
   const serverCodes = new Set(skus.value.map((s) => s.code).filter(Boolean))
-  return localSkus.value.filter((s) => !s.code || !serverCodes.has(s.code))
+  const search = keyword.value.trim().toLowerCase()
+  return localSkus.value.filter(
+    (s) =>
+      !serverCodes.has(s.code) &&
+      (!search || [s.code, s.displayName].some((value) => value?.toLowerCase().includes(search))),
+  )
 })
-const sourceSkus = computed(() => {
-  return [...pendingLocalSkus.value, ...skus.value]
-})
-const listRows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  return sourceSkus.value.filter((sku) => {
-    const activeMatched = includeDisabled.value || sku.active !== false
-    const kwMatched =
-      !kw ||
-      [sku.code, sku.displayName, sku.resourceType, sku.snapshotVersion].some((value) =>
-        (value ?? '').toLowerCase().includes(kw),
-      )
-    return activeMatched && kwMatched
-  })
-})
+const listRows = computed(() => [...pendingLocalSkus.value, ...skus.value])
 const sortedRows = computed(() => {
   if (!sort.value) return listRows.value
   const { key, direction } = sort.value
@@ -147,6 +138,8 @@ function skuDetailFields(row: BusinessConsoleResourceItem) {
 }
 
 watch([keyword, includeDisabled, pageSize], () => {
+  filters.skip = 0
+  filters.keyword = keyword.value.trim() || undefined
   page.value = 1
 })
 
@@ -214,7 +207,7 @@ function onCreated(item: DirectoryCreatedItem) {
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选物料编码、名称">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索物料编码、名称">
       <template #filters>
         <IncludeDisabledFilter v-model="includeDisabled" />
       </template>

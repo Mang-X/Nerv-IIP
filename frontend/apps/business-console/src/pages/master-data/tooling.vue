@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFirstInvalidField } from '@/components/masterData/useFirstInvalidField'
 import type {
   BusinessConsoleRegisterToolingAssetRequest,
   BusinessConsoleToolingAssetItem,
@@ -79,11 +80,8 @@ const canManage = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.masterDataResourcesManage),
 )
 
-const workCenters = useBusinessMasterDataResources('work-center')
-const skus = useBusinessMasterDataResources('sku')
-const CATALOG_PAGE_SIZE = 50
-workCenters.filters.take = CATALOG_PAGE_SIZE
-skus.filters.take = CATALOG_PAGE_SIZE
+const workCenters = useBusinessMasterDataResources('work-center', { all: true })
+const skus = useBusinessMasterDataResources('sku', { all: true })
 const workCenterSearch = ref('')
 const skuSearch = ref('')
 watchDebounced(
@@ -169,6 +167,7 @@ function openDetail(row: BusinessConsoleToolingAssetItem) {
 }
 
 const registerOpen = shallowRef(false)
+const { formElement, focusFirstInvalidField } = useFirstInvalidField()
 const registerShowErrors = shallowRef(false)
 const registerForm = reactive({
   idempotencyKey: '',
@@ -262,7 +261,10 @@ function openRegister() {
 async function submitRegister() {
   if (!canManage.value) return
   registerShowErrors.value = true
-  if (registerValidationMessage.value) return
+  if (registerValidationMessage.value) {
+    await focusFirstInvalidField()
+    return
+  }
   const body: Omit<BusinessConsoleRegisterToolingAssetRequest, 'organizationId' | 'environmentId'> =
     {
       idempotencyKey: registerForm.idempotencyKey,
@@ -538,142 +540,188 @@ const listErrorMessage = computed(() =>
     </NvSheet>
 
     <NvSheet v-if="canManage" v-model:open="registerOpen">
-      <NvSheetContent size="2xl">
-        <form class="grid gap-5" novalidate @submit.prevent="submitRegister">
+      <NvSheetContent size="2xl" class="overflow-hidden">
+        <form
+          ref="formElement"
+          class="flex min-h-0 flex-1 flex-col"
+          novalidate
+          @submit.prevent="submitRegister"
+        >
           <NvSheetHeader>
             <NvSheetTitle>注册工装</NvSheetTitle>
             <NvSheetDescription
               >登记身份、寿命与可用于排程的工作中心 × SKU 组合。</NvSheetDescription
             >
           </NvSheetHeader>
-          <NvFieldGroup class="grid gap-4 px-4 sm:grid-cols-2">
-            <NvFieldError
-              v-if="registerErrors.length"
-              class="sm:col-span-2"
-              :errors="['请修正已标红的字段，并完整填写带 * 的必填项。']"
-            />
-            <FormSectionTitle class="sm:col-span-2">基本信息</FormSectionTitle>
-            <NvField>
-              <NvFieldLabel for="tooling-code">工装编码</NvFieldLabel>
-              <NvInput
-                id="tooling-code"
-                v-model="registerForm.code"
-                placeholder="可选，留空由编码规则生成"
-              />
-            </NvField>
-            <NvField :data-invalid="Boolean(registerNameError)">
-              <NvFieldLabel for="tooling-name">
-                <span :class="registerNameError ? 'text-destructive' : undefined">
-                  工装名称 <span class="text-destructive">*</span>
-                </span>
-              </NvFieldLabel>
-              <NvInput
-                id="tooling-name"
-                v-model="registerForm.name"
-                :invalid="Boolean(registerNameError)"
-              />
-              <NvFieldError v-if="registerNameError" :errors="[registerNameError]" />
-            </NvField>
-            <NvField :data-invalid="Boolean(registerTypeError)">
-              <NvFieldLabel for="tooling-type">
-                <span :class="registerTypeError ? 'text-destructive' : undefined">
-                  工装类型 <span class="text-destructive">*</span>
-                </span>
-              </NvFieldLabel>
-              <NvSelect v-model="registerForm.toolingType">
-                <NvSelectTrigger id="tooling-type" :invalid="Boolean(registerTypeError)">
-                  <NvSelectValue placeholder="请选择工装类型" />
-                </NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in toolingTypes"
-                    :key="option.value"
-                    :value="option.value"
-                    >{{ option.label }}</NvSelectItem
+          <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2">
+            <NvFieldGroup class="grid gap-4 sm:grid-cols-2">
+              <FormSectionTitle class="sm:col-span-2">基本信息</FormSectionTitle>
+              <NvField>
+                <NvFieldLabel for="tooling-code">工装编码</NvFieldLabel>
+                <NvInput
+                  id="tooling-code"
+                  v-model="registerForm.code"
+                  placeholder="可选，留空由编码规则生成"
+                />
+              </NvField>
+              <NvField :data-invalid="Boolean(registerNameError)">
+                <NvFieldLabel for="tooling-name">
+                  <span :class="registerNameError ? 'text-destructive' : undefined">
+                    工装名称 <span class="text-destructive">*</span>
+                  </span>
+                </NvFieldLabel>
+                <NvInput
+                  id="tooling-name"
+                  :aria-describedby="registerNameError ? 'tooling-name-error' : undefined"
+                  v-model="registerForm.name"
+                  :invalid="Boolean(registerNameError)"
+                  :aria-invalid="Boolean(registerNameError)"
+                />
+                <NvFieldError
+                  v-if="registerNameError"
+                  id="tooling-name-error"
+                  :errors="[registerNameError]"
+                />
+              </NvField>
+              <NvField :data-invalid="Boolean(registerTypeError)">
+                <NvFieldLabel for="tooling-type">
+                  <span :class="registerTypeError ? 'text-destructive' : undefined">
+                    工装类型 <span class="text-destructive">*</span>
+                  </span>
+                </NvFieldLabel>
+                <NvSelect v-model="registerForm.toolingType">
+                  <NvSelectTrigger
+                    id="tooling-type"
+                    :aria-describedby="registerTypeError ? 'tooling-type-error' : undefined"
+                    :invalid="Boolean(registerTypeError)"
+                    :aria-invalid="Boolean(registerTypeError)"
                   >
-                </NvSelectContent>
-              </NvSelect>
-              <NvFieldError v-if="registerTypeError" :errors="[registerTypeError]" />
-            </NvField>
-            <NvField :data-invalid="Boolean(registerLifeError)">
-              <NvFieldLabel for="tooling-life">
-                <span :class="registerLifeError ? 'text-destructive' : undefined">
-                  保养使用寿命（次）
-                </span>
-              </NvFieldLabel>
-              <NvInput
-                id="tooling-life"
-                v-model="registerForm.maintenanceLifeCount"
-                type="number"
-                min="1"
-                step="1"
-                :invalid="Boolean(registerLifeError)"
-              />
-              <NvFieldDescription
-                >可留空；达到寿命后转入保养状态并停止参与排程。</NvFieldDescription
+                    <NvSelectValue placeholder="请选择工装类型" />
+                  </NvSelectTrigger>
+                  <NvSelectContent>
+                    <NvSelectItem
+                      v-for="option in toolingTypes"
+                      :key="option.value"
+                      :value="option.value"
+                      >{{ option.label }}</NvSelectItem
+                    >
+                  </NvSelectContent>
+                </NvSelect>
+                <NvFieldError
+                  v-if="registerTypeError"
+                  id="tooling-type-error"
+                  :errors="[registerTypeError]"
+                />
+              </NvField>
+              <NvField :data-invalid="Boolean(registerLifeError)">
+                <NvFieldLabel for="tooling-life">
+                  <span :class="registerLifeError ? 'text-destructive' : undefined">
+                    保养使用寿命（次）
+                  </span>
+                </NvFieldLabel>
+                <NvInput
+                  id="tooling-life"
+                  :aria-describedby="registerLifeError ? 'tooling-life-error' : undefined"
+                  v-model="registerForm.maintenanceLifeCount"
+                  type="number"
+                  min="1"
+                  step="1"
+                  :invalid="Boolean(registerLifeError)"
+                  :aria-invalid="Boolean(registerLifeError)"
+                />
+                <NvFieldDescription v-if="!registerLifeError"
+                  >可留空；达到寿命后转入保养状态并停止参与排程。</NvFieldDescription
+                >
+                <NvFieldError
+                  v-if="registerLifeError"
+                  id="tooling-life-error"
+                  :errors="[registerLifeError]"
+                />
+              </NvField>
+              <FormSectionTitle class="sm:col-span-2">适用范围</FormSectionTitle>
+              <NvField class="sm:col-span-2" :aria-invalid="Boolean(registerWorkCenterError)">
+                <NvFieldLabel>
+                  <span :class="registerWorkCenterError ? 'text-destructive' : undefined">
+                    适用工作中心 <span class="text-destructive">*</span>
+                  </span>
+                </NvFieldLabel>
+                <EntityMultiPicker
+                  id="tooling-work-center-search"
+                  :aria-describedby="
+                    registerWorkCenterError ? 'tooling-work-center-search-error' : undefined
+                  "
+                  v-model="selectedWorkCenters"
+                  v-model:search="workCenterSearch"
+                  :options="workCenterOptions"
+                  title="选择适用工作中心"
+                  placeholder="添加适用工作中心"
+                  search-placeholder="搜索工作中心名称 / 编码"
+                  empty-text="当前范围内没有匹配的工作中心"
+                  :loading="workCenters.resourcesPending.value"
+                  :invalid="Boolean(registerWorkCenterError)"
+                  server-search
+                  :total-count="workCenters.resourcesTotal.value"
+                  aria-label="适用工作中心"
+                  :selection-empty-text="registerWorkCenterError ? '' : '尚未选择工作中心'"
+                />
+                <NvFieldDescription v-if="!registerWorkCenterError">
+                  已选择 {{ registerForm.workCenterCodes.length }} 个工作中心；当前匹配
+                  {{ workCenters.resourcesTotal.value }} 项，请搜索后继续选择。
+                </NvFieldDescription>
+                <NvFieldError
+                  v-if="registerWorkCenterError"
+                  id="tooling-work-center-search-error"
+                  :errors="[registerWorkCenterError]"
+                />
+              </NvField>
+              <NvField class="sm:col-span-2" :aria-invalid="Boolean(registerSkuError)">
+                <NvFieldLabel>
+                  <span :class="registerSkuError ? 'text-destructive' : undefined">
+                    适用 SKU <span class="text-destructive">*</span>
+                  </span>
+                </NvFieldLabel>
+                <EntityMultiPicker
+                  id="tooling-sku-search"
+                  :aria-describedby="registerSkuError ? 'tooling-sku-search-error' : undefined"
+                  v-model="selectedSkus"
+                  v-model:search="skuSearch"
+                  :options="skuOptions"
+                  title="选择适用 SKU"
+                  placeholder="添加适用 SKU"
+                  search-placeholder="搜索 SKU 名称 / 编码"
+                  empty-text="当前范围内没有匹配的 SKU"
+                  :loading="skus.resourcesPending.value"
+                  :invalid="Boolean(registerSkuError)"
+                  server-search
+                  :total-count="skus.resourcesTotal.value"
+                  aria-label="适用 SKU"
+                  :selection-empty-text="registerSkuError ? '' : '尚未选择 SKU'"
+                />
+                <NvFieldDescription v-if="!registerSkuError">
+                  已选择 {{ registerForm.skuCodes.length }} 个 SKU；当前匹配
+                  {{ skus.resourcesTotal.value }} 项，请搜索后继续选择。
+                </NvFieldDescription>
+                <NvFieldDescription v-if="!registerSkuError"
+                  >{{ applicabilityCount }} 个适用组合</NvFieldDescription
+                >
+                <NvFieldError
+                  v-if="registerSkuError"
+                  id="tooling-sku-search-error"
+                  :errors="[registerSkuError]"
+                />
+              </NvField>
+            </NvFieldGroup>
+          </div>
+          <NvSheetFooter class="shrink-0 border-t border-border sm:flex-row sm:justify-end">
+            <div
+              v-if="registerValidationMessage"
+              class="flex flex-wrap items-center gap-2 sm:mr-auto"
+            >
+              <p class="text-sm text-destructive" role="alert">请检查标红字段后再提交。</p>
+              <NvButton type="button" size="sm" variant="ghost" @click="focusFirstInvalidField"
+                >定位首个错误</NvButton
               >
-              <NvFieldError v-if="registerLifeError" :errors="[registerLifeError]" />
-            </NvField>
-            <FormSectionTitle class="sm:col-span-2">适用范围</FormSectionTitle>
-            <NvField class="sm:col-span-2" :aria-invalid="Boolean(registerWorkCenterError)">
-              <NvFieldLabel>
-                <span :class="registerWorkCenterError ? 'text-destructive' : undefined">
-                  适用工作中心 <span class="text-destructive">*</span>
-                </span>
-              </NvFieldLabel>
-              <EntityMultiPicker
-                id="tooling-work-center-search"
-                v-model="selectedWorkCenters"
-                v-model:search="workCenterSearch"
-                :options="workCenterOptions"
-                title="选择适用工作中心"
-                placeholder="添加适用工作中心"
-                search-placeholder="搜索工作中心名称 / 编码"
-                empty-text="当前范围内没有匹配的工作中心"
-                :loading="workCenters.resourcesPending.value"
-                :invalid="Boolean(registerWorkCenterError)"
-                server-search
-                :total-count="workCenters.resourcesTotal.value"
-                aria-label="适用工作中心"
-                selection-empty-text="至少选择一个适用工作中心"
-              />
-              <NvFieldDescription>
-                已选择 {{ registerForm.workCenterCodes.length }} 个工作中心；当前匹配
-                {{ workCenters.resourcesTotal.value }} 项，请搜索后继续选择。
-              </NvFieldDescription>
-              <NvFieldError v-if="registerWorkCenterError" :errors="[registerWorkCenterError]" />
-            </NvField>
-            <NvField class="sm:col-span-2" :aria-invalid="Boolean(registerSkuError)">
-              <NvFieldLabel>
-                <span :class="registerSkuError ? 'text-destructive' : undefined">
-                  适用 SKU <span class="text-destructive">*</span>
-                </span>
-              </NvFieldLabel>
-              <EntityMultiPicker
-                id="tooling-sku-search"
-                v-model="selectedSkus"
-                v-model:search="skuSearch"
-                :options="skuOptions"
-                title="选择适用 SKU"
-                placeholder="添加适用 SKU"
-                search-placeholder="搜索 SKU 名称 / 编码"
-                empty-text="当前范围内没有匹配的 SKU"
-                :loading="skus.resourcesPending.value"
-                :invalid="Boolean(registerSkuError)"
-                server-search
-                :total-count="skus.resourcesTotal.value"
-                aria-label="适用 SKU"
-                selection-empty-text="至少选择一个适用 SKU"
-              />
-              <NvFieldDescription>
-                已选择 {{ registerForm.skuCodes.length }} 个 SKU；当前匹配
-                {{ skus.resourcesTotal.value }} 项，请搜索后继续选择。
-              </NvFieldDescription>
-              <NvFieldDescription>{{ applicabilityCount }} 个适用组合</NvFieldDescription>
-              <NvFieldError v-if="registerSkuError" :errors="[registerSkuError]" />
-            </NvField>
-          </NvFieldGroup>
-          <NvSheetFooter class="px-4">
+            </div>
             <NvButton type="button" variant="outline" @click="registerOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="tooling.registerPending.value">
               <NvSpinner v-if="tooling.registerPending.value" aria-hidden="true" />

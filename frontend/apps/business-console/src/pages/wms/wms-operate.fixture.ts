@@ -55,11 +55,13 @@ const wms = vi.hoisted(() => ({
   retryInboundPosting: vi.fn(),
   retryOutboundPosting: vi.fn(),
   outboundStatus: 'open',
+  outboundPoolCode: 'POOL-01' as string | null,
   completeInbound: vi.fn(),
   confirmReceipt: vi.fn(),
   purchaseReceipt: undefined as BusinessConsoleWmsInboundOrderItem['purchaseReceipt'],
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
+  verifyCountExecution: vi.fn(),
   countRows: undefined as unknown[] | undefined,
   createCountExecution: vi.fn(),
   failWcs: vi.fn(),
@@ -119,7 +121,6 @@ vi.mock('@/composables/inventory/useInventoryScope', async () => {
     resolveUomCode: () => 'pcs',
   }
   return {
-    FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
     useInventoryScopeCatalog: () => catalog,
     useInventoryScopeDefaults: () => catalog,
   }
@@ -183,6 +184,7 @@ vi.mock('@/composables/wms', () => ({
         outboundOrderId: 'ob-1',
         outboundOrderNo: 'OB-1',
         status: wms.outboundStatus,
+        assignedPoolCode: wms.outboundPoolCode,
         createdAtUtc: '2026-06-01T00:00:00Z',
       },
     ]),
@@ -229,6 +231,7 @@ vi.mock('@/composables/wms', () => ({
     createCountExecution: wms.createCountExecution,
     createCountExecutionPending: shallowRef(false),
     completeCountExecution: wms.completeCountExecution,
+    verifyCountExecution: wms.verifyCountExecution,
     completeCountExecutionPending: shallowRef(false),
   })),
   useWmsWcsTasks: () => ({
@@ -353,6 +356,7 @@ const resetFixture = () => {
   wms.confirmReceipt.mockReset()
   wms.purchaseReceipt = undefined
   wms.outboundStatus = 'open'
+  wms.outboundPoolCode = 'POOL-01'
   wms.retryInboundPosting.mockReset()
   wms.retryOutboundPosting.mockReset()
   wms.permissionCodes = [

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -172,13 +173,24 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
                 (int)response.StatusCode,
                 response.ReasonPhrase,
                 diagnostic);
+            if ((int)response.StatusCode is >= 500 or 401 or 403)
+            {
+                throw new HttpRequestException("MES 下游创建工单失败。", null, response.StatusCode);
+            }
+
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity)
+            {
+                throw CreateBusinessRejection();
+            }
+
             throw new KnownException("MES 下游创建工单失败，请稍后重试。");
         }
 
-        var accepted = await response.Content.ReadFromJsonAsync<MesAcceptedResponse>(cancellationToken);
+        var accepted = await PlanningSuggestionDownstreamDiagnostics.ReadAcceptedAsync<MesAcceptedResponse>(
+            response, CreateBusinessRejection, cancellationToken);
         if (accepted is null || string.IsNullOrWhiteSpace(accepted.ReferenceId))
         {
-            throw new KnownException("MES 未返回工单引用，无法完成计划建议。");
+            throw new InvalidOperationException("MES 未返回工单引用，无法完成计划建议。");
         }
 
         return new PlanningSuggestionDownstreamReference(
@@ -186,6 +198,9 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
             DemandPlanningDownstreamReferences.WorkOrder,
             accepted.ReferenceId);
     }
+
+    private static KnownException CreateBusinessRejection() =>
+        new KnownException("MES 拒绝创建工单，请检查生产版本、工艺路线和物料齐套配置。");
 
     public static bool CanHandle(PlanningSuggestionDownstreamRequest request, PlanningSuggestion suggestion)
     {
@@ -244,16 +259,27 @@ public sealed class HttpErpPlanningSuggestionDownstreamBridge(
                 (int)response.StatusCode,
                 response.ReasonPhrase,
                 diagnostic);
+            if ((int)response.StatusCode is >= 500 or 401 or 403)
+            {
+                throw new HttpRequestException("ERP 下游创建采购申请失败。", null, response.StatusCode);
+            }
+
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity)
+            {
+                throw CreateBusinessRejection();
+            }
+
             throw new KnownException("ERP 下游创建采购申请失败，请稍后重试。");
         }
 
-        var accepted = await ReadResponseDataAsync<ErpPurchaseRequisitionAcceptedResponse>(response, cancellationToken);
+        var accepted = await PlanningSuggestionDownstreamDiagnostics.ReadAcceptedAsync<ErpPurchaseRequisitionAcceptedResponse>(
+            response, CreateBusinessRejection, cancellationToken);
         var referenceId = !string.IsNullOrWhiteSpace(accepted.RequisitionNo)
             ? accepted.RequisitionNo
             : accepted.PurchaseRequisitionId;
         if (string.IsNullOrWhiteSpace(referenceId))
         {
-            throw new KnownException("ERP 未返回采购申请引用，无法完成计划建议。");
+            throw new InvalidOperationException("ERP 未返回采购申请引用，无法完成计划建议。");
         }
 
         return new PlanningSuggestionDownstreamReference(
@@ -262,26 +288,14 @@ public sealed class HttpErpPlanningSuggestionDownstreamBridge(
             referenceId);
     }
 
+    private static KnownException CreateBusinessRejection() =>
+        new KnownException("ERP 拒绝创建采购申请，请检查物料、单位、站点和采购数量。");
+
     public static bool CanHandle(PlanningSuggestionDownstreamRequest request, PlanningSuggestion suggestion)
     {
         return string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedPurchase, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessErp, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.PurchaseRequisition, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
-    {
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            throw new KnownException("ERP 返回空响应，无法完成计划建议。");
-        }
-
-        using var document = JsonDocument.Parse(json);
-        var root = document.RootElement;
-        var payload = root.TryGetProperty("data", out var data) ? data : root;
-        return payload.Deserialize<T>(JsonOptions)
-            ?? throw new KnownException("ERP 未返回采购申请引用，无法完成计划建议。");
     }
 }
 
@@ -325,6 +339,41 @@ internal sealed record ErpPurchaseRequisitionAcceptedResponse(
 internal static class PlanningSuggestionDownstreamDiagnostics
 {
     private const int MaximumResponseBodyLength = 512;
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public static async Task<T> ReadAcceptedAsync<T>(
+        HttpResponseMessage response,
+        Func<KnownException> createBusinessRejection,
+        CancellationToken cancellationToken)
+    {
+        var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        if (root.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.False)
+        {
+            var message = root.TryGetProperty(JsonNamingPolicy.CamelCase.ConvertName(nameof(Exception.Message)), out var messageElement) && messageElement.ValueKind == JsonValueKind.String
+                ? messageElement.GetString()
+                : null;
+            if (!string.IsNullOrWhiteSpace(message) &&
+                message.Contains("MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("计划建议下游依赖服务暂不可用。");
+            }
+
+            if (root.TryGetProperty("code", out var code) &&
+                code.ValueKind == JsonValueKind.Number &&
+                code.TryGetInt32(out var number) && number is 0 or 400 or 409 or 422)
+            {
+                throw createBusinessRejection();
+            }
+
+            throw new InvalidOperationException("计划建议下游返回了无法识别的失败响应。");
+        }
+
+        var payload = root.TryGetProperty("data", out var data) ? data : root;
+        return payload.Deserialize<T>(JsonOptions)
+            ?? throw new InvalidOperationException("计划建议下游未返回单据数据。");
+    }
+
 
     public static async Task<string> ReadResponseBodyAsync(
         HttpResponseMessage response,

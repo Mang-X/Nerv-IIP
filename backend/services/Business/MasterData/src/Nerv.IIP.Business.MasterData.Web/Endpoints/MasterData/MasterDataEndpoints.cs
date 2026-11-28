@@ -1,3 +1,4 @@
+using FluentValidation;
 using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
@@ -728,6 +729,20 @@ public sealed record AssignPersonnelSkillRequest(
     DateOnly EffectiveFrom,
     DateOnly EffectiveTo);
 
+public sealed class AssignPersonnelSkillRequestValidator : Validator<AssignPersonnelSkillRequest>
+{
+    public AssignPersonnelSkillRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UserId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Level).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EffectiveFrom).NotEmpty();
+        RuleFor(x => x.EffectiveTo).GreaterThanOrEqualTo(x => x.EffectiveFrom);
+    }
+}
+
 public sealed record CreateSiteRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1437,6 +1452,34 @@ public sealed record UpdateSkillRequest(
     bool RequiresCertification,
     int? ValidityMonths,
     string? Description);
+
+public sealed class CreateSkillRequestValidator : Validator<CreateSkillRequest>
+{
+    public CreateSkillRequestValidator()
+    {
+        RuleFor(x => x.SkillName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ValidityMonths)
+            .Must(value => value is > 0)
+            .WithMessage("需持证上岗时，证书有效期必须为正整数月。")
+            .When(x => x.RequiresCertification);
+        RuleFor(x => x.Description).MaximumLength(500);
+    }
+}
+
+public sealed class UpdateSkillRequestValidator : Validator<UpdateSkillRequest>
+{
+    public UpdateSkillRequestValidator()
+    {
+        RuleFor(x => x.SkillName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ValidityMonths)
+            .Must(value => value is > 0)
+            .WithMessage("需持证上岗时，证书有效期必须为正整数月。")
+            .When(x => x.RequiresCertification);
+        RuleFor(x => x.Description).MaximumLength(500);
+    }
+}
 
 public sealed record ArchiveSkillRequest(
     string OrganizationId,

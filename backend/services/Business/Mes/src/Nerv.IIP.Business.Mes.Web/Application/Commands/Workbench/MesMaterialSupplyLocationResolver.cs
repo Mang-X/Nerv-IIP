@@ -142,7 +142,7 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
             request.Quantity,
             availableTotal);
         throw new KnownException(
-            $"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 需求{request.Quantity:0.######}{request.UomCode}，候选库位合计可用{availableTotal:0.######}{request.UomCode}。");
+            $"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: 需求{request.Quantity:0.######}{request.UomCode}，候选库位合计可用{availableTotal:0.######}{request.UomCode}。", 400);
     }
 
     private async Task<MesMaterialSupplyAvailability> GetAvailabilityAsync(
@@ -174,39 +174,20 @@ public sealed class InventoryMesMaterialSupplyLocationResolver(
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         }
 
-        HttpResponseMessage response;
-        try
-        {
-            response = await inventoryClient!.HttpClient.SendAsync(httpRequest, cancellationToken);
-        }
-        catch (HttpRequestException exception)
-        {
-            throw new KnownException($"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: Inventory 库存服务暂不可用。{exception.Message}");
-        }
-        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new KnownException($"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: Inventory 库存服务请求超时。{exception.Message}");
-        }
-
-        using (response)
-        {
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new KnownException(
-                    $"MATERIAL_SOURCE_LOCATION_UNAVAILABLE: Inventory 库存服务返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
-            }
-
-            var envelope = await response.Content
-                .ReadFromJsonAsync<MesMaterialSupplyAvailabilityEnvelope>(cancellationToken);
-            return envelope?.Data ?? new MesMaterialSupplyAvailability(0m, []);
-        }
+        using var response = await inventoryClient!.HttpClient.SendAsync(httpRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content
+            .ReadFromJsonAsync<MesMaterialSupplyAvailabilityEnvelope>(cancellationToken);
+        return envelope is { Success: not false, Data: { Items: not null } data }
+            ? data
+            : throw new InvalidOperationException("Inventory returned an invalid availability response.");
     }
 
     private static string? Trimmed(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
-internal sealed record MesMaterialSupplyAvailabilityEnvelope(MesMaterialSupplyAvailability? Data);
+internal sealed record MesMaterialSupplyAvailabilityEnvelope(MesMaterialSupplyAvailability? Data, bool? Success);
 
 internal sealed record MesMaterialSupplyAvailability(
     decimal AvailableQuantity,

@@ -75,6 +75,36 @@ describe('NvEntityPicker', () => {
     wrapper.unmount()
   })
 
+  it('distinguishes an empty directory from no search matches and clears the keyword', async () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: {
+        options: [],
+        title: '选择工程物料',
+        emptyText: '工程物料目录为空',
+        noMatchText: '没有匹配的工程物料',
+      },
+      attachTo: document.body,
+    })
+    await wrapper.get('button[aria-haspopup]').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('工程物料目录为空')
+    await wrapper.setProps({ options })
+    const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+    search.value = '没有这条记录'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(document.body.textContent).toContain('没有匹配的工程物料')
+    expect(document.body.textContent).not.toContain('工程物料目录为空')
+    const clear = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '清除关键词',
+    )!
+    clear.click()
+    await flushPromises()
+    expect(search.value).toBe('')
+    expect(document.body.querySelector('[role="listbox"]')?.textContent).toContain('前减振器总成')
+    wrapper.unmount()
+  })
+
   // owner 走查原话：「总是会先下拉出现然后马上消失」。
   // 同一次交互产生的第二次开关必须被闸门吞掉，浮层不能自己关。
   it('stays open after the click that opened it (no open-then-vanish flash)', async () => {

@@ -36,13 +36,18 @@ import { currencyOptionsIncluding } from '@/data/currencyReference'
 import FoundationReturnContext from '@/components/erp/FoundationReturnContext.vue'
 import CostRecoveryContext from '@/components/erp/CostRecoveryContext.vue'
 import { queryText } from '@/components/erp/costRecovery'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { watch } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { today } from '@/utils/format'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  errorStatusCode,
+  notifyOperationFailure,
+  notifySuccess,
+  serverErrorMessage,
+} from '@/utils/notify'
 import { machineAmount, machineHours } from '../machineOverhead'
 import { UNAVAILABLE_TEXT, formatDateTime } from '../shared'
 
@@ -74,7 +79,7 @@ watch(
   { immediate: true },
 )
 // 会计期间编码默认取本月（如 2026-09），与财务开立期间的惯例一致；可改为其它期间。
-rates.accountingPeriodCode.value = today().slice(0, 7)
+rates.accountingPeriodCode.value = queryText(route.query, 'periodCode') || today().slice(0, 7)
 const periodDraft = shallowRef(rates.accountingPeriodCode.value)
 function commitPeriod() {
   rates.accountingPeriodCode.value = periodDraft.value.trim()
@@ -145,6 +150,21 @@ const columns: NvDataTableColumn<RateRow>[] = [
 ]
 
 const open = shallowRef(false)
+const missingPeriod = shallowRef('')
+const periodRecoveryRoute = computed(() => ({
+  path: '/erp/finance/accounting-period-open',
+  query: {
+    periodCode: missingPeriod.value,
+    date: /^\d{4}-(0[1-9]|1[0-2])$/.test(missingPeriod.value)
+      ? `${missingPeriod.value}-01`
+      : undefined,
+    fromMachineRate: '1',
+    workCenterId: rates.workCenterId.value,
+  },
+}))
+watch([rates.workCenterId, rates.accountingPeriodCode], () => {
+  missingPeriod.value = ''
+})
 const form = reactive({
   applicability: 'applicable' as BusinessConsoleErpMachineOverheadApplicability,
   fixedOverheadBudget: '',
@@ -176,14 +196,19 @@ function openSheet() {
   form.currencyCode = fixedCurrency.value ?? 'CNY'
   form.reason = ''
   showErrors.value = false
+  missingPeriod.value = ''
   open.value = true
 }
 
 async function submit() {
+  if (rates.addRevisionPending.value) return
+  missingPeriod.value = ''
   showErrors.value = true
   if (!canSubmit.value) return
   // 不适用时预算与产能按零提交。
   const amount = (value: string) => (isApplicable.value ? Number(value || 0) : 0)
+  const periodCode = rates.accountingPeriodCode.value
+  const workCenterId = rates.workCenterId.value
   try {
     await rates.addRevision({
       applicability: form.applicability,
@@ -196,9 +221,19 @@ async function submit() {
     open.value = false
     notifySuccess('机器制造费用率修订已保存')
   } catch (error) {
+    const failure = rates.addRevisionError.value ?? error
+    const status = errorStatusCode(failure)
+    if (
+      status === 400 &&
+      periodCode === rates.accountingPeriodCode.value &&
+      workCenterId === rates.workCenterId.value &&
+      serverErrorMessage(failure).startsWith(`会计期间『${periodCode}』尚未开立`)
+    ) {
+      missingPeriod.value = periodCode
+    }
     notifyOperationFailure(
       '保存机器制造费用率失败',
-      rates.addRevisionError.value ?? error,
+      (status ?? 0) >= 500 ? undefined : failure,
       '保存机器制造费用率失败，请稍后重试。',
     )
   }
@@ -310,6 +345,12 @@ async function submit() {
           </NvSheetDescription>
         </NvSheetHeader>
         <form class="grid content-start gap-4 p-4" @submit.prevent="submit">
+          <div v-if="missingPeriod && canManage" class="flex flex-wrap items-center gap-2 text-sm">
+            会计期间 {{ missingPeriod }} 尚未开立。
+            <NvButton as-child size="sm" variant="outline">
+              <RouterLink :to="periodRecoveryRoute">开立会计期间</RouterLink>
+            </NvButton>
+          </div>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
             {{
               isApplicable

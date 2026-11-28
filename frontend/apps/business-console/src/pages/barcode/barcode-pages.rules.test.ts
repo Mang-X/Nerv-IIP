@@ -29,7 +29,7 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('条码规则')
     expect(wrapper.text()).toContain('GS1-CASE')
     expect(wrapper.text()).toContain('GS1 公司前缀 7 位')
-    expect(wrapper.text()).toContain('收货入库')
+    expect(wrapper.text()).toContain('库存入库')
     expect(wrapper.text()).toContain('生产报工')
     expect(barcode.ruleFilters?.keyword).toBe('GS1-CASE')
     expect(barcode.ruleFilters?.take).toBe(10)
@@ -91,7 +91,7 @@ describe('barcode pages', () => {
     await setInput(wrapper, '#barcode-rule-checksum', 'gs1-mod10')
     await setInput(wrapper, '#barcode-rule-gs1-prefix', '7')
     await wrapper.find('select[aria-label="条码类型"]').setValue('gs1-128')
-    await wrapper.find('input[aria-label="适用场景：收货入库"]').setValue(true)
+    await wrapper.find('input[aria-label="适用场景：库存入库"]').setValue(true)
     await flushPromises()
 
     await wrapper.find('form').trigger('submit')

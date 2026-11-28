@@ -514,7 +514,13 @@ function formatPayload(value: string | null | undefined) {
         </ul>
       </section>
 
-      <section class="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section
+        aria-labelledby="dead-letter-query-title"
+        class="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-3"
+      >
+        <h2 id="dead-letter-query-title" class="text-sm font-semibold sm:col-span-full">
+          查询条件
+        </h2>
         <NvField>
           <NvFieldLabel>服务</NvFieldLabel>
           <!--
@@ -533,8 +539,8 @@ function formatPayload(value: string | null | undefined) {
           </NvSelect>
         </NvField>
         <NvField>
-          <NvFieldLabel>事件类型</NvFieldLabel>
-          <NvInput v-model="filters.eventType" placeholder="按事件类型筛选" />
+          <NvFieldLabel for="dead-letter-event-type">完整事件类型</NvFieldLabel>
+          <NvInput id="dead-letter-event-type" v-model="filters.eventType" />
         </NvField>
         <NvField>
           <NvFieldLabel>状态</NvFieldLabel>
@@ -551,6 +557,7 @@ function formatPayload(value: string | null | undefined) {
         </NvField>
       </section>
 
+      <p class="text-sm text-muted-foreground">在当前结果中搜索事件类型、消费者或失败码。</p>
       <NvDataTable
         class="min-w-0"
         v-model:selected="selectedRowKeys"
@@ -564,7 +571,7 @@ function formatPayload(value: string | null | undefined) {
         awaiting-scope-message="尚未选择业务范围，还没有发起查询。"
         :empty-message="emptyMessage"
         selectable
-        search-placeholder="搜索事件类型、消费者、失败码…"
+        search-placeholder="在当前结果中搜索…"
         @retry="handleRefresh"
       >
         <template #bulk-actions>

@@ -174,12 +174,19 @@ async function exportCsv() {
       :oee-buckets="oee.aggregateBuckets.value"
     />
 
+    <p class="text-sm text-muted-foreground">
+      产量按所选日期区间及筛选条件统计。当前在制反映现场实时状态。
+    </p>
+    <p v-if="report.state.value === 'idle'" class="text-sm text-muted-foreground" role="status">
+      请选择有效业务范围后查看生产统计。
+    </p>
     <MesProductionStatisticsTable
-      :rows="report.items.value"
-      :total="report.total.value"
+      v-else
+      :rows="report.state.value === 'ready' ? report.items.value : []"
+      :total="report.state.value === 'ready' ? report.total.value : 0"
       :page="page"
       :page-size="pageSize"
-      :pending="report.pending.value"
+      :pending="report.pending.value || report.state.value === 'loading'"
       :error="report.error.value"
       @update:page="page = $event"
       @update:page-size="pageSize = $event"

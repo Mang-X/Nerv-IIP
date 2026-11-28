@@ -70,6 +70,7 @@ vi.mock('@/composables/mes', () => ({
     nextStep: '',
   }),
   useMesWorkScopeSelection: () => ({
+    scopeReadState: ref('ready'),
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
     scopeReady: ref(true),

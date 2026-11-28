@@ -32,7 +32,8 @@ public sealed record ProductionVersionRoutingSnapshotResponse(
     string RoutingCode,
     string RoutingRevision,
     string RoutingStatus,
-    IReadOnlyCollection<ProductionVersionRoutingOperationResponse> Operations);
+    IReadOnlyCollection<ProductionVersionRoutingOperationResponse> Operations,
+    string MbomVersionId);
 
 public sealed record ProductionVersionRoutingOperationResponse(
     int Sequence,
@@ -118,6 +119,7 @@ public sealed class GetProductionVersionRoutingSnapshotQueryHandler(
                     x.IsOutsourced,
                     x.RequiredSkillCode,
                     x.Interruptible))
-                .ToArray());
+                .ToArray(),
+            version.MbomVersionId);
     }
 }

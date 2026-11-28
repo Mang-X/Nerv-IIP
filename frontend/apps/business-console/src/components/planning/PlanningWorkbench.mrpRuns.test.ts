@@ -8,6 +8,19 @@ import PlanningWorkbench from './PlanningWorkbench.vue'
 describe('PlanningWorkbench', () => {
   beforeEach(resetPlanningWorkbench)
 
+  it('显示每条需求的建议数及算式，零需求显示占位', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'covered', status: 'Completed', demandCount: 2, suggestionCount: 9 },
+      { runId: 'empty', status: 'Completed', demandCount: 0, suggestionCount: 9 },
+    ]
+    await nextTick()
+    expect(wrapper.findAll('.cell-suggestionsPerDemand').map((cell) => cell.text())).toEqual([
+      '4.5 条/需求（9 ÷ 2）',
+      '—',
+    ])
+  })
+
   it('只在最近完成的 MRP 有后续需求变更时显示过期横幅', async () => {
     const wrapper = mount(PlanningWorkbench)
     planningSpies.mrpRunsRef!.value = [

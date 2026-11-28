@@ -86,7 +86,14 @@ function harness(
       if (url.pathname.endsWith('/product-categories')) {
         return Response.json({
           success: true,
-          data: { items: [{ categoryCode: 'PCAT-01', categoryName: '结构件', enabled: true }] },
+          data: {
+            items: [
+              url.searchParams.get('skip') === '1'
+                ? { categoryCode: 'PCAT-01', categoryName: '结构件', enabled: true }
+                : { categoryCode: 'PCAT-00', categoryName: '紧固件', enabled: true },
+            ],
+            total: 2,
+          },
         })
       }
       // 目录与资源列表都不含新建项：名称只能来自弹窗回传。
@@ -162,6 +169,12 @@ describe('已注册的新增弹窗（#3797）', () => {
     await openCreateDialog(wrapper, '物料')
 
     setInput('#sku-name', '不锈钢法兰盘')
+    expect(
+      requests.some(
+        ({ url }) =>
+          url.pathname.endsWith('/product-categories') && url.searchParams.get('skip') === '1',
+      ),
+    ).toBe(true)
     const category = [...document.body.querySelectorAll('select')].find((s) =>
       [...s.options].some((o) => o.value === 'PCAT-01'),
     )!

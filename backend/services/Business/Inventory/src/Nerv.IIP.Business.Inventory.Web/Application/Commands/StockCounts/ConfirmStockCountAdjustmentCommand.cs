@@ -95,7 +95,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
 
         var varianceQuantity = request.CountedQuantity - ledger.OnHandQuantity;
         var varianceAmount = Math.Round(Math.Abs(varianceQuantity * ledger.MovingAverageUnitCost), 6, MidpointRounding.ToEven);
-        if (approvalOptions.RequiresApproval(varianceQuantity, varianceAmount))
+        if (varianceQuantity != 0m && approvalOptions.RequiresApproval(varianceQuantity, varianceAmount))
         {
             try
             {
@@ -134,10 +134,17 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
                 postedMovement?.Id, varianceQuantity, ledger.OnHandQuantity, pendingAdjustment.Status, approval.ChainId);
         }
 
-        StockMovement movement;
+        StockMovement? movement = null;
         try
         {
-            movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
+            if (varianceQuantity == 0m)
+            {
+                task.ConfirmWithoutVariance(ledger, request.CountedQuantity);
+            }
+            else
+            {
+                movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
+            }
         }
         catch (StockCountRecountRequiredException)
         {
@@ -148,10 +155,16 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
             throw new KnownException("已过账库存不允许再次调整，请刷新后重试。");
         }
 
-        dbContext.StockMovements.Add(movement);
-        var adjustment = StockCountAdjustment.Record(task, movement, request.IdempotencyKey);
+        if (movement is not null)
+        {
+            dbContext.StockMovements.Add(movement);
+        }
+
+        var adjustment = movement is null
+            ? StockCountAdjustment.RecordWithoutVariance(task, request.IdempotencyKey)
+            : StockCountAdjustment.Record(task, movement, request.IdempotencyKey);
         dbContext.StockCountAdjustments.Add(adjustment);
-        return new ConfirmStockCountAdjustmentResult(movement.Id, task.VarianceQuantity ?? 0, ledger.OnHandQuantity, adjustment.Status, null);
+        return new ConfirmStockCountAdjustmentResult(movement?.Id, task.VarianceQuantity ?? 0, ledger.OnHandQuantity, adjustment.Status, null);
     }
 
     private static bool IsCommittedStockGuard(InventoryDomainException exception)

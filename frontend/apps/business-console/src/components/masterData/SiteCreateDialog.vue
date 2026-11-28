@@ -1,5 +1,6 @@
 <script setup lang="ts">
 /** 新建工厂（工厂结构的根）。 */
+import type { DirectoryCreatedItem } from '@/components/business/directoryCreators'
 import type { BusinessConsoleCreateSiteRequest } from '@nerv-iip/api-client'
 import { useCreateMasterDataResource } from '@/composables/master-data'
 import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
@@ -25,6 +26,8 @@ import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const open = defineModel<boolean>('open', { default: false })
 
+const emit = defineEmits<{ created: [item: DirectoryCreatedItem] }>()
+
 const businessContext = useBusinessContextStore()
 const returnFocus = useReturnFocusOnClose()
 const sites = useCreateMasterDataResource<BusinessConsoleCreateSiteRequest>('site')
@@ -41,12 +44,14 @@ async function submit() {
   }
   const name = form.name.trim()
   try {
-    await sites.create({
+    const response = await sites.create({
       organizationId: businessContext.organizationId,
       environmentId: businessContext.environmentId,
       name,
       timezone: form.timezone,
     })
+    const created = response.data
+    if (created?.code) emit('created', { code: created.code, name: created.displayName || name })
     notifySuccess(`工厂「${name}」已创建。`)
     open.value = false
   } catch (error) {

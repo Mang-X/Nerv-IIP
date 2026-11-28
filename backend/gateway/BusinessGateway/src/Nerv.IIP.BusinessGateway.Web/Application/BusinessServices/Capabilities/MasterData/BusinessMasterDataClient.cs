@@ -788,7 +788,13 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         string internalBearerToken,
         BusinessConsoleAssignPersonnelSkillRequest request,
         CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/personnel-skills", request, cancellationToken);
+        SendAsync<BusinessConsoleResourceItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/master-data/personnel-skills",
+            request,
+            cancellationToken,
+            acceptKnownExceptionCodeZero: true);
 
     public Task<BusinessConsolePersonnelSkillMatrixResponse> ListPersonnelSkillMatrixAsync(
         string internalBearerToken,
