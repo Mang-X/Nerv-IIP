@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { listBusinessConsoleSkus } from '@nerv-iip/api-client'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
   NvDatePicker,
@@ -28,7 +30,8 @@ import type { usePlanningWorkbenchController } from './usePlanningWorkbenchContr
 
 type View = ShallowUnwrapRef<ReturnType<typeof usePlanningWorkbenchController>>
 
-defineProps<{
+const props = defineProps<{
+  baseUomBySku: View['baseUomBySku']
   canSubmitMps: View['canSubmitMps']
   createMpsBucketPending: View['createMpsBucketPending']
   hasPermission: View['hasPermission']
@@ -42,6 +45,37 @@ defineProps<{
 }>()
 
 const mpsOpen = defineModel<View['mpsOpen']>('mpsOpen', { required: true })
+const businessContext = useBusinessContextStore()
+let skuLookupGeneration = 0
+
+function selectSku(code: string) {
+  if (code === props.mpsForm.skuCode) return
+  props.mpsForm.skuCode = code
+  const trimmed = code.trim()
+  const cachedUom = props.baseUomBySku.get(trimmed)
+  if (cachedUom) {
+    skuLookupGeneration += 1
+    props.mpsForm.uomCode = cachedUom
+    return
+  }
+  props.mpsForm.uomCode = ''
+  if (!trimmed) return
+  const generation = ++skuLookupGeneration
+  const { organizationId, environmentId } = businessContext
+  if (!organizationId || !environmentId) return
+  void listBusinessConsoleSkus({
+    query: { organizationId, environmentId, keyword: trimmed, take: 20 },
+    throwOnError: false,
+  })
+    .then((response) => {
+      if (generation !== skuLookupGeneration || props.mpsForm.skuCode.trim() !== trimmed) return
+      if (props.mpsForm.uomCode) return
+      const items = response.data?.data?.resources ?? []
+      const exact = items.find((item) => item.code?.trim() === trimmed)
+      if (exact?.baseUomCode) props.mpsForm.uomCode = exact.baseUomCode
+    })
+    .catch(() => {})
+}
 </script>
 
 <template>
@@ -63,7 +97,8 @@ const mpsOpen = defineModel<View['mpsOpen']>('mpsOpen', { required: true })
             <NvFieldLabel for="mps-sku">SKU</NvFieldLabel>
             <DirectoryPicker
               id="mps-sku"
-              v-model="mpsForm.skuCode"
+              :model-value="mpsForm.skuCode"
+              @update:model-value="selectSku"
               directory-type="material"
               creatable
               placeholder="选择 SKU"

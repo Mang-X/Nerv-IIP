@@ -1036,7 +1036,7 @@
       "id": "wms-assignment-migration",
       "sourceId": "wms-assignment-migration",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WmsWorkAssignmentMigrationPostgresTests\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.(?:WmsWorkAssignmentMigrationPostgresTests|WarehouseAssignmentCommandTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS work-assignment PostgreSQL upgrade tests\\.$",
       "allowedLanes": [
         "backend"
@@ -1047,11 +1047,12 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WarehouseAssignmentCommandTests.First_outbound_assignment_persists_mes_picking_pool_before_any_retry",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary"
       ],
-      "expectedRuntimeTestCount": 3
+      "expectedRuntimeTestCount": 4
     },
     {
       "id": "scheduling-postgres",

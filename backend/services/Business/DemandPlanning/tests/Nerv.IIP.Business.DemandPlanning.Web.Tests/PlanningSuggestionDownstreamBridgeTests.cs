@@ -81,6 +81,40 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
             new PlanningSuggestionDownstreamRequest("ScheduledReceipt", "ScheduledReceipt", null, "accept-001"), CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("BusinessMes", "WorkOrder", false)]
+    [InlineData("BusinessErp", "PurchaseRequisition", false)]
+    [InlineData("BusinessMes", "WorkOrder", true)]
+    [InlineData("BusinessErp", "PurchaseRequisition", true)]
+    public async Task Http_bridge_distinguishes_business_rejections_from_upstream_failures(
+        string service, string documentType, bool serverFailure)
+    {
+        var isMes = service == "BusinessMes";
+        var suggestion = isMes ? NewWorkOrderSuggestion() : NewPurchaseSuggestion();
+        var handler = new StubHttpMessageHandler(_ => serverFailure
+            ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            : JsonResponse("""{"success":false,"code":0,"message":"private diagnostic","data":null}"""));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://downstream.test") };
+        IPlanningSuggestionDownstreamBridge bridge = isMes
+            ? new HttpMesPlanningSuggestionDownstreamBridge(client, NullLogger<HttpMesPlanningSuggestionDownstreamBridge>.Instance)
+            : new HttpErpPlanningSuggestionDownstreamBridge(client, NullLogger<HttpErpPlanningSuggestionDownstreamBridge>.Instance);
+
+        var request = new PlanningSuggestionDownstreamRequest(service, documentType, null, "accept-001");
+        if (serverFailure)
+        {
+            var failure = await Assert.ThrowsAsync<HttpRequestException>(() =>
+                bridge.CreateDownstreamAsync(suggestion, request, CancellationToken.None));
+            Assert.Equal(HttpStatusCode.InternalServerError, failure.StatusCode);
+        }
+        else
+        {
+            var rejection = await Assert.ThrowsAsync<KnownException>(() =>
+                bridge.CreateDownstreamAsync(suggestion, request, CancellationToken.None));
+            Assert.StartsWith(service == "BusinessMes" ? "MES 拒绝创建工单" : "ERP 拒绝创建采购申请", rejection.Message);
+            Assert.DoesNotContain("private diagnostic", rejection.Message);
+        }
+    }
+
     private sealed class TestHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;

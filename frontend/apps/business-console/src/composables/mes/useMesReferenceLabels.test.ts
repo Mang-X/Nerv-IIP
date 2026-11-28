@@ -23,6 +23,10 @@ import {
  * 断言一律打 `useMesReferenceLabels().statusLabel` 这条**生产渲染路径**，不走任何
  * 只读表的旁路导出：只要有人把归一化加回 `statusLabel`，这里立刻红。
  */
+it('显示追溯来源状态', () => {
+  expect(useMesReferenceLabels().statusLabel('Source')).toBe('来源')
+})
+
 describe('MES 状态词表不吸收契约漂移', () => {
   const { statusLabel } = useMesReferenceLabels()
 

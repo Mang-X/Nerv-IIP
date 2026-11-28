@@ -11,6 +11,7 @@ import {
   SUGGESTION_REJECT_REASON_MAX_LENGTH,
   useBusinessPlanning,
 } from '@/composables/planning/useBusinessPlanning'
+import { toBaseUomBySku } from '@/composables/master-data/skuBaseUom'
 import { isMesWorkOrderDownstream } from '@/composables/planning/fulfillment'
 import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
@@ -155,6 +156,7 @@ export function usePlanningWorkbenchController() {
   const { skus } = useBusinessSkus(
     () => auth.principal?.permissionCodes?.includes(P.masterDataProductsRead) === true,
   )
+  const baseUomBySku = toBaseUomBySku(skus)
   const { resources: sites } = useBusinessMasterDataResources('site', { enabled: canReadResources })
   const { resources: units } = useBusinessMasterDataResources('unit-of-measure', {
     enabled: canReadResources,
@@ -516,7 +518,7 @@ export function usePlanningWorkbenchController() {
     { key: 'demandCount', header: '覆盖需求', align: 'end', width: 'w-24' },
     { key: 'inputDegradationSources', header: '输入状态', width: 'w-36' },
     { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
-    { key: 'coverage', header: '覆盖率', align: 'end', width: 'w-24' },
+    { key: 'suggestionsPerDemand', header: '每条需求的建议数', align: 'end', width: 'w-48' },
     { key: 'availabilityCount', header: '库存快照', align: 'end', width: 'w-24' },
     { key: 'actions', header: '', align: 'end', width: 'w-24' },
   ]
@@ -535,10 +537,17 @@ export function usePlanningWorkbenchController() {
     { key: 'skuCode', header: 'SKU', width: 'w-32' },
     { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
     { key: 'requiredDate', header: '需求日', width: 'w-28' },
-    { key: 'reasonCode', header: '原因', width: 'w-80' },
-    { key: 'downstream', header: '承接单据', width: 'w-56' },
+    { key: 'reasonCode', header: '来源与原因', width: 'w-44' },
+    { key: 'downstream', header: '承接单据', width: 'w-40' },
     { key: 'status', header: '状态', width: 'w-24' },
-    { key: 'actions', header: '', align: 'end', width: 'w-48' },
+    {
+      key: 'actions',
+      header: '操作',
+      align: 'end',
+      width: 'w-44',
+      headerClass: 'sticky right-0 z-20 border-l bg-background',
+      cellClass: 'sticky right-0 z-10 border-l bg-card',
+    },
   ]
 
   // 五个写操作此前都没有 try/catch：一次 500 就是「未处理拒绝 + 弹框永远关不掉」（MAN-700 / #1289）。
@@ -789,6 +798,7 @@ export function usePlanningWorkbenchController() {
     mpsColumns,
     mpsEditingId,
     mpsForm,
+    baseUomBySku,
     mpsOpen,
     mpsReady,
     mpsSegments,

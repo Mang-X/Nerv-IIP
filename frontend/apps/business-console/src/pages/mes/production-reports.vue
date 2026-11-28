@@ -100,6 +100,9 @@ const {
 // 冲销是写操作(网关按 business.mes.reporting.write 鉴权)。页面准入只需 read,故写权限需单独门控:
 // 无写权限的只读角色不展示冲销/重新报工入口,避免看到必然 403 的破坏性动作(AGENTS.md §5 权限同步)。
 const auth = useAuthStore()
+const canReadOperations = computed(() =>
+  auth.principal?.permissionCodes?.includes(P.mesOperationsRead),
+)
 const { principal } = storeToRefs(auth)
 const canReport = computed(() =>
   (principal.value?.permissionCodes ?? []).includes(P.mesReportingWrite),
@@ -464,11 +467,17 @@ function openWorkOrder(workOrderId?: string | null) {
       :loading="productionReportsPending"
       :error="productionReportsError"
       :error-message="errorMessage"
-      empty-message="还没有报工记录。报工后这里会出现对应记录，去工序执行报工。"
+      empty-message="暂无报工记录。"
       :searchable="false"
       :column-settings="false"
       @retry="refreshProductionReports"
     >
+      <template #empty>
+        <p class="text-sm text-muted-foreground">暂无报工记录。</p>
+        <NvButton v-if="canReadOperations" size="sm" variant="outline" as-child>
+          <RouterLink to="/mes/operation-tasks">去工序执行</RouterLink>
+        </NvButton>
+      </template>
       <template #cell-reportNo="{ row }">
         <div
           :data-report-no="row.reportNo ?? undefined"

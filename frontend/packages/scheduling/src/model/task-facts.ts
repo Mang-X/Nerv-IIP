@@ -40,7 +40,9 @@ export function taskFactRows(task: ScheduleTask): Array<[string, string]> {
     const minutes = (Date.parse(task.endUtc) - Date.parse(task.dueUtc)) / 60_000
     rows.push([
       '交期差',
-      minutes === 0 ? '按期' : `${minutes > 0 ? '延期' : '提前'} ${Math.abs(minutes)} 分钟`,
+      minutes === 0
+        ? '按期'
+        : `${minutes > 0 ? '延期' : '提前'} ${Number(Math.abs(minutes).toFixed(1))} 分钟`,
     ])
   }
   const ready =

@@ -454,12 +454,21 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         BusinessConsoleAcceptPlanningSuggestionRequest request,
         CancellationToken cancellationToken)
     {
-        return await SendAsync<BusinessConsoleAcceptedResponse>(
-            internalBearerToken,
-            HttpMethod.Post,
-            $"/api/business/v1/planning/suggestions/{Uri.EscapeDataString(suggestionId)}/accept",
-            request,
-            cancellationToken);
+        try
+        {
+            return await SendAsync<BusinessConsoleAcceptedResponse>(
+                internalBearerToken,
+                HttpMethod.Post,
+                $"/api/business/v1/planning/suggestions/{Uri.EscapeDataString(suggestionId)}/accept",
+                request,
+                cancellationToken,
+                acceptKnownExceptionCodeZero: true);
+        }
+        catch (BusinessServiceProxyException ex) when ((int)ex.StatusCode >= 500)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                System.Net.HttpStatusCode.BadGateway, "downstream-invalid-response", ex);
+        }
     }
 
     public Task<BusinessConsolePlanningSuggestionRejectedResponse> RejectSuggestionAsync(

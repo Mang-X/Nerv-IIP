@@ -423,7 +423,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         object? body,
         string downstreamDocumentType,
         CancellationToken cancellationToken,
-        Action<HttpRequestMessage>? configureRequest = null)
+        Action<HttpRequestMessage>? configureRequest = null,
+        bool mapDownstreamServerErrorToBadGateway = false)
     {
         var accepted = await SendAsync<MesServiceAcceptedResponse>(
             internalBearerToken,
@@ -431,7 +432,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             requestUri,
             body,
             cancellationToken,
-            configureRequest: configureRequest);
+            configureRequest: configureRequest,
+            mapDownstreamServerErrorToBadGateway: mapDownstreamServerErrorToBadGateway);
         return ToAcceptedResponse(accepted, downstreamDocumentType);
     }
 
@@ -807,7 +809,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             $"/api/business/v1/mes/material-issue-requests/{Uri.EscapeDataString(requestId)}/line-side-receipts",
             request,
             MesMaterialIssueRequestDocumentType,
-            cancellationToken);
+            cancellationToken,
+            mapDownstreamServerErrorToBadGateway: true);
 
     public Task<BusinessConsoleAcceptedResponse> ReturnLineSideMaterialAsync(
         string internalBearerToken,
@@ -1082,7 +1085,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                     ("environmentId", request.EnvironmentId),
                     ("idempotencyKey", request.IdempotencyKey)),
                 null,
-                cancellationToken);
+                cancellationToken,
+                acceptKnownExceptionCodeZero: true);
         }
         catch (BusinessServiceProxyException exception) when (
             exception.StatusCode == HttpStatusCode.BadRequest &&

@@ -35,7 +35,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         JsonSerializerOptions? jsonOptions = null,
         Action<HttpRequestMessage>? configureRequest = null,
         bool failClosedOnFailureEnvelope = false,
-        bool acceptKnownExceptionCodeZero = false)
+        bool acceptKnownExceptionCodeZero = false,
+        bool mapDownstreamServerErrorToBadGateway = false)
     {
         using var response = await SendRequestAsync(
             internalBearerToken,
@@ -44,7 +45,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             body,
             cancellationToken,
             jsonOptions,
-            configureRequest);
+            configureRequest,
+            mapDownstreamServerErrorToBadGateway);
         try
         {
             return await ReadResponseDataAsync<TResponse>(
@@ -112,7 +114,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         object? body,
         CancellationToken cancellationToken,
         JsonSerializerOptions? jsonOptions,
-        Action<HttpRequestMessage>? configureRequest)
+        Action<HttpRequestMessage>? configureRequest,
+        bool mapDownstreamServerErrorToBadGateway = false)
     {
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
@@ -137,6 +140,11 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         using (response)
         {
+            if (mapDownstreamServerErrorToBadGateway && (int)response.StatusCode >= 500)
+            {
+                throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.BadGateway);
+            }
+
             var envelope = await ReadDownstreamErrorEnvelopeAsync(response, cancellationToken);
             throw BusinessServiceProxyException.FromDownstreamError(
                 response.StatusCode,

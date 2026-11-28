@@ -153,6 +153,10 @@ describe('PlanningWorkbench', () => {
     expect(focusedSuggestion).toHaveLength(1)
     expect(focusedSuggestion[0]!.text()).toContain('FG-SHOCK')
     await wrapper
+      .findAll('.cell-reasonCode button')
+      .find((button) => button.text() === '查看净算依据')!
+      .trigger('click')
+    await wrapper
       .findAll('button')
       .find((button) => button.text() === '定位追溯')!
       .trigger('click')
@@ -275,8 +279,7 @@ describe('PlanningWorkbench', () => {
     const supersededActions = supersededRow.querySelector('.cell-actions')!
     expect(supersededActions.textContent).not.toContain('接受')
     expect(supersededActions.textContent).not.toContain('拒绝')
-    expect(supersededActions.querySelectorAll('button')).toHaveLength(1)
-    expect(supersededActions.textContent).toContain('定位追溯')
+    expect(supersededActions.querySelectorAll('button')).toHaveLength(0)
     expect(wrapper.text()).toContain('SKU-ACCEPTED')
     expect(wrapper.text()).toContain('SKU-REJECTED')
   })
@@ -322,20 +325,24 @@ describe('PlanningWorkbench', () => {
     expect(refreshedRow.querySelector('.cell-status')?.textContent).toContain('2026-07-01')
   })
 
-  it('renders backend net requirement explanation instead of recalculating MRP in the browser', () => {
+  it('按需查阅所选建议的完整净算依据，关闭后主表仍可评审', async () => {
     const wrapper = mount(PlanningWorkbench)
-
-    expect(wrapper.text()).toContain('净需求公式')
-    expect(wrapper.text()).toContain('10 - 6 - 0 = 4')
-    expect(wrapper.text()).toContain('需求来源')
-    expect(wrapper.text()).toContain('组件毛需求')
-    // #1418 顺带项：scrap/yield 英文码说人话——公式只保留算式，比率以中文百分比呈现。
-    expect(wrapper.text()).toContain('废品率 10%')
-    expect(wrapper.text()).toContain('良率 80%')
-    expect(wrapper.text()).toContain('废品率 / 良率已计入组件毛需求')
-    expect(wrapper.text()).not.toContain('scrap/yield')
-    expect(wrapper.text()).toContain('27.5 - 0 - 0 = 27.5')
-    expect(wrapper.text()).toContain('SO-1001')
+    expect(wrapper.text()).not.toContain('10 - 6 - 0 = 4')
+    const evidenceFor = (reason: string) =>
+      wrapper
+        .findAll('.cell-reasonCode')
+        .find((cell) => cell.text().includes(reason))!
+        .get('button')
+    await evidenceFor('需求来源').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('10 - 6 - 0 = 4')
+    await wrapper.get('[role="dialog"] button:last-child').trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await evidenceFor('组件净需求').trigger('click')
+    const component = wrapper.get('[role="dialog"]').text()
+    expect(component).toContain('27.5 - 0 - 0 = 27.5; 废品率 / 良率 0.1/0.8')
+    expect(component).toContain('废品率 10%')
+    expect(component).toContain('良率 80%')
+    expect(component).not.toContain('10 - 6 - 0 = 4')
   })
 
   it('mounts the time-phased panel and run distribution chart scoped to a single run', () => {
@@ -477,10 +484,22 @@ describe('PlanningWorkbench', () => {
     expect(typeLabels).toContain('负可用')
     expect(typeLabels).toContain('超期在途')
     expect(wrapper.text()).toContain('提前期不足')
-    expect(wrapper.text()).toContain('可用量 -3 低于 0')
     expect(wrapper.text()).toContain('负可用来源')
-    expect(wrapper.text()).toContain('在途 5 应于 2026-05-20 到货')
-    expect(wrapper.text()).toContain('例外说明')
+    expect(wrapper.text()).not.toContain('可用量 -3 低于 0')
+    await wrapper
+      .findAll('.cell-reasonCode')
+      .find((cell) => cell.text().includes('负可用来源'))!
+      .get('button')
+      .trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('可用量 -3 低于 0')
+    await wrapper.get('[role="dialog"] button:last-child').trigger('click')
+    await wrapper
+      .findAll('.cell-reasonCode')
+      .find((cell) => cell.text().includes('在途已超期'))!
+      .get('button')
+      .trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('在途 5 应于 2026-05-20 到货')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('例外说明')
     expect(wrapper.text()).toContain('安全库存低于下限，建议补货')
     expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(1)
   })
@@ -516,12 +535,15 @@ describe('PlanningWorkbench', () => {
   })
 })
 
-it('采购申请入口仅展示采购类 MRP 建议', async () => {
+it.each([
+  ['planned-purchase', '采购建议'],
+  ['planned-work-order', '生产建议'],
+])('跨页入口仅展示 %s 分型的 MRP 建议', async (suggestionType, label) => {
   resetPlanningWorkbench()
-  planningRoute.query = { suggestionType: 'planned-purchase' }
+  planningRoute.query = { suggestionType }
   const wrapper = mount(PlanningWorkbench)
   await flushPromises()
   const types = wrapper.findAll('.cell-suggestionType').map((cell) => cell.text())
   expect(types.length).toBeGreaterThan(0)
-  expect(new Set(types)).toEqual(new Set(['采购建议']))
+  expect(new Set(types)).toEqual(new Set([label]))
 })

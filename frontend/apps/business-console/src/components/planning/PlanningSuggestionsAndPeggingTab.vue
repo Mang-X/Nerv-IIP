@@ -14,7 +14,6 @@ import {
   formatDate,
   formatQuantity,
   formatPercent,
-  formulaMathPart,
   inputDegradationLabel,
   explanationRows,
 } from './planningFormatters'
@@ -35,6 +34,11 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetHeader,
+  NvSheetTitle,
   NvSpinner,
   NvStatusBadge,
   NvTabsContent,
@@ -42,7 +46,7 @@ import {
 import { CalendarCogIcon, CheckIcon, XIcon } from '@lucide/vue'
 import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import type { ShallowUnwrapRef } from 'vue'
+import { shallowRef, type ShallowUnwrapRef } from 'vue'
 import type { usePlanningWorkbenchController } from './usePlanningWorkbenchController'
 
 type View = ShallowUnwrapRef<ReturnType<typeof usePlanningWorkbenchController>>
@@ -105,6 +109,22 @@ const rejectReason = defineModel<View['rejectReason']>('rejectReason', { require
 const rejectTarget = defineModel<View['rejectTarget']>('rejectTarget', { required: true })
 
 const cancelTarget = defineModel<View['cancelTarget']>('cancelTarget', { required: true })
+
+const evidenceRow = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
+const evidenceOpen = shallowRef(false)
+let evidenceTrigger: HTMLElement | null = null
+
+function openEvidence(row: BusinessConsolePlanningSuggestionItem, event: MouseEvent) {
+  evidenceTrigger = event.currentTarget as HTMLElement
+  evidenceRow.value = row
+  evidenceOpen.value = true
+}
+
+function restoreEvidenceFocus(event: Event) {
+  event.preventDefault()
+  evidenceTrigger?.focus()
+  evidenceTrigger = null
+}
 </script>
 
 <template>
@@ -201,7 +221,7 @@ const cancelTarget = defineModel<View['cancelTarget']>('cancelTarget', { require
         />
       </template>
       <template #cell-skuCode="{ row }">
-        <div class="flex flex-col gap-0.5">
+        <div class="flex flex-col gap-0.5 whitespace-normal wrap-anywhere">
           <span>{{ skuLabel(row.skuCode) }}</span>
           <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
         </div>
@@ -211,63 +231,30 @@ const cancelTarget = defineModel<View['cancelTarget']>('cancelTarget', { require
       >
       <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
       <template #cell-reasonCode="{ row }">
-        <div class="grid min-w-80 gap-2">
-          <div class="flex flex-wrap items-center gap-2">
-            <span>{{ reasonLabel(row.reasonCode) }}</span>
-            <NvStatusBadge
-              v-if="row.netRequirementExplanation"
-              :label="sourceTypeLabel(row.netRequirementExplanation.primarySourceType)"
-              tone="info"
-            />
-          </div>
-          <div
+        <div class="grid justify-items-start gap-1 whitespace-normal">
+          <NvStatusBadge
             v-if="row.netRequirementExplanation"
-            class="grid gap-2 rounded-md border border-border/70 bg-muted/30 p-2 text-xs"
+            :label="sourceTypeLabel(row.netRequirementExplanation.primarySourceType)"
+            tone="info"
+          />
+          <span class="text-sm">{{ reasonLabel(row.reasonCode) }}</span>
+          <NvButton
+            v-if="row.netRequirementExplanation || row.suggestionId"
+            size="sm"
+            type="button"
+            variant="ghost"
+            class="px-1"
+            aria-haspopup="dialog"
+            @click="openEvidence(row, $event)"
+            >查看净算依据</NvButton
           >
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="font-medium text-foreground">{{
-                ['negative-availability', 'overdue-receipt'].includes(row.suggestionType ?? '')
-                  ? '例外说明'
-                  : '净需求公式'
-              }}</span>
-              <span class="font-mono tabular-nums text-muted-foreground">{{
-                formulaMathPart(row.netRequirementExplanation.formula)
-              }}</span>
-            </div>
-            <div class="grid grid-cols-2 gap-1 sm:grid-cols-4">
-              <div
-                v-for="item in explanationRows(row)"
-                :key="item.label"
-                class="min-w-0 rounded border border-border/60 bg-background px-2 py-1"
-              >
-                <div class="text-muted-foreground">{{ item.label }}</div>
-                <div class="tabular-nums text-foreground">{{ item.value ?? 0 }}</div>
-              </div>
-            </div>
-            <div class="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-              <span>废品率 {{ formatPercent(row.netRequirementExplanation.scrapRate) }}</span>
-              <span>良率 {{ formatPercent(row.netRequirementExplanation.yieldRate) }}</span>
-              <span
-                v-if="
-                  row.netRequirementExplanation.primarySourceType === 'component' &&
-                  (row.netRequirementExplanation.scrapRate ||
-                    row.netRequirementExplanation.yieldRate !== 1)
-                "
-                >废品率 / 良率已计入组件毛需求</span
-              >
-              <span v-if="row.netRequirementExplanation.uomConversions?.length"
-                >单位 {{ row.netRequirementExplanation.uomConversions.join('；') }}</span
-              >
-              <span v-if="row.netRequirementExplanation.degradationSources?.length"
-                >退化
-                {{ inputDegradationLabel(row.netRequirementExplanation.degradationSources) }}</span
-              >
-            </div>
-          </div>
         </div>
       </template>
       <template #cell-downstream="{ row }">
-        <div v-if="row.downstreamDocumentId" class="grid gap-1 text-sm">
+        <div
+          v-if="row.downstreamDocumentId"
+          class="grid gap-1 text-sm whitespace-normal wrap-anywhere"
+        >
           <div class="grid gap-1">
             <span>{{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·</span>
             <NvButton
@@ -275,7 +262,7 @@ const cancelTarget = defineModel<View['cancelTarget']>('cancelTarget', { require
               size="sm"
               type="button"
               variant="ghost"
-              class="justify-start px-0"
+              class="h-auto justify-start px-0 text-start whitespace-normal wrap-anywhere"
               @click="
                 router.push(
                   downstreamRoute(
@@ -320,17 +307,9 @@ const cancelTarget = defineModel<View['cancelTarget']>('cancelTarget', { require
         </div></template
       >
       <template #cell-actions="{ row }">
-        <NvButton
-          v-if="row.suggestionId"
-          size="sm"
-          type="button"
-          variant="ghost"
-          @click="focusPegging(row)"
-          >定位追溯</NvButton
-        >
         <div
           v-if="isOpen(row.status) && hasPermission(P.planningSuggestionsManage)"
-          class="flex items-center justify-end gap-2"
+          class="flex flex-wrap items-center justify-end gap-1"
         >
           <NvButton
             v-if="isAcceptableSuggestion(row.suggestionType)"
@@ -358,7 +337,7 @@ const cancelTarget = defineModel<View['cancelTarget']>('cancelTarget', { require
           </NvButton>
         </div>
         <!-- 已承接成 MES 工单的行：可直接对这一张单排产（新建只含该单的方案）。 -->
-        <div v-else-if="!isOpen(row.status)" class="flex items-center justify-end gap-2">
+        <div v-else-if="!isOpen(row.status)" class="flex flex-wrap items-center justify-end gap-1">
           <NvButton
             v-if="suggestionWorkOrderId(row)"
             size="sm"
@@ -382,6 +361,92 @@ const cancelTarget = defineModel<View['cancelTarget']>('cancelTarget', { require
         </div>
       </template>
     </NvDataTable>
+
+    <NvSheet v-model:open="evidenceOpen">
+      <NvSheetContent
+        size="lg"
+        class="[&>[data-slot=nv-sheet-close]]:z-20"
+        @close-auto-focus="restoreEvidenceFocus"
+      >
+        <NvSheetHeader>
+          <NvSheetTitle>净算依据 · {{ skuLabel(evidenceRow?.skuCode) }}</NvSheetTitle>
+          <NvSheetDescription>{{ reasonLabel(evidenceRow?.reasonCode) }}</NvSheetDescription>
+        </NvSheetHeader>
+        <div v-if="evidenceRow" class="grid gap-3">
+          <div
+            v-if="evidenceRow.netRequirementExplanation"
+            class="grid gap-2 rounded-md border border-border/70 bg-muted/30 p-2 text-xs"
+          >
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="font-medium text-foreground">{{
+                ['negative-availability', 'overdue-receipt'].includes(
+                  evidenceRow.suggestionType ?? '',
+                )
+                  ? '例外说明'
+                  : '净需求公式'
+              }}</span>
+              <span
+                class="font-mono whitespace-pre-wrap wrap-anywhere tabular-nums text-muted-foreground"
+                >{{
+                  evidenceRow.netRequirementExplanation.formula?.replaceAll(
+                    'scrap/yield',
+                    '废品率 / 良率',
+                  ) || '—'
+                }}</span
+              >
+            </div>
+            <div class="grid grid-cols-2 gap-1 sm:grid-cols-4">
+              <div
+                v-for="item in explanationRows(evidenceRow)"
+                :key="item.label"
+                class="min-w-0 rounded border border-border/60 bg-background px-2 py-1"
+              >
+                <div class="text-muted-foreground">{{ item.label }}</div>
+                <div class="tabular-nums text-foreground">{{ item.value ?? 0 }}</div>
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+              <span
+                >废品率 {{ formatPercent(evidenceRow.netRequirementExplanation.scrapRate) }}</span
+              >
+              <span>良率 {{ formatPercent(evidenceRow.netRequirementExplanation.yieldRate) }}</span>
+              <span
+                v-if="
+                  evidenceRow.netRequirementExplanation.primarySourceType === 'component' &&
+                  (evidenceRow.netRequirementExplanation.scrapRate ||
+                    evidenceRow.netRequirementExplanation.yieldRate !== 1)
+                "
+                >废品率 / 良率已计入组件毛需求</span
+              >
+              <span v-if="evidenceRow.netRequirementExplanation.uomConversions?.length"
+                >单位 {{ evidenceRow.netRequirementExplanation.uomConversions.join('；') }}</span
+              >
+              <span v-if="evidenceRow.netRequirementExplanation.degradationSources?.length"
+                >退化
+                {{
+                  inputDegradationLabel(evidenceRow.netRequirementExplanation.degradationSources)
+                }}</span
+              >
+            </div>
+          </div>
+          <p v-if="!evidenceRow.netRequirementExplanation" class="text-muted-foreground">
+            此建议未保存净算明细。
+          </p>
+          <NvButton
+            v-if="evidenceRow.suggestionId && evidenceRow.runId"
+            size="sm"
+            type="button"
+            variant="outline"
+            class="justify-self-start"
+            @click="
+              evidenceOpen = false;
+              focusPegging(evidenceRow)
+            "
+            >定位追溯</NvButton
+          >
+        </div>
+      </NvSheetContent>
+    </NvSheet>
 
     <SingleOrderSchedulingDialog
       v-if="scheduleTarget"

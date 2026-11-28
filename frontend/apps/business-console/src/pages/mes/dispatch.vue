@@ -208,7 +208,7 @@ const groupColumns: NvDataTableColumn<DispatchRow>[] = [
   {
     key: 'operationTaskNo',
     header: '工序',
-    cellClass: 'font-medium',
+    cellClass: 'font-medium whitespace-normal [overflow-wrap:anywhere]',
     accessor: (r) => r.operationCode ?? r.operationTaskNo ?? r.operationTaskId ?? '无',
   },
   { key: 'status', header: '执行状态', width: 'w-28' },
@@ -227,7 +227,7 @@ const flatColumns: NvDataTableColumn<DispatchRow>[] = [
   {
     key: 'operationTaskNo',
     header: '工序',
-    cellClass: 'font-medium',
+    cellClass: 'font-medium whitespace-normal [overflow-wrap:anywhere]',
     accessor: (r) => r.operationCode ?? r.operationTaskNo ?? r.operationTaskId ?? '无',
   },
   { key: 'workOrderNo', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },

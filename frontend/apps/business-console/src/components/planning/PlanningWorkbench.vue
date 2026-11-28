@@ -48,6 +48,7 @@ const {
   cancelDemandPending,
   cancelTarget,
   confirmCancelDemand,
+  baseUomBySku,
   coverageRunId,
   coveredSkuCodes,
   createDemandPending,
@@ -201,6 +202,7 @@ const {
         :has-permission="hasPermission"
         :mps-editing-id="mpsEditingId"
         :mps-form="mpsForm"
+        :base-uom-by-sku="baseUomBySku"
         :new-mps-bucket="newMpsBucket"
         :site-options="siteOptions"
         :submit-mps-bucket="submitMpsBucket"
@@ -234,7 +236,7 @@ const {
     <NvMetricCard
       v-if="demandsReady && suggestionsReady && demandCoverageRate !== null"
       variant="target"
-      label="需求覆盖率"
+      label="需求物料覆盖率"
       :value="demandCoverageRate"
       unit="%"
       :progress="demandCoverageRate"
@@ -243,14 +245,14 @@ const {
         demandCoverageRate >= 100 ? 'success' : demandCoverageRate >= 80 ? 'warning' : 'danger'
       "
       :foot-start="
-        coverageRunId ? `${coveredSkuCodes.size} 个物料已生成建议` : '尚未运行 MRP，暂无建议覆盖'
+        coverageRunId ? `有供给建议的物料 ${coveredSkuCodes.size} 个` : '尚未运行 MRP，已覆盖 0 个'
       "
       :foot-end="`需求物料 ${demandSkuCodes.size} 个`"
     />
     <NvMetricCard
       v-else-if="demandsReady && suggestionsReady"
       variant="alert"
-      label="需求覆盖率"
+      label="需求物料覆盖率"
       value="—"
       tone="neutral"
       :status="{ label: '暂无样本', tone: 'neutral' }"

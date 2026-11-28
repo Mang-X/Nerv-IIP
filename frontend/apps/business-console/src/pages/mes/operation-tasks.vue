@@ -833,7 +833,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
               @click="openRoute('/quality/inspections', row)"
             >
               <ShieldCheckIcon aria-hidden="true" />
-              呼叫质检
+              录入检验记录
             </NvDropdownMenuItem>
             <NvDropdownMenuItem @click="openRoute('/mes/downtime', row)">
               <WrenchIcon aria-hidden="true" />

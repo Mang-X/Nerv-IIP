@@ -53,6 +53,13 @@ describe('排产任务决策事实（#4107 票面）', () => {
     expect(taskFactRows(changed)).toContainEqual(['交期差', '延期 60 分钟'])
     expect(taskFactRows(changed)).toContainEqual(['当前设备', '未知 · 开工前请人工确认设备可用'])
   })
+  it.each([
+    [178_675_607, '延期 2977.9 分钟'],
+    [-178_675_607, '提前 2977.9 分钟'],
+  ])('交期差按一位小数显示（时间差 %i 毫秒）', (difference, label) => {
+    const endUtc = new Date(Date.parse(task.dueUtc!) + difference).toISOString()
+    expect(taskFactRows({ ...task, endUtc })).toContainEqual(['交期差', label])
+  })
   it('缺少执行信息不能呈现设备正常或制造到料日期', () => {
     expect(taskFactRows({ ...task, currentExecution: null })).toContainEqual([
       '当前设备',

@@ -18,7 +18,8 @@ public sealed record MesMaterialRequirementSnapshotRequest(
     string SkuId,
     string? ProductionVersionId,
     decimal WorkOrderQuantity,
-    DateTimeOffset CapturedAtUtc);
+    DateTimeOffset CapturedAtUtc,
+    string? MbomVersionId = null);
 
 public sealed record MesMaterialRequirementSnapshotLine(
     string? OperationTaskId,
@@ -144,30 +145,15 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             return MesMaterialRequirementSnapshotResult.Missing("product-engineering:missing-production-version");
         }
 
-        var selectedVersion = await SendOptionalAsync<ResolveProductionVersionResponse>(
-            productEngineeringClient.HttpClient,
-            "ProductEngineering",
-            "/api/business/v1/engineering/production-versions/resolve?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("skuCode", request.SkuId),
-                ("effectiveDate", DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime)),
-                ("lotSize", request.WorkOrderQuantity)),
-            cancellationToken);
-        if (selectedVersion is null)
+        var mbomVersionId = request.MbomVersionId ?? await ResolveMbomVersionIdAsync(request, cancellationToken);
+        if (mbomVersionId is null)
         {
             return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:production-version:{request.ProductionVersionId}");
         }
 
-        if (!string.Equals(selectedVersion.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(selectedVersion.Status, ActiveProductionVersionStatus, StringComparison.OrdinalIgnoreCase))
+        if (!TryParseVersionReference(mbomVersionId, out var bomCode, out var revision))
         {
-            return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:production-version:{request.ProductionVersionId}");
-        }
-
-        if (!TryParseVersionReference(selectedVersion.MbomVersionId, out var bomCode, out var revision))
-        {
-            return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:mbom:{selectedVersion.MbomVersionId}");
+            return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:mbom:{mbomVersionId}");
         }
 
         var selectedBom = await SendAsync<ManufacturingBomListItem>(
@@ -180,7 +166,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         if (!string.Equals(selectedBom.SkuCode, request.SkuId, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(selectedBom.Status, PublishedEngineeringStatus, StringComparison.OrdinalIgnoreCase))
         {
-            return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:mbom:{selectedVersion.MbomVersionId}");
+            return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:mbom:{mbomVersionId}");
         }
 
         var requiredLines = SelectMaterialLines(selectedBom.MaterialLines)
@@ -206,7 +192,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             .ToArray();
         if (requiredLines.Length == 0)
         {
-            return MesMaterialRequirementSnapshotResult.NoRequirements($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}");
+            return MesMaterialRequirementSnapshotResult.NoRequirements($"product-engineering-http:{request.ProductionVersionId}:{mbomVersionId}");
         }
 
         var lines = await Task.WhenAll(requiredLines.Select(async line =>
@@ -247,11 +233,32 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                 line.UomCode,
                 availability.AvailableQuantity,
                 0m,
-                $"{selectedVersion.MbomVersionId}:{line.MaterialId}",
+                $"{mbomVersionId}:{line.MaterialId}",
                 line.SubstituteMaterialIds);
         }));
 
-        return MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}", lines);
+        return MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{request.ProductionVersionId}:{mbomVersionId}", lines);
+    }
+
+    private async Task<string?> ResolveMbomVersionIdAsync(
+        MesMaterialRequirementSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        var selectedVersion = await SendOptionalAsync<ResolveProductionVersionResponse>(
+            productEngineeringClient.HttpClient,
+            "ProductEngineering",
+            "/api/business/v1/engineering/production-versions/resolve?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuId),
+                ("effectiveDate", DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime)),
+                ("lotSize", request.WorkOrderQuantity)),
+            cancellationToken);
+        return selectedVersion is not null &&
+            string.Equals(selectedVersion.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(selectedVersion.Status, ActiveProductionVersionStatus, StringComparison.OrdinalIgnoreCase)
+                ? selectedVersion.MbomVersionId
+                : null;
     }
 
     private async Task<T> SendAsync<T>(HttpClient client, string serviceName, string requestUri, CancellationToken cancellationToken)

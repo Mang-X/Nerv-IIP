@@ -3,6 +3,7 @@ import {
   assignBusinessConsoleWmsCountExecutionMutationOptions,
   assignBusinessConsoleWmsInboundOrderMutationOptions,
   assignBusinessConsoleWmsOutboundOrderMutationOptions,
+  assignBusinessConsoleWmsPickingTaskMutationOptions,
   createBusinessConsoleWmsWorkPoolMutationOptions,
   listBusinessConsoleWmsWorkPoolsQueryOptions,
   removeBusinessConsoleWmsWorkPoolMemberMutationOptions,
@@ -50,6 +51,7 @@ export function useWmsWorkPools() {
   })
   const assignInboundMutation = useMutation(assignBusinessConsoleWmsInboundOrderMutationOptions())
   const assignOutboundMutation = useMutation(assignBusinessConsoleWmsOutboundOrderMutationOptions())
+  const assignPickingMutation = useMutation(assignBusinessConsoleWmsPickingTaskMutationOptions())
   const assignCountMutation = useMutation(assignBusinessConsoleWmsCountExecutionMutationOptions())
 
   const pools = computed<BusinessConsoleWmsWorkPool[]>(() => {
@@ -57,7 +59,7 @@ export function useWmsWorkPools() {
     return envelope?.success ? (envelope.data?.items ?? []) : []
   })
 
-  type AssignTarget = 'inbound' | 'outbound' | 'count'
+  type AssignTarget = 'inbound' | 'outbound' | 'count' | 'picking'
   function assign(
     target: AssignTarget,
     resourceId: string,
@@ -79,6 +81,13 @@ export function useWmsWorkPools() {
     if (target === 'outbound') {
       return assignOutboundMutation.mutateAsync({
         path: { outboundOrderId: resourceId },
+        query,
+        body,
+      })
+    }
+    if (target === 'picking') {
+      return assignPickingMutation.mutateAsync({
+        path: { warehouseTaskId: resourceId },
         query,
         body,
       })
@@ -116,6 +125,7 @@ export function useWmsWorkPools() {
       () =>
         assignInboundMutation.isLoading.value ||
         assignOutboundMutation.isLoading.value ||
+        assignPickingMutation.isLoading.value ||
         assignCountMutation.isLoading.value,
     ),
     newIdempotencyKey: createWmsIdempotencyKey,

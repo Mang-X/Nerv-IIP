@@ -98,9 +98,10 @@ export function usePlanningSuggestionLocation(
   const sourceRunId = computed(() =>
     typeof route.query.runId === 'string' ? route.query.runId.trim() : '',
   )
-  const sourceSuggestionType = computed(() =>
-    route.query.suggestionType === 'planned-purchase' ? 'planned-purchase' : '',
-  )
+  const sourceSuggestionType = computed(() => {
+    const type = route.query.suggestionType
+    return type === 'planned-purchase' || type === 'planned-work-order' ? type : ''
+  })
   watch(
     [
       sourceSuggestionType,

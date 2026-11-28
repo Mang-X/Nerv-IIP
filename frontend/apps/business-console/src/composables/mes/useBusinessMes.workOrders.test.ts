@@ -213,6 +213,6 @@ describe('business MES composables', () => {
 
     expect(refetch).not.toHaveBeenCalled()
     expect(operationTasks.operationListScopeReady.value).toBe(false)
-    expect(operationTasks.operationListScopeMessage.value).toContain('尚未选择已授权作业范围')
+    expect(operationTasks.operationListScopeMessage.value).toContain('正在核验当前作业范围')
   })
 })

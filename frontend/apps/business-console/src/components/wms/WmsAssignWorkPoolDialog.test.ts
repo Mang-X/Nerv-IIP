@@ -41,14 +41,14 @@ const pickerStub = {
     '<input :id="id" :data-options="(options ?? []).map((o) => o.value).join(\',\')" :data-show-code="String(showCode ?? true)" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 }
 
-function mountDialog() {
+function mountDialog(target: 'inbound' | 'picking' = 'inbound') {
   return mount(WmsAssignWorkPoolDialog, {
     attachTo: document.body,
     props: {
       open: true,
-      target: 'inbound',
-      resourceId: 'ib-1',
-      resourceLabel: '入库单 IB-20260928-000001',
+      target,
+      resourceId: target === 'picking' ? 'pick-1' : 'ib-1',
+      resourceLabel: target === 'picking' ? '拣货任务 PICK-001' : '入库单 IB-20260928-000001',
       siteCode: 'SITE-001',
       version: 3,
     },
@@ -71,8 +71,11 @@ describe('WmsAssignWorkPoolDialog（#3849）', () => {
     ]
   })
 
-  it('只列本工厂的作业池，唯一一个时直接选中并按单据版本提交分配', async () => {
-    const wrapper = mountDialog()
+  it.each([
+    ['inbound', 'ib-1'],
+    ['picking', 'pick-1'],
+  ] as const)('%s 只列本工厂的作业池，唯一一个时直接选中并按版本提交分配', async (target, id) => {
+    const wrapper = mountDialog(target)
     await flushPromises()
 
     const pool = document.body.querySelector<HTMLInputElement>('#wms-assign-pool')!
@@ -84,7 +87,7 @@ describe('WmsAssignWorkPoolDialog（#3849）', () => {
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
-    expect(state.assign).toHaveBeenCalledWith('inbound', 'ib-1', {
+    expect(state.assign).toHaveBeenCalledWith(target, id, {
       poolCode: 'WP-0001',
       idempotencyKey: 'assign-intent-1',
       expectedVersion: 3,

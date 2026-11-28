@@ -84,6 +84,7 @@ vi.mock('@/composables/mes', () => ({
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   describeMesReadinessReasons: () => [],
   useMesWorkScopeSelection: () => ({
+    scopeReadState: ref('ready'),
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
     scopeReady: ref(true),

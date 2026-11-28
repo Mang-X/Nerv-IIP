@@ -113,6 +113,10 @@ const candidateIds = computed(
 // MES 编辑不进入甘特草案撤销栈；成功读回后只清除该行输入。
 const edits = reactive(new Map<string, { priority: number; isRush: boolean }>())
 const savingOrderId = shallowRef('')
+const removableCandidateIds = computed(() =>
+  candidateIds.value.filter((id) => byId.value.get(id)?.included),
+)
+
 function values(candidate: BusinessConsoleMesWorkOrderItem) {
   return (
     edits.get(candidate.workOrderId ?? '') ?? {
@@ -215,13 +219,13 @@ async function save(candidate: BusinessConsoleMesWorkOrderItem) {
           size="sm"
           variant="ghost"
           type="button"
-          :disabled="readOnly"
+          :disabled="readOnly || removableCandidateIds.length === 0"
           :title="
             search.trim()
-              ? `把当前筛选出的 ${candidateIds.length} 张工单移出本次排程`
+              ? `把当前筛选结果中已加入的 ${removableCandidateIds.length} 张工单移出本次排程`
               : '把池内全部工单移出本次排程'
           "
-          @click="emit('include', candidateIds, false)"
+          @click="emit('include', removableCandidateIds, false)"
           >{{ search.trim() ? '移出筛选结果' : '全部移出' }}</NvButton
         >
       </div>

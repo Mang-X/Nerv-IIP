@@ -28,24 +28,28 @@ const props = defineProps<{
 }>()
 
 const scope = useMesWorkScopeSelection(props.permissionCode)
-const selection = scope.scopeSelectionValue
-const placeholder = computed(() => {
-  if (props.readPending) return '正在读取作业范围…'
-  if (props.readFailed) return '范围读取失败'
-  return hasOptions.value ? '选择作业范围' : '无可选授权范围'
+const statusMessage = computed(() => {
+  if (props.readFailed || scope.scopeReadState.value === 'error') return '范围读取失败'
+  if (scope.scopeReadState.value === 'idle') return '等待组织与环境就绪'
+  if (props.readPending || scope.scopePending.value) return '正在读取作业范围…'
+  if (scope.scopeUnavailable.value) return '无可选授权范围'
+  return ''
 })
-const hasOptions = computed(() => scope.scopeOptions.value.length > 0)
 </script>
 
 <template>
-  <div class="flex items-center gap-2" data-testid="mes-work-scope-select">
-    <span class="text-sm text-muted-foreground">作业范围</span>
+  <div class="flex max-w-full items-center gap-2" data-testid="mes-work-scope-select">
+    <span class="shrink-0 whitespace-nowrap text-sm text-muted-foreground">作业范围</span>
+    <span v-if="statusMessage" class="text-sm text-muted-foreground" role="status">
+      {{ statusMessage }}
+    </span>
     <NvSelect
-      v-model="selection"
-      :disabled="!hasOptions || props.readPending || !!props.readFailed"
+      v-else
+      v-model="scope.scopeSelectionValue.value"
+      :disabled="scope.scopeOptions.value.length === 0"
     >
       <NvSelectTrigger class="h-9 min-w-40" aria-label="作业范围">
-        <NvSelectValue :placeholder="placeholder" />
+        <NvSelectValue placeholder="选择作业范围" />
       </NvSelectTrigger>
       <NvSelectContent>
         <NvSelectItem

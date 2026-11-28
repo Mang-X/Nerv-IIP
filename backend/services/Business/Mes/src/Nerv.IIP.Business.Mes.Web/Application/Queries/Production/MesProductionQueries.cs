@@ -234,7 +234,7 @@ public sealed class GetProductionReportByIdempotencyKeyQueryHandler(ApplicationD
             .SingleOrDefaultAsync(cancellationToken);
         if (reportNo is null)
         {
-            throw new KnownException("未找到生产报工。");
+            throw new KnownException("未找到生产报工。", errorCode: StatusCodes.Status400BadRequest);
         }
 
         var report = await dbContext.ProductionReports
@@ -246,7 +246,7 @@ public sealed class GetProductionReportByIdempotencyKeyQueryHandler(ApplicationD
             .SingleOrDefaultAsync(cancellationToken);
         if (report is null)
         {
-            throw new KnownException("未找到生产报工。");
+            throw new KnownException("未找到生产报工。", errorCode: StatusCodes.Status400BadRequest);
         }
 
         var serialNumbers = await dbContext.ProductionReportSerialNumbers

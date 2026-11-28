@@ -3201,6 +3201,28 @@ public sealed partial class BusinessGatewayWmsTests
             poolCode ?? siteCode ?? "user-admin",
             "Verified difference.");
 
+    [Theory]
+    [InlineData(HttpStatusCode.OK, HttpStatusCode.BadRequest, "库存预留失败，请检查库存可用量后重试。")]
+    [InlineData(HttpStatusCode.InternalServerError, HttpStatusCode.BadGateway, "downstream-request-failed")]
+    public async Task Outbound_posting_retry_distinguishes_reservation_refusal_from_service_fault(
+        HttpStatusCode downstreamStatus, HttpStatusCode expectedStatus, string expectedMessage)
+    {
+        using var handler = new RecordingHandler(_ => JsonResponse(downstreamStatus, new
+        {
+            success = false,
+            code = 400,
+            message = "库存预留失败，请检查库存可用量后重试。",
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.RetryOutboundInventoryPostingAsync("token", "outbound-order-001", ValidRetryOutboundRequest(), CancellationToken.None));
+
+        Assert.Equal(expectedStatus, error.StatusCode);
+        Assert.Equal(expectedMessage, error.Message);
+    }
+
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, object body) =>
         new(statusCode)
         {

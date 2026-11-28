@@ -37,6 +37,15 @@ describe('WMS operate actions', () => {
     wrapper.unmount()
   })
 
+  it('出库单未分配作业池时提示先分配并禁用复核', async () => {
+    wms.outboundPoolCode = null
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    expect(wrapper.get('button[aria-label="完成复核 OB-1"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('请先分配出库作业池')
+    wrapper.unmount()
+  })
+
   it('completes outbound review without asking for a pack review number (#3848)', async () => {
     const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
     await flushPromises()

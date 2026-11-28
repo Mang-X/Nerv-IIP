@@ -178,6 +178,7 @@ vi.mock('@nerv-iip/api-client', async (original) => ({
 const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
 const associatedError = shallowRef<unknown>()
 let associatedOrderIds: () => (string | undefined)[]
+const candidatesState = shallowRef<'ready' | 'idle' | 'loading' | 'error'>('ready')
 const candidatesEmpty = shallowRef(false)
 const generatedPlan = shallowRef()
 const generatePending = shallowRef(false)
@@ -235,6 +236,7 @@ vi.mock('@/composables/scheduling/useSchedulingWorkbench', () => ({
     candidatesPending: shallowRef(false),
     // #1288 待排池 scope gate 事实：本文件不测未就绪分支，按就绪打桩。
     candidatesScopeMessage: computed(() => ''),
+    candidatesState: computed(() => candidatesState.value),
     candidatesScopeReady: computed(() => true),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     generatePending,
@@ -270,6 +272,7 @@ vi.mock('@/composables/scheduling/useSchedulingWorkbench', () => ({
 
 const detailSelection = reactive({ planId: '' })
 const historyPage = shallowRef(1)
+const noPlans = shallowRef(false)
 const historyEmpty = shallowRef(false)
 const planOneInvalidated = shallowRef(false)
 const historyFilters = reactive({
@@ -450,9 +453,10 @@ vi.mock('@/composables/scheduling/useBusinessScheduling', () => ({
     planDetail: detail,
     planDetailError: detailError,
     planDetailPending: shallowRef(false),
-    plansTotal: computed(() => 137),
+    plansTotal: computed(() => (noPlans.value ? 0 : 137)),
+    plansState: computed(() => 'ready'),
     plans: computed(() =>
-      (historyEmpty.value
+      (historyEmpty.value || noPlans.value
         ? []
         : [
             {
@@ -579,6 +583,8 @@ beforeEach(() => {
   ]
   historyPage.value = 1
   historyEmpty.value = false
+  noPlans.value = false
+  candidatesState.value = 'ready'
   planOneInvalidated.value = false
   historyFilters.status = undefined
   historyFilters.releasedOn = ''
@@ -654,6 +660,8 @@ export {
   factoryTimezone,
   assemblyTimezone,
   historyEmpty,
+  noPlans,
+  candidatesState,
   planOneInvalidated,
   detailError,
   clickConfirmRevoke,

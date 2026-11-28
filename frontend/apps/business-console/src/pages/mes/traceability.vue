@@ -43,8 +43,14 @@ definePage({
   },
 })
 
-const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } =
-  useMesTraceability()
+const {
+  filters,
+  refreshTraceability,
+  traceability,
+  traceabilityError,
+  traceabilityPending,
+  traceabilityState,
+} = useMesTraceability()
 const { statusLabel } = useMesReferenceLabels()
 const route = useRoute()
 const router = useRouter()
@@ -274,7 +280,7 @@ function firstQuery(value: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricStrip :cells="traceCells" />
+    <NvMetricStrip v-if="traceabilityState === 'ready'" :cells="traceCells" />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -344,7 +350,9 @@ function firstQuery(value: unknown) {
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
+      :awaiting-scope="traceabilityState === 'idle'"
+      awaiting-scope-message="请选择查询类型，再选择工单或输入批次、序列号或物料批。"
+      empty-message="未找到符合当前条件的追溯记录。"
       @retry="refreshTraceability"
     >
       <template #cell-receipts="{ row }">

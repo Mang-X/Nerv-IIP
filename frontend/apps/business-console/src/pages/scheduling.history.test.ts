@@ -7,6 +7,8 @@ import {
   savedDrafts,
   detailSelection,
   historyEmpty,
+  noPlans,
+  authState,
   planOneInvalidated,
   historyFilters,
   detailError,
@@ -23,6 +25,45 @@ import SchedulingPage from './scheduling.vue'
 import type { BusinessConsoleSchedulePlan } from '@nerv-iip/api-client'
 
 describe('APS scheduling workbench page', () => {
+  it.each([false, true])(
+    '甘特零方案可返回总览，MRP 读权控制生产建议入口（%s）',
+    async (canReadMrp) => {
+      noPlans.value = true
+      if (canReadMrp) authState.permissionCodes.push('business.planning.mrp.read')
+      const wrapper = mount(SchedulingPage, {
+        global: {
+          plugins: [createPinia()],
+          stubs: {
+            ...layoutStub,
+            RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' },
+          },
+        },
+      })
+      await flushPromises()
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text() === '甘特图')!
+      await tab.trigger('focus')
+      await tab.trigger('mousedown')
+      await flushPromises()
+      expect(wrapper.text()).toContain('暂无排程方案')
+      const link = wrapper.findComponent({ name: 'RouterLink' })
+      if (canReadMrp) {
+        expect(link.text()).toBe('查看生产建议')
+        expect(link.props('to')).toEqual({
+          path: '/planning',
+          query: { suggestionType: 'planned-work-order' },
+        })
+      } else {
+        expect(wrapper.text()).not.toContain('查看生产建议')
+      }
+      await wrapper
+        .findAll('button')
+        .find((item) => item.text() === '返回排程总览')!
+        .trigger('click')
+      expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('排程总览')
+      wrapper.unmount()
+    },
+  )
+
   it('shows server total, real horizons and controlled pagination in the history table', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },

@@ -157,7 +157,9 @@ function formatQuantity(value?: number | null) {
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无在制数据。工单释放并排程、工序开工后，在制行会出现在这里。"
+      :empty-message="
+        filters.keyword || filters.status ? '当前筛选无匹配的在制数据。' : '暂无开工后的在制数据。'
+      "
       @retry="refreshWip"
     >
       <template #cell-workOrderId="{ row }">

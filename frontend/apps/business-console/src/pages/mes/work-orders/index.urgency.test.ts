@@ -74,6 +74,7 @@ vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
   useMesWorkScopeSelection: () => ({
+    scopeReadState: ref('ready'),
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
     scopeReady: ref(true),

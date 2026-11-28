@@ -850,12 +850,18 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
 
         if (materialSnapshotProvider is not null)
         {
+            var planningMbomVersionId =
+                string.Equals(request.SourceSystem?.Trim(), DemandPlanningSourceReferences.DemandPlanning, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(request.SourceDocumentType?.Trim(), DemandPlanningSourceReferences.PlanningSuggestion, StringComparison.OrdinalIgnoreCase)
+                    ? routingSnapshot?.MbomVersionId
+                    : null;
             var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
                 dbContext,
                 materialSnapshotProvider,
                 workOrder,
                 request.RequestedAtUtc,
-                cancellationToken);
+                cancellationToken,
+                planningMbomVersionId);
             if (materialCapture.IsMissing)
             {
                 throw new KnownException(MaterialReadinessGuards.MissingRequirementSnapshotMessage);
@@ -2186,7 +2192,8 @@ internal static class MaterialReadinessGuards
         IMesMaterialRequirementSnapshotProvider? snapshotProvider,
         WorkOrder workOrder,
         DateTimeOffset capturedAtUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? mbomVersionId = null)
     {
         var existingCaptureIdentity = (await MaterialRequirementSnapshotReader.LoadLatestByWorkOrderAsync(
             dbContext,
@@ -2228,7 +2235,8 @@ internal static class MaterialReadinessGuards
                 workOrder.SkuId,
                 workOrder.ProductionVersionId,
                 workOrder.Quantity,
-                capturedAtUtc),
+                capturedAtUtc,
+                mbomVersionId),
             cancellationToken);
         if (result.Status == MesMaterialRequirementSnapshotStatus.Missing)
         {

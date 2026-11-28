@@ -111,6 +111,8 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 const workerRows = ref<{ userId: string; displayName: string }[]>([])
+const workerFilters = reactive<{ workCenterCode?: string; skillCode?: string }>({})
+const workerReadState = ref('ready')
 vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({
     resources: computed(() => []),
@@ -119,8 +121,8 @@ vi.mock('@/composables/master-data', () => ({
   useBusinessSkus: () => ({ skus: computed(() => []) }),
   useBusinessWorkers: () => ({
     workers: workerRows,
-    workersPending: shallowRef(false),
-    filters: reactive({}),
+    workersState: workerReadState,
+    filters: workerFilters,
   }),
 }))
 vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
@@ -139,6 +141,7 @@ vi.mock('@/composables/mes', async () => {
     makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
     // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
     useMesWorkScopeSelection: () => ({
+      scopeReadState: ref('ready'),
       scopeOptions: ref([]),
       scopeSelectionValue: ref(undefined),
       scopeReady: ref(true),
@@ -535,6 +538,7 @@ describe('工序执行的授权质检与工单来源接力', () => {
     vi.clearAllMocks()
     routeQuery.operationTaskId = undefined
     workerRows.value = []
+    workerReadState.value = 'ready'
     state.permissionCodes = []
     state.scopeError = undefined
     state.scopePending = false
@@ -560,6 +564,48 @@ describe('工序执行的授权质检与工单来源接力', () => {
     expect(wrapper.text()).toContain('当前作业范围内未找到该工序')
     expect(wrapper.text()).not.toContain('确认工单已释放、排程已生成')
     expect(wrapper.text()).toContain('查看全部工序')
+    wrapper.unmount()
+  })
+
+  it('本中心读空后由用户放宽候选范围，并保留派工对象的工作中心', async () => {
+    workerReadState.value = 'loading'
+    const wrapper = mount(DispatchAssignDialog, {
+      props: {
+        open: true,
+        target: {
+          operationTaskId: 'OP-20',
+          workOrderId: 'WO-A',
+          workCenterCode: 'WC-A',
+          workCenterName: '精加工一线',
+          status: 'Queued',
+        },
+        assign: vi.fn(),
+      },
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          NvDialog: passthrough,
+          NvDialogContent: passthrough,
+          NvDialogTitle: passthrough,
+          NvDialogDescription: passthrough,
+          NvSelect: true,
+          NvSearchSelect: true,
+          DirectoryPicker: true,
+        },
+      },
+    })
+    expect(workerFilters.workCenterCode).toBe('WC-A')
+    expect(wrapper.text()).not.toContain('查看全部在岗员工')
+
+    workerReadState.value = 'ready'
+    await wrapper.vm.$nextTick()
+    const expand = wrapper.findAll('button').find((button) => button.text() === '查看全部在岗员工')
+    expect(expand).toBeDefined()
+    await expand!.trigger('click')
+
+    expect(workerFilters.workCenterCode).toBeUndefined()
+    expect(wrapper.text()).toContain('精加工一线')
+    expect(wrapper.text()).not.toContain('查看全部在岗员工')
     wrapper.unmount()
   })
 
@@ -622,23 +668,23 @@ describe('工序执行的授权质检与工单来源接力', () => {
     { permissions: [] },
     { permissions: ['business.quality.inspection-records.read'] },
     { permissions: ['business.quality.inspection-records.create'] },
-  ])('缺目标读取或创建权限时不提供呼叫质检死路 $permissions', async ({ permissions }) => {
+  ])('缺目标读取或创建权限时不提供录入检验记录死路 $permissions', async ({ permissions }) => {
     state.permissionCodes = permissions
     const wrapper = mountPage()
     const items = await openMenu(wrapper)
-    expect(items.some((item) => item.textContent?.includes('呼叫质检'))).toBe(false)
+    expect(items.some((item) => item.textContent?.includes('录入检验记录'))).toBe(false)
     expect(routerPush).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('有目标读取及创建权限时呼叫质检保留同工单工序与工作中心', async () => {
+  it('有目标读取及创建权限时录入检验记录保留同工单工序与工作中心', async () => {
     state.permissionCodes = [
       'business.quality.inspection-records.read',
       'business.quality.inspection-records.create',
     ]
     const wrapper = mountPage()
     const items = await openMenu(wrapper)
-    const entry = items.find((item) => item.textContent?.includes('呼叫质检'))!
+    const entry = items.find((item) => item.textContent?.includes('录入检验记录'))!
     expect(entry).toBeTruthy()
     entry.click()
     await flushPromises()

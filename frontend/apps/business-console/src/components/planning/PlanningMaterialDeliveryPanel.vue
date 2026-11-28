@@ -20,6 +20,7 @@ import { useBusinessPlanningMaterialDeliveries } from '@/composables/planning/us
 import { inlineErrorMessage, notifyOperationFailure } from '@/utils/notify'
 import PlanningMaterialDeliverySources from './PlanningMaterialDeliverySources.vue'
 import {
+  primaryMaterialDeliveryReason,
   materialDeliverySourceLabel as label,
   materialDeliveryStatuses,
   materialDeliveryUtc as utc,
@@ -130,6 +131,9 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
           </NvSelectContent>
         </NvSelect>
       </div>
+      <p v-if="!selection.planId" class="text-sm text-muted-foreground">
+        未选择 APS 方案，部分排程时间不可用
+      </p>
       <div v-if="canSelectPlan && plansTotal > 20" class="flex items-center gap-2">
         <NvButton
           size="sm"
@@ -185,7 +189,7 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
               [...new Set(row.demandSources.map((source) => source.sourceReference))].join('、')
             }}</span
             ><span v-else>需求来源缺失</span
-            ><span class="block text-xs font-normal text-primary">展开来源与 pegging</span>
+            ><span class="block text-xs font-normal text-primary">展开来源与追溯</span>
           </summary>
           <PlanningMaterialDeliverySources
             :row="row"
@@ -196,8 +200,8 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
         </details>
       </template>
       <template #cell-skuCode="{ row }"
-        ><p>{{ skuLabel(row.skuCode) }}</p>
-        <p class="text-xs text-muted-foreground">
+        ><p class="whitespace-normal wrap-anywhere">{{ skuLabel(row.skuCode) }}</p>
+        <p class="text-xs whitespace-normal wrap-anywhere text-muted-foreground">
           {{ row.skuCode }} · {{ row.siteCode }}
         </p></template
       >
@@ -217,12 +221,15 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
         }}</span></template
       >
       <template #cell-expectedStartUtc="{ row }"
-        ><span data-expected-start :title="row.expectedStartUtc ?? undefined">{{
-          utc(row.expectedStartUtc)
-        }}</span></template
+        ><span
+          data-expected-start
+          class="whitespace-normal"
+          :title="row.expectedStartUtc ?? undefined"
+          >{{ utc(row.expectedStartUtc) }}</span
+        ></template
       >
       <template #cell-latestStartUtc="{ row }"
-        ><span :title="row.latestStartUtc ?? undefined">{{
+        ><span class="whitespace-normal" :title="row.latestStartUtc ?? undefined">{{
           utc(row.latestStartUtc)
         }}</span></template
       >
@@ -232,12 +239,21 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
           :label="materialDeliveryStatuses[row.status].label"
           :tone="materialDeliveryStatuses[row.status].tone"
         />
-        <ul
-          v-if="row.reasons?.length"
-          class="mt-1 min-w-40 whitespace-normal text-xs text-muted-foreground"
+        <p
+          v-if="primaryMaterialDeliveryReason(row.reasons)"
+          class="mt-1 whitespace-normal text-xs text-muted-foreground"
         >
-          <li v-for="reason in row.reasons" :key="reason">{{ label(reason) }}</li>
-        </ul>
+          {{ primaryMaterialDeliveryReason(row.reasons) }}
+        </p>
+        <details
+          v-if="row.reasons?.length"
+          class="mt-1 whitespace-normal text-xs text-muted-foreground"
+        >
+          <summary class="cursor-pointer text-foreground">查看原因</summary>
+          <ul class="mt-1 space-y-1">
+            <li v-for="reason in row.reasons" :key="reason">{{ label(reason) }}</li>
+          </ul>
+        </details>
       </template>
     </NvDataTable>
     <div v-if="unknown.length" class="grid gap-2">

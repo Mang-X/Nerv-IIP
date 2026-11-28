@@ -12177,6 +12177,36 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(requirement.EnvironmentId, json.RootElement.GetProperty("environmentId").GetString());
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.OK, 0, HttpStatusCode.BadRequest, "MES 拒绝创建工单，请检查生产版本、工艺路线和物料齐套配置。")]
+    [InlineData(HttpStatusCode.InternalServerError, 500, HttpStatusCode.BadGateway, "downstream-invalid-response")]
+    public async Task Accept_planning_suggestion_distinguishes_business_rejection_from_upstream_failure(
+        HttpStatusCode upstreamStatus, int code, HttpStatusCode expectedStatus, string expectedMessage)
+    {
+        using var handler = new RecordingHandler(_ => JsonResponse(upstreamStatus, new
+        {
+            success = false,
+            code,
+            message = "MES 拒绝创建工单，请检查生产版本、工艺路线和物料齐套配置。",
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://planning.test") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(new HttpBusinessPlanningClient(http));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/planning/suggestions/SUG-001/accept?organizationId=org-001&environmentId=env-dev",
+            new { downstreamService = "BusinessMes", downstreamDocumentType = "WorkOrder" });
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(expectedMessage, payload.RootElement.GetProperty("message").GetString());
+    }
+
     [Fact]
     public async Task Accept_planning_suggestion_returns_downstream_reference_to_business_console()
     {

@@ -28,5 +28,12 @@ public sealed class AssignPendingPickingTasksOnOutboundWorkPoolAssigned(Applicat
         {
             task.InheritPickingAssignment(notification.PoolCode, notification.OperatorPrincipalId);
         }
+
+        // NetCorePal dispatches domain events after its save. Persist the inherited assignment
+        // before the enclosing command commits the same transaction.
+        if (tasks.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 }

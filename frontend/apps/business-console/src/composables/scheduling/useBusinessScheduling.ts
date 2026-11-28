@@ -11,6 +11,7 @@ import {
   type BusinessConsoleSchedulePlan,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
+import { businessReadState } from '@/composables/shared/businessReadState'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import {
   bindBusinessContext,
@@ -180,6 +181,7 @@ export function useBusinessScheduling() {
     }),
     plansError: plansQuery.error,
     plansPending: plansQuery.isLoading,
+    plansState: businessReadState(plansQuery, () => hasBusinessContext(filters)),
     // 与 revoke/override 同款诚实失败：200 + success:false 一律抛错，不给界面假成功。
     releasePlan: (planId: string) =>
       releaseMutation

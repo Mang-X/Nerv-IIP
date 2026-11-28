@@ -355,7 +355,7 @@ function isNonEmpty(value: string) {
       :loading="receiptRequestsPending"
       :error="receiptRequestsError"
       :error-message="listErrorMessage"
-      empty-message="还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。"
+      empty-message="暂无完工入库登记。末道工序报完工后，可从工单详情发起完工入库。"
       :searchable="false"
       :column-settings="false"
       @retry="refreshReceiptRequests"

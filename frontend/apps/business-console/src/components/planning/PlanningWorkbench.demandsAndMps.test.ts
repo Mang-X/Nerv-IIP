@@ -79,7 +79,7 @@ describe('PlanningWorkbench', () => {
         .slice(0, 2)
         .map((cell) => cell.text()),
     ).toEqual(['已生成建议', '窗外'])
-    expect(wrapper.get('[label="需求覆盖率"]').attributes('value')).toBe('100')
+    expect(wrapper.get('[label="需求物料覆盖率"]').attributes('value')).toBe('100')
 
     planningSpies.mrpRunsRef!.value = [
       { runId: 'run-running', status: 'Running', horizonEnd: '2026-07-31' },
@@ -90,7 +90,7 @@ describe('PlanningWorkbench', () => {
       .findAll('button')
       .find((button) => button.text() === '查看追溯')!
       .trigger('click')
-    expect(wrapper.get('[label="需求覆盖率"]').attributes('value')).toBe('100')
+    expect(wrapper.get('[label="需求物料覆盖率"]').attributes('value')).toBe('100')
     expect(wrapper.get('[data-testid="time-phased-panel"]').attributes('data-run-id')).toBe(
       'run-001',
     )
@@ -119,6 +119,21 @@ describe('PlanningWorkbench', () => {
     wrapper.unmount()
   })
 
+  it('新建 MPS 选料预填基本单位，允许覆盖并在换至未知物料时清除', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '新建 MPS')!
+      .trigger('click')
+    await wrapper.get('#mps-sku').setValue('FG-SHOCK')
+    expect(planningSpies.mpsFormRef!.uomCode).toBe('pcs')
+    const form = wrapper.findAll('form').find((node) => node.find('#mps-uom').exists())!
+    await form.get('[data-select-value="kg"]').trigger('click')
+    expect(planningSpies.mpsFormRef!.uomCode).toBe('kg')
+    await wrapper.get('#mps-sku').setValue('RM-UNKNOWN')
+    expect(planningSpies.mpsFormRef!.uomCode).toBe('')
+  })
+
   it('MPS 评审人 / 发布人显示员工姓名，名录里查不到的账号显示「—」', async () => {
     const wrapper = mount(PlanningWorkbench)
     planningSpies.mpsBucketsRef!.value = [
@@ -140,13 +155,13 @@ describe('PlanningWorkbench', () => {
     expect(text).not.toContain('user-')
   })
 
-  it('编辑草稿主计划行后保存更新同一行', async () => {
+  it('编辑历史草稿仍按已保存单位更新同一行', async () => {
     const wrapper = mount(PlanningWorkbench)
     planningSpies.mpsBucketsRef!.value = [
       {
         mpsId: 'mps-001',
-        skuCode: 'SKU-FG-1000',
-        uomCode: 'pcs',
+        skuCode: 'FG-SHOCK',
+        uomCode: 'box',
         siteCode: 'SITE-01',
         bucketDate: '2026-06-15',
         quantity: 10,
@@ -155,7 +170,7 @@ describe('PlanningWorkbench', () => {
     ]
     await flushPromises()
 
-    await wrapper.get('[aria-label="编辑主计划行 SKU-FG-1000"]').trigger('click')
+    await wrapper.get('[aria-label="编辑主计划行 FG-SHOCK"]').trigger('click')
     expect(wrapper.text()).toContain('编辑主计划行')
     expect(planningSpies.mpsFormRef!.quantity).toBe(10)
     await wrapper.get('#mps-qty').setValue('12')
@@ -173,7 +188,7 @@ describe('PlanningWorkbench', () => {
 
     expect(planningSpies.updateMpsBucket).toHaveBeenCalledWith('mps-001')
     expect(submittedQuantities).toEqual([12])
-    expect(submittedUnits).toEqual(['pcs'])
+    expect(submittedUnits).toEqual(['box'])
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
