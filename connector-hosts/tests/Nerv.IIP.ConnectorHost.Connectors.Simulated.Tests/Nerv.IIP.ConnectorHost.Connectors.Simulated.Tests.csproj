@@ -27,8 +27,8 @@
 
   <ItemGroup>
     <Compile Include="..\TestUtilities\ControllableTimeProvider.cs" Link="TestUtilities\ControllableTimeProvider.cs" />
-    <None Include="..\..\src\Nerv.IIP.ConnectorHost.Host\appsettings.Development.json"
-          Link="SimulatedHostDevelopmentProfile.json"
+    <None Include="..\TestUtilities\SimulatedHostProfile.json"
+          Link="SimulatedHostProfile.json"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

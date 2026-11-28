@@ -82,6 +82,15 @@ public static class WalkthroughSeedSpec
         new("WC-AUX-SP", "表面与包装车间辅助动力", "LINE-WB-PK-01", SurfaceWorkshopCode, 1440, 2),
     ];
 
+    public static readonly (string Code, string Name, string WorkCenterCode)[] Devices =
+    [
+        ("DEV-CNC-01", "五轴加工中心 1#", "WC-ROD-01"),
+        ("DEV-AUX-01", "车间螺杆空压机 1#", "WC-AUX-MC"),
+        ("DEV-CTG-01", "电泳涂装槽 1#", "WC-CT-01"),
+        ("DEV-ASM-01", "前减压装机 1#", "WC-FA-01"),
+        ("DEV-TST-01", "减振器阻尼试验台 1#", "WC-TS-01"),
+    ];
+
     public static IReadOnlyList<WalkthroughSku> Skus { get; } =
     [
         new(FinishedSkuCode, "P1 平台前滑柱总成（左）", "pcs", "finished-goods"),

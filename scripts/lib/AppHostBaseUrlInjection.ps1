@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: library
 #   SideEffects:
 #     - Reads the Aspire AppHost source files, every .csproj in its project reference closure, and the
@@ -484,6 +484,9 @@ function Get-NervProviderServiceName {
     #>
     param([Parameter(Mandatory)] [string] $ProjectName)
 
+    if ([string]::Equals($ProjectName, 'Nerv.IIP.ConnectorHost.DevSimulator', [StringComparison]::Ordinal)) {
+        return 'DevSimulator'
+    }
     if (-not $ProjectName.StartsWith('Nerv.IIP.', [StringComparison]::Ordinal)) {
         throw "Hosted project '$ProjectName' does not use the 'Nerv.IIP.' prefix; the base-url key prefix cannot be derived from it."
     }

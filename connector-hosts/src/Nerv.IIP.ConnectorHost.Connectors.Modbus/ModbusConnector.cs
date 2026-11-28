@@ -424,6 +424,8 @@ public sealed class ModbusConnector(
             $"modbus:{options.ConnectorId}:{normalizedTagKey}:{bucketStartUnixMilliseconds}",
             "modbus",
             $"{options.ConnectorHostId}/{options.ConnectorId}",
+            DeviceState: "running",
+            StateOccurredAtUtc: bucket.BucketEndUtc,
             FirstValue: bucket.FirstValue,
             LastValue: bucket.LastValue,
             CollectionConnectorId: options.EffectiveCollectionConnectorId);

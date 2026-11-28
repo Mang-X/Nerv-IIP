@@ -6,7 +6,13 @@ import {
 } from '@/composables/equipment/useBusinessEquipment'
 import EquipmentHealthCard from '@/components/equipment/EquipmentHealthCard.vue'
 import { NvBadge, NvButton, NvDataTable } from '@nerv-iip/ui'
-import { Settings2Icon } from '@lucide/vue'
+import { computed, ref } from 'vue'
+import { statusActionGate } from '@nerv-iip/business-core'
+import { useBusinessEquipmentAlarms } from '@/composables/equipment/useBusinessEquipment'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import type { BusinessConsoleTelemetryAlarmEventItem } from '@nerv-iip/api-client'
 import { RouterLink } from 'vue-router'
 import { formatDateTime } from '@/utils/format'
 import type { ShallowUnwrapRef } from 'vue'
@@ -14,7 +20,8 @@ import type { useDeviceDetailPage } from '../useDeviceDetailPage'
 
 type View = ShallowUnwrapRef<ReturnType<typeof useDeviceDetailPage>>
 
-defineProps<{
+const props = defineProps<{
+  deviceAssetId: string
   activeAlarms: View['activeAlarms']
   availabilityWindows: View['availabilityWindows']
   badgeVariant: View['badgeVariant']
@@ -32,6 +39,48 @@ defineProps<{
   sourceTone: View['sourceTone']
   stateText: View['stateText']
 }>()
+
+const auth = useAuthStore()
+const canAcknowledge = computed(() => {
+  const permissions = auth.principal?.permissionCodes ?? []
+  return permissions.includes(P.iiotAlarmsRead) && permissions.includes(P.iiotAlarmsWrite)
+})
+const { alarms, acknowledgeAlarm, refreshAlarms } = useBusinessEquipmentAlarms(
+  () => ({ deviceAssetId: props.deviceAssetId, status: 'active', take: 100 }),
+  () => canAcknowledge.value && !!props.deviceAssetId,
+)
+const actionableIds = computed(
+  () =>
+    new Set(
+      alarms.value
+        .filter(
+          (alarm) =>
+            statusActionGate({
+              domain: 'iiot-alarm',
+              action: 'acknowledge',
+              facts: alarm,
+            }).executable,
+        )
+        .map((alarm) => alarm.alarmEventId),
+    ),
+)
+const acknowledging = ref(false)
+async function confirmAlarm(alarm: BusinessConsoleTelemetryAlarmEventItem) {
+  if (!alarm.alarmEventId) return
+  acknowledging.value = true
+  try {
+    await acknowledgeAlarm(
+      alarm.alarmEventId,
+      auth.principal?.loginName ?? auth.principal?.principalId ?? 'business-console',
+    )
+    notifySuccess('报警已确认。')
+    await refreshAlarms()
+  } catch (cause) {
+    notifyOperationFailure('报警确认失败', cause, '报警确认失败，请稍后重试。')
+  } finally {
+    acknowledging.value = false
+  }
+}
 </script>
 
 <template>
@@ -65,8 +114,14 @@ defineProps<{
       <EquipmentHealthCard :health="health" :pending="healthPending" :error="healthErrorMessage" />
 
       <div class="rounded-lg border bg-card">
-        <div class="border-b px-4 py-3">
+        <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">当前报警</h2>
+          <RouterLink
+            v-if="auth.principal?.permissionCodes?.includes(P.iiotAlarmsRead)"
+            class="text-sm text-brand hover:underline"
+            :to="{ path: '/equipment/alarms', query: { deviceAssetId } }"
+            >全部报警</RouterLink
+          >
         </div>
         <div class="grid gap-3 p-4">
           <div
@@ -83,11 +138,15 @@ defineProps<{
               }}</NvBadge>
             </div>
             <p class="text-xs text-muted-foreground">{{ formatDateTime(alarm.raisedAtUtc) }}</p>
-            <NvButton size="sm" type="button" variant="outline" class="justify-self-start" as-child>
-              <RouterLink to="/equipment/telemetry/alarm-rules"
-                ><Settings2Icon aria-hidden="true" />维护规则</RouterLink
-              >
-            </NvButton>
+            <NvButton
+              v-if="canAcknowledge && actionableIds.has(alarm.alarmEventId)"
+              size="sm"
+              variant="outline"
+              class="justify-self-start"
+              :disabled="acknowledging"
+              @click="confirmAlarm(alarm)"
+              >确认报警</NvButton
+            >
           </div>
           <div
             v-if="!activeAlarms.length"

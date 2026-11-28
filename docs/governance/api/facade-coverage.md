@@ -33,7 +33,7 @@
 | BarcodeLabel | 23 | 17 | 2 | 4 |
 | DemandPlanning | 23 | 23 | 0 | 0 |
 | Erp | 74 | 55 | 12 | 7 |
-| IndustrialTelemetry | 35 | 33 | 0 | 2 |
+| IndustrialTelemetry | 40 | 37 | 0 | 3 |
 | Inventory | 27 | 21 | 0 | 6 |
 | Maintenance | 34 | 30 | 1 | 3 |
 | MasterData | 53 | 47 | 1 | 5 |
@@ -42,6 +42,6 @@
 | Quality | 49 | 43 | 5 | 1 |
 | Scheduling | 36 | 33 | 1 | 2 |
 | Wms | 58 | 49 | 4 | 5 |
-| **Total** | **551** | **476** | **33** | **42** |
+| **Total** | **556** | **480** | **33** | **43** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->

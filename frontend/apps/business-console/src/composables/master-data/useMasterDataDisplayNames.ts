@@ -74,10 +74,17 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
 
   // 设备引用在全平台可以是设备编码，也可以是设备公开 ID（GUID），两种都要解析到同一台设备。
   const deviceByReference = computed(() => {
-    const map = new Map<string, { code: string; displayName: string }>()
+    const map = new Map<
+      string,
+      { code: string; displayName: string; deviceAssetId?: string | null }
+    >()
     for (const item of deviceSource?.resources.value ?? []) {
       if (!item.code) continue
-      const device = { code: item.code, displayName: item.displayName ?? item.code }
+      const device = {
+        code: item.code,
+        displayName: item.displayName ?? item.code,
+        deviceAssetId: item.deviceAssetId,
+      }
       map.set(item.code, device)
       if (item.deviceAssetId) map.set(item.deviceAssetId, device)
     }
@@ -118,6 +125,8 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     /** 设备编码（按设备编码或设备公开 ID）；查不到返回 undefined。 */
     resolveDeviceCode: (reference?: string | null) =>
       reference ? deviceByReference.value.get(reference)?.code : undefined,
+    resolveDeviceAssetId: (reference?: string | null) =>
+      reference ? deviceByReference.value.get(reference)?.deviceAssetId : undefined,
     resolveLocation: resolver(locationByCode),
     resolveWorkCenter: resolver(workCenterByCode),
     resolveTeam: resolver(teamByCode),

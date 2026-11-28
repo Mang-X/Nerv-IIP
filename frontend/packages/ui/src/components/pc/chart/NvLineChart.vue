@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
-import { VisAxis, VisCrosshair, VisLine, VisTooltip, VisXYContainer } from '@unovis/vue'
+import {
+  VisAxis,
+  VisCrosshair,
+  VisLine,
+  VisPlotline,
+  VisTooltip,
+  VisXYContainer,
+} from '@unovis/vue'
 import { cn, cssColor, escapeHtml } from '../../../lib/utils'
 
 /**
@@ -20,6 +27,7 @@ const props = withDefaults(
     data: Row[]
     xKey: string
     series: LineSeries[]
+    referenceLines?: { value: number; label: string; color?: string }[]
     height?: number
     valueSuffix?: string
     class?: HTMLAttributes['class']
@@ -68,10 +76,20 @@ const tooltipTemplate = (d: Row) => {
       :margin="{ top: 8, right: 12, bottom: 4, left: 8 }"
     >
       <VisLine :x="x" :y="yAccessors" :color="colors" :line-width="2" />
+      <VisPlotline
+        v-for="(line, index) in referenceLines"
+        :key="index"
+        :value="line.value"
+        :label-text="line.label"
+        :color="line.color ?? 'var(--destructive)'"
+        label-color="var(--foreground)"
+        :line-style="[5, 3]"
+        :y="() => line.value"
+      />
       <VisAxis
         type="x"
         :tick-format="xTickFormat"
-        :num-ticks="data.length"
+        :num-ticks="Math.min(data.length, 6)"
         :grid-line="false"
         :tick-line="false"
         :domain-line="false"

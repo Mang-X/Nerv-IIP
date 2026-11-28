@@ -49,6 +49,9 @@ export function useAlarmPage() {
   // View + pagination are the controlled source of truth and round-trip through the URL
   // (§5.3 双向同步:view / page / pageSize).
   const activeView = ref<AlarmView>(queryView())
+  const deviceAssetId = ref(
+    typeof route.query.deviceAssetId === 'string' ? route.query.deviceAssetId : '',
+  )
   const page = ref(queryInt('page', 1))
   const pageSize = ref(Math.min(queryInt('pageSize', DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE))
 
@@ -62,6 +65,7 @@ export function useAlarmPage() {
     shelveAlarm,
     unshelveAlarm,
   } = useBusinessEquipmentAlarms(() => ({
+    deviceAssetId: deviceAssetId.value || undefined,
     status:
       activeView.value === 'all'
         ? 'active'
@@ -71,6 +75,26 @@ export function useAlarmPage() {
     skip: Math.min((page.value - 1) * pageSize.value, 2147483647),
     take: pageSize.value,
   }))
+
+  const alarmSummary = useBusinessEquipmentAlarms(() => ({
+    deviceAssetId: deviceAssetId.value || undefined,
+    status: 'active',
+    skip: 0,
+    take: 500,
+  }))
+  const kpis = computed(() => {
+    const items = alarmSummary.alarms.value
+    const count = (predicate: (row: (typeof items)[number]) => boolean) => {
+      if (alarmSummary.alarmsPending.value || alarmSummary.alarmsError.value) return '—'
+      const visible = items.filter(predicate).length
+      return (alarmSummary.alarmsTotal.value ?? 0) > items.length ? `${visible}+` : visible
+    }
+    return [
+      { key: 'raised', label: '待确认', value: count((row) => !row.acknowledgedAtUtc) },
+      { key: 'critical', label: '严重级别', value: count((row) => row.severity === 'critical') },
+      { key: 'shelved', label: '搁置中', value: count((row) => row.status === 'shelved') },
+    ]
+  })
 
   const errorMessage = computed(() => inlineErrorMessage(alarmsError.value))
   const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
@@ -158,7 +182,7 @@ export function useAlarmPage() {
     activeView.value = view
     page.value = 1
   }
-  watch([activeView, page, pageSize], () => {
+  watch([activeView, page, pageSize, deviceAssetId], () => {
     selectedKeys.value = []
   })
 
@@ -183,9 +207,11 @@ export function useAlarmPage() {
   // State → URL (default values omitted). Runs on load too, so a clamped/normalized page or a
   // pageSize read from the query is written back and the URL stays canonical.
   watch(
-    [activeView, page, pageSize],
+    [activeView, page, pageSize, deviceAssetId],
     () => {
       const query: LocationQueryRaw = { ...route.query }
+      if (deviceAssetId.value) query.deviceAssetId = deviceAssetId.value
+      else delete query.deviceAssetId
       if (activeView.value === 'all') delete query.view
       else query.view = activeView.value
       if (page.value > 1) query.page = String(page.value)
@@ -198,8 +224,10 @@ export function useAlarmPage() {
   )
   // URL → State (external navigation / browser back-forward reflect back into the view).
   watch(
-    () => [route.query.view, route.query.page, route.query.pageSize],
+    () => [route.query.view, route.query.page, route.query.pageSize, route.query.deviceAssetId],
     () => {
+      deviceAssetId.value =
+        typeof route.query.deviceAssetId === 'string' ? route.query.deviceAssetId : ''
       const nextView = queryView()
       if (nextView !== activeView.value) activeView.value = nextView
       const nextPage = queryInt('page', 1)
@@ -618,6 +646,8 @@ export function useAlarmPage() {
   }
 
   return {
+    deviceAssetId,
+    kpis,
     DURATION_PRESETS,
     MAX_SHELVE_MINUTES,
     VIEW_TABS,

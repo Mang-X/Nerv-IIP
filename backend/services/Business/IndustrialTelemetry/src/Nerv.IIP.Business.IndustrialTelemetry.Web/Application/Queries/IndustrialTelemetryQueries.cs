@@ -174,7 +174,9 @@ public sealed record TelemetryTagListItem(
     decimal? ControlMaxValue,
     IReadOnlyCollection<string> ControlAllowedValues,
     string? DisplayName,
-    bool IsEnabled);
+    bool IsEnabled,
+    decimal? LatestValue,
+    DateTimeOffset? LatestSampledAtUtc);
 
 public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListTelemetryTagsQuery, PagedListResponse<TelemetryTagListItem>>
@@ -192,29 +194,44 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
         var total = await query.CountAsync(cancellationToken);
         // Project the raw allowed-values JSON column (ControlAllowedValues is a computed property that is
         // not translatable in LINQ) and deserialize after materialization.
+        var rawSamples = dbContext.TelemetryRawSamples.AsNoTracking();
         var projected = await query
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.TagKey)
-            .Select(x => new TelemetryTagProjection(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy, x.IsWritable, x.ControlMinValue, x.ControlMaxValue, x.ControlAllowedValuesJson, x.DisplayName, x.IsEnabled))
+            .Select(tag => new
+            {
+                Tag = tag,
+                Latest = rawSamples
+                    .Where(sample => sample.OrganizationId == tag.OrganizationId
+                        && sample.EnvironmentId == tag.EnvironmentId
+                        && sample.DeviceAssetId == tag.DeviceAssetId
+                        && sample.TagKey == tag.TagKey)
+                    .OrderByDescending(sample => sample.BucketEndUnixTimeMilliseconds)
+                    .ThenByDescending(sample => sample.SourceSequence)
+                    .Select(sample => new { sample.LastValue, sample.BucketEndUtc })
+                    .FirstOrDefault()
+            })
             .Skip(page.Skip)
             .Take(page.Take)
             .ToArrayAsync(cancellationToken);
         var items = projected
             .Select(x => new TelemetryTagListItem(
-                x.TelemetryTagId,
-                x.OrganizationId,
-                x.EnvironmentId,
-                x.DeviceAssetId,
-                x.TagKey,
-                x.ValueType,
-                x.UnitCode,
-                x.SamplingPolicy,
-                x.IsWritable,
-                x.ControlMinValue,
-                x.ControlMaxValue,
-                DeserializeAllowedValues(x.ControlAllowedValuesJson),
-                x.DisplayName,
-                x.IsEnabled))
+                x.Tag.Id,
+                x.Tag.OrganizationId,
+                x.Tag.EnvironmentId,
+                x.Tag.DeviceAssetId,
+                x.Tag.TagKey,
+                x.Tag.ValueType,
+                x.Tag.UnitCode,
+                x.Tag.SamplingPolicy,
+                x.Tag.IsWritable,
+                x.Tag.ControlMinValue,
+                x.Tag.ControlMaxValue,
+                DeserializeAllowedValues(x.Tag.ControlAllowedValuesJson),
+                x.Tag.DisplayName,
+                x.Tag.IsEnabled,
+                x.Latest?.LastValue,
+                x.Latest?.BucketEndUtc))
             .ToArray();
         return new PagedListResponse<TelemetryTagListItem>(items, total);
     }
@@ -228,22 +245,6 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
 
         return JsonSerializer.Deserialize<IReadOnlyCollection<string>>(controlAllowedValuesJson) ?? [];
     }
-
-    private sealed record TelemetryTagProjection(
-        TelemetryTagId TelemetryTagId,
-        string OrganizationId,
-        string EnvironmentId,
-        string DeviceAssetId,
-        string TagKey,
-        string ValueType,
-        string UnitCode,
-        string SamplingPolicy,
-        bool IsWritable,
-        decimal? ControlMinValue,
-        decimal? ControlMaxValue,
-        string ControlAllowedValuesJson,
-        string? DisplayName,
-        bool IsEnabled);
 }
 
 // Latest instantaneous tag value for the device-control write form. Sources the newest raw sample's

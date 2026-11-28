@@ -194,18 +194,20 @@ describe('equipment pages', () => {
       wrapper.unmount()
     })
 
-    it('设备详情：有管理权限时页头有「创建维修工单」', () => {
-      const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
-
-      expect(wrapper.text()).toContain('创建维修工单')
-    })
-
-    it('设备详情：只读角色看不到', () => {
-      signInWithoutWorkOrderManage()
-      const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
-
+    it.each([true, false])('设备详情更多菜单按权限展示建单入口 (%s)', async (allowed) => {
+      if (!allowed) signInWithoutWorkOrderManage()
+      const wrapper = mount(EquipmentDetailPage, { global: { stubs }, attachTo: document.body })
       expect(wrapper.text()).toContain('记录停机')
       expect(wrapper.text()).not.toContain('创建维修工单')
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === '更多')!
+        .trigger('click')
+      await flushPromises()
+      const items = [...document.body.querySelectorAll('[role="menuitem"]')]
+      expect(items.some((item) => item.textContent?.includes('返回看板'))).toBe(true)
+      expect(items.some((item) => item.textContent?.includes('创建维修工单'))).toBe(allowed)
+      wrapper.unmount()
     })
   })
 })

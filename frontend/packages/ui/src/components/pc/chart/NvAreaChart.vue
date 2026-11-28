@@ -64,7 +64,7 @@ const chartMargin = computed(() =>
         v-if="!minimal"
         type="x"
         :tick-format="xTickFormat"
-        :num-ticks="data.length"
+        :num-ticks="Math.min(data.length, 6)"
         :grid-line="false"
         :tick-line="false"
         :domain-line="false"

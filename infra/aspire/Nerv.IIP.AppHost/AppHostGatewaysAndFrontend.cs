@@ -218,6 +218,15 @@ internal sealed partial class AppHostComposition
             .WaitFor(ops)
             .WaitFor(iam);
 
+        if (localDevelopmentAppHost)
+        {
+            connectorHost
+                .WithEnvironment("Platform__IndustrialTelemetryBaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
+                .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+                .WithEnvironment("ConnectorHost__CollectionCycleSeconds", "2")
+                .WaitFor(businessIndustrialTelemetry);
+        }
+
         if (connectorHealthAcceptanceEnabled)
         {
             var modbusEndpoint = builder.Configuration["ConnectorHealthAcceptance:ModbusEndpoint"];

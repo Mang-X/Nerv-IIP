@@ -16,7 +16,7 @@ import { listItems, listTotal, toContextQuery, unwrapData } from './telemetrySha
  * 采集连接器状态墙轮询周期。读面在心跳超窗后派生 offline，本页每个周期重取以在「1 个轮询周期内」反映。
  * 用官方 auto-refetch 表达，不手写 setInterval。
  */
-export const CONNECTOR_HEALTH_POLL_INTERVAL_MS = 10_000
+export const CONNECTOR_HEALTH_POLL_INTERVAL_MS = 5_000
 
 /**
  * stale 有两种成因，展示口径不同：`offline`=心跳超窗停报（真断线，显示断线时长并红色置顶，时长基于冻结的
@@ -44,7 +44,7 @@ export function connectorSourceSystemLabel(sourceSystem?: string | null) {
   if (!sourceSystem) return '未知类型'
   const labels: Record<string, string> = {
     opcua: 'OPC UA',
-    modbus: 'Modbus',
+    modbus: 'Modbus TCP',
     mqtt: 'MQTT',
   }
   return labels[sourceSystem.toLowerCase()] ?? sourceSystem

@@ -204,10 +204,11 @@ builder.Services.AddHttpClient<IBusinessSchedulingClient, HttpBusinessScheduling
 {
     client.BaseAddress = schedulingBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
-builder.Services.AddHttpClient<IBusinessIndustrialTelemetryClient, HttpBusinessIndustrialTelemetryClient>(client =>
+builder.Services.AddHttpClient<HttpBusinessIndustrialTelemetryClient>(client =>
 {
     client.BaseAddress = industrialTelemetryBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddTransient<IBusinessIndustrialTelemetryClient>(services => services.GetRequiredService<HttpBusinessIndustrialTelemetryClient>());
 builder.Services.AddHttpClient<IBusinessMaintenanceClient, HttpBusinessMaintenanceClient>(client =>
 {
     client.BaseAddress = maintenanceBaseAddress;

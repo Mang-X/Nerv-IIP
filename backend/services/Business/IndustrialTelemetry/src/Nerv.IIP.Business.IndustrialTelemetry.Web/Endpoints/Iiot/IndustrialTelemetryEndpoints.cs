@@ -31,6 +31,9 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
             case "POST":
                 Post(contract.Route);
                 break;
+            case "DELETE":
+                Delete(contract.Route);
+                break;
             default:
                 throw new NotSupportedException($"HTTP method '{contract.HttpMethod}' is not supported by IndustrialTelemetry endpoints.");
         }
@@ -749,6 +752,11 @@ public static class IndustrialTelemetryEndpointContracts
 {
     public static readonly IReadOnlyCollection<IndustrialTelemetryEndpointContract> All =
     [
+        new(typeof(ListTelemetryConnectorConfigsEndpoint), "GET", "/api/business/v1/iiot/connector-configs", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryConnectorConfigs"),
+        new(typeof(GetDesiredTelemetryConnectorConfigsEndpoint), "GET", "/api/business/v1/iiot/connector-configs/desired", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDesiredTelemetryConnectorConfigs"),
+        new(typeof(SaveTelemetryConnectorConfigEndpoint), "POST", "/api/business/v1/iiot/connector-configs", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "saveBusinessIiotTelemetryConnectorConfig"),
+        new(typeof(DeleteTelemetryConnectorConfigEndpoint), "DELETE", "/api/business/v1/iiot/connector-configs/{connectorId}", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "deleteBusinessIiotTelemetryConnectorConfig"),
+        new(typeof(TestTelemetryConnectorConnectionEndpoint), "POST", "/api/business/v1/iiot/connector-configs/test-connection", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "testBusinessIiotTelemetryConnectorConnection"),
         new(typeof(ReportConnectorTagManifestEndpoint), "POST", "/api/business/v1/iiot/connector-tag-manifests", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "reportBusinessIiotConnectorTagManifest"),
         new(typeof(GetConnectorTagCoverageEndpoint), "GET", "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotConnectorTagCoverage"),
         new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),

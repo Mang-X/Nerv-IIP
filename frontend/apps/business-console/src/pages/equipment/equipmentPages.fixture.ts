@@ -53,6 +53,7 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
         readFaceState.catalogResolved
           ? '五轴加工中心'
           : undefined,
+      resolveDeviceAssetId: () => undefined,
       resolveDeviceCode: () => undefined,
       resolveLocation: () => undefined,
       resolveWorkCenter: (code?: string | null) =>
@@ -359,6 +360,8 @@ vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) =
     },
     overviewError: computed(() => overviewState.overviewError),
     overviewPending: computed(() => overviewState.state === 'loading'),
+    polling: shallowRef(true),
+    updatedAt: shallowRef(),
     overviewState: computed(() => overviewState.state),
     refreshDeviceRoster: overviewMocks.refreshDeviceRoster,
     refreshOverview: overviewMocks.refreshOverview,
@@ -429,6 +432,17 @@ vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
     value == null ? '无数据' : `${value}${uom ? ` ${uom}` : ''}`,
   formatOeeRate: (value: number | null | undefined) =>
     value == null ? '无数据' : `${(value * 100).toFixed(1)}%`,
+  useBusinessTelemetryTags: () => ({
+    tags: shallowRef([]),
+    filters: { deviceAssetId: '' },
+    tagsError: shallowRef(),
+    tagsPending: shallowRef(false),
+  }),
+  useBusinessTelemetryAlarmRules: () => ({
+    alarmRules: shallowRef([]),
+    filters: { deviceAssetId: '' },
+    alarmRulesError: shallowRef(),
+  }),
   useBusinessTelemetryHistory: () => ({
     filters: {
       deviceAssetId: 'DEV-OIL-01',
@@ -596,3 +610,11 @@ export {
   UUID_PATTERN,
   reliabilityState,
 }
+
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', async (importOriginal) => {
+  const { ref } = await import('vue')
+  return {
+    ...(await importOriginal<typeof import('@/composables/equipment/useEquipmentPickerCatalog')>()),
+    useEquipmentDeviceCatalog: () => ({ deviceOptions: ref([]), devicesPending: ref(false) }),
+  }
+})

@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   filters: { deviceAssetId: '' },
   currentState: undefined as Record<string, unknown> | undefined,
   availabilityWindows: [] as Array<Record<string, unknown>>,
+  readTelemetryTags: vi.fn(),
 }))
 
 // 主数据名录桩：按（编码、公开 ID、名称）小表查，与真实实现同口径——编码和公开 ID 都能解析。
@@ -27,6 +28,7 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => {
   return {
     useMasterDataDisplayNames: () => ({
       resolveDevice: (reference?: string | null) => find(reference)?.name,
+      resolveDeviceAssetId: (reference?: string | null) => find(reference)?.publicId,
       resolveDeviceCode: (reference?: string | null) => find(reference)?.code,
       resolveWorkCenter: () => undefined,
       resolveUom: () => undefined,
@@ -43,6 +45,11 @@ vi.mock('vue-router', async (importOriginal) => ({
 
 vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/composables/equipment/useBusinessEquipment')>()),
+  useBusinessEquipmentAlarms: () => ({
+    alarms: computed(() => []),
+    acknowledgeAlarm: vi.fn(),
+    refreshAlarms: vi.fn(),
+  }),
   useBusinessEquipmentDevice: () => ({
     activeAlarms: computed(() => []),
     availabilityWindows: computed(() => state.availabilityWindows),
@@ -80,6 +87,20 @@ vi.mock('@/composables/equipment/useBusinessTelemetry', () => {
     describeTelemetryOeeLimitations: () => '',
     formatOeeQuantity: () => '无数据',
     formatOeeRate: () => '无数据',
+    useBusinessTelemetryTags: (filters: { deviceAssetId: string }) => {
+      state.readTelemetryTags(filters.deviceAssetId)
+      return {
+        tags: shallowRef([]),
+        tagsError: shallowRef(),
+        tagsPending: shallowRef(false),
+        filters: { deviceAssetId: '' },
+      }
+    },
+    useBusinessTelemetryAlarmRules: () => ({
+      alarmRules: shallowRef([]),
+      alarmRulesError: shallowRef(),
+      filters: { deviceAssetId: '' },
+    }),
     useBusinessTelemetryHistory: () => ({
       filters: windowFilters(),
       historyError: shallowRef(),
@@ -170,6 +191,7 @@ function openDevice(reference: string) {
 
 describe('设备详情：设备身份与采集接入状态', () => {
   beforeEach(() => {
+    state.readTelemetryTags.mockClear()
     state.currentState = undefined
     state.availabilityWindows = []
   })
@@ -223,6 +245,8 @@ describe('设备详情：设备身份与采集接入状态', () => {
 
     const wrapper = openDevice('EQ00001')
 
+    expect(state.readTelemetryTags).toHaveBeenCalledWith(PUBLIC_ID)
+    expect(state.readTelemetryTags).not.toHaveBeenCalledWith('EQ00001')
     const row = availabilityRow(wrapper, '采集数据过期')
     expect(row.relatedBusiness).toBe('EQ00001')
     expect(wrapper.text()).toContain('采集过期')

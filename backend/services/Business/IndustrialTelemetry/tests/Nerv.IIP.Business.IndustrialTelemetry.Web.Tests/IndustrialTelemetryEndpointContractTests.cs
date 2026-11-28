@@ -26,6 +26,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
@@ -47,7 +48,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(29, contracts.Length);
+        Assert.Equal(34, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/connector-tag-manifests" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "reportBusinessIiotConnectorTagManifest");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotConnectorTagCoverage");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
@@ -145,6 +146,146 @@ public sealed class IndustrialTelemetryEndpointContractTests
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Connector_config_api_saves_tags_filters_desired_and_deletes_configuration()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        const string route = "/api/business/v1/iiot/connector-configs";
+        const string scope = "?organizationId=org-001&environmentId=env-dev";
+        var config = new TelemetryConnectorConfigInput("dev-mqtt", "Workshop", "mqtt", "tcp://localhost:11883", true, 2,
+            [new("device-1", "pressure", "bar", TopicFilter: "factory/device-1", ValueJsonPath: "$.pressure")]);
+
+        var initial = await SaveAsync(config);
+        var desired = await client.GetFromJsonAsync<ResponseData<TelemetryConnectorConfigItem[]>>(route + "/desired" + scope);
+        Assert.Equal(initial, Assert.Single(desired!.Data).Revision);
+        var initialTag = await ReadTagAsync();
+        Assert.Equal("pressure", initialTag.GetProperty("tagKey").GetString());
+        Assert.Equal(JsonValueKind.Null, initialTag.GetProperty("latestValue").ValueKind);
+        var start = DateTimeOffset.Parse("2026-07-26T00:00:00Z");
+        using var sample = await client.PostAsJsonAsync("/api/business/v1/iiot/samples", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "device-1",
+            tagKey = "pressure",
+            bucketStartUtc = start,
+            bucketEndUtc = start.AddSeconds(5),
+            sampleCount = 2,
+            minValue = 4m,
+            maxValue = 6m,
+            averageValue = 5m,
+            lastValue = 6m,
+            sourceSequence = "config-test-1",
+        });
+        Assert.Equal(HttpStatusCode.OK, sample.StatusCode);
+        var tagWithSample = await ReadTagAsync();
+        Assert.Equal(6m, tagWithSample.GetProperty("latestValue").GetDecimal());
+        Assert.Equal(start.AddSeconds(5), tagWithSample.GetProperty("latestSampledAtUtc").GetDateTimeOffset());
+
+        var updated = await SaveAsync(config with { DisplayName = "Assembly", IsEnabled = false });
+        Assert.NotEqual(initial, updated);
+        desired = await client.GetFromJsonAsync<ResponseData<TelemetryConnectorConfigItem[]>>(route + "/desired" + scope);
+        Assert.Empty(desired!.Data);
+        var list = await client.GetFromJsonAsync<ResponseData<TelemetryConnectorConfigItem[]>>(route + scope);
+        Assert.Equal("Assembly", Assert.Single(list!.Data).DisplayName);
+        using var deleted = await client.DeleteAsync(route + "/dev-mqtt" + scope);
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        list = await client.GetFromJsonAsync<ResponseData<TelemetryConnectorConfigItem[]>>(route + scope);
+        Assert.Empty(list!.Data);
+
+        async Task<JsonElement> ReadTagAsync()
+        {
+            var tags = await client.GetFromJsonAsync<JsonElement>("/api/business/v1/iiot/tags" + scope);
+            return Assert.Single(tags.GetProperty("data").GetProperty("items").EnumerateArray());
+        }
+
+        async Task<Guid> SaveAsync(TelemetryConnectorConfigInput input)
+        {
+            using var response = await client.PostAsJsonAsync(route, new SaveConnectorConfigRequest("org-001", "env-dev", input));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var result = await response.Content.ReadFromJsonAsync<ResponseData<TelemetryConnectorConfigItem>>();
+            return result!.Data.Revision;
+        }
+    }
+
+    [Fact]
+    public async Task Development_seed_preserves_existing_configs_and_leaves_two_devices_for_manual_setup()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        var seed = new DevelopmentTelemetrySeedService(db, new DemoDeviceReferences(),
+            sender, new ConfigurationBuilder().Build());
+
+        await seed.SeedAsync(CancellationToken.None);
+        var revisions = await db.TelemetryConnectorConfigs.OrderBy(x => x.ConnectorId).Select(x => x.Revision).ToArrayAsync();
+        await seed.SeedAsync(CancellationToken.None);
+
+        Assert.Equal(2, revisions.Length);
+        Assert.Equal(revisions, await db.TelemetryConnectorConfigs.OrderBy(x => x.ConnectorId).Select(x => x.Revision).ToArrayAsync());
+        var tags = await db.TelemetryTags.ToArrayAsync();
+        Assert.Equal(9, tags.Length);
+        Assert.DoesNotContain(tags, tag => tag.DeviceAssetId is "device-DEV-CTG-01" or "device-DEV-TST-01");
+        Assert.Equal(3, await db.AlarmRules.CountAsync());
+        Assert.Equal(80, await db.DeviceStateSnapshots.CountAsync());
+        Assert.Equal(32, await db.OeeProductionFacts.CountAsync());
+
+        var siteOffset = TimeSpan.FromHours(8);
+        var today = new DateTimeOffset(DateTimeOffset.UtcNow.ToOffset(siteOffset).Date, siteOffset);
+        Assert.Equal(4, await db.OeeProductionFacts.CountAsync(
+            fact => fact.BusinessDate == DateOnly.FromDateTime(today.Date)));
+        foreach (var (dimension, expectedGroups) in new[]
+        {
+            (OeeAggregateDimension.Line, 4),
+            (OeeAggregateDimension.Workshop, 3),
+        })
+        {
+            var response = await sender.Send(new QueryOeeAggregateBucketsQuery(
+                "org-001", "env-dev", dimension, today.AddDays(-6).ToUniversalTime(), today.AddDays(1).ToUniversalTime()));
+            Assert.Equal(expectedGroups, response.Buckets.Count);
+            Assert.All(response.Buckets, bucket => Assert.True(bucket.OeeRate > 0m));
+        }
+    }
+
+    private sealed class DemoDeviceReferences : ITelemetryDeviceReferences
+    {
+        public Task<TelemetryDeviceReference> ResolveAsync(string organizationId, string environmentId, string reference, CancellationToken cancellationToken) =>
+            Task.FromResult(new TelemetryDeviceReference($"device-{reference}", reference));
+    }
+
+    [Fact]
+    public async Task Connector_connection_test_reads_a_real_modbus_register()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var responder = RespondAsync();
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/iiot/connector-configs/test-connection",
+            new TelemetryConnectionTestInput("modbus", listener.LocalEndpoint.ToString()!, null), deadline.Token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<ResponseData<TelemetryConnectionTestResult>>(deadline.Token);
+        Assert.True(result!.Data.Reachable);
+        Assert.Equal(42m, result.Data.SamplePreview);
+        await responder;
+
+        async Task RespondAsync()
+        {
+            using var connection = await listener.AcceptTcpClientAsync(deadline.Token);
+            var stream = connection.GetStream();
+            var request = new byte[12];
+            await stream.ReadExactlyAsync(request, deadline.Token);
+            Assert.Equal(new byte[] { 0, 1, 0, 0, 0, 6, 1, 3, 0, 0, 0, 1 }, request);
+            await stream.WriteAsync(new byte[] { 0, 1, 0, 0, 0, 5, 1, 3, 2, 0, 42 }, deadline.Token);
+        }
     }
 
     [Fact]

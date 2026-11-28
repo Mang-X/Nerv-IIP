@@ -14,7 +14,7 @@ import {
   type BusinessConsoleTelemetryTagListEnvelope,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, type Ref } from 'vue'
+import { computed, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
 import {
@@ -31,7 +31,11 @@ import {
   unwrapData,
 } from './telemetryShared'
 
-export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFilters> = {}) {
+export function useBusinessTelemetryTags(
+  initialFilters: Partial<TelemetryListFilters> = {},
+  poll: MaybeRefOrGetter<number | false> = false,
+  enabled: MaybeRefOrGetter<boolean> = true,
+) {
   const businessContext = useBusinessContextStore()
   const filters = defaultListFilters(initialFilters)
   const tagsQuery = useQuery(() => ({
@@ -43,7 +47,8 @@ export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFi
         take: filters.take,
       },
     }),
-    enabled: hasBusinessContext(businessContext),
+    enabled: hasBusinessContext(businessContext) && toValue(enabled),
+    autoRefetch: () => toValue(poll),
   }))
 
   return {
@@ -62,7 +67,10 @@ export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFi
   }
 }
 
-export function useBusinessTelemetryAlarmRules(initialFilters: Partial<TelemetryListFilters> = {}) {
+export function useBusinessTelemetryAlarmRules(
+  initialFilters: Partial<TelemetryListFilters> = {},
+  enabled: MaybeRefOrGetter<boolean> = true,
+) {
   const businessContext = useBusinessContextStore()
   const filters = defaultListFilters(initialFilters)
   const alarmRulesQuery = useQuery(() => ({
@@ -75,7 +83,7 @@ export function useBusinessTelemetryAlarmRules(initialFilters: Partial<Telemetry
         take: filters.take,
       },
     }),
-    enabled: hasBusinessContext(businessContext),
+    enabled: hasBusinessContext(businessContext) && toValue(enabled),
   }))
   const saveMutation = useMutation({
     ...createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions(),
@@ -151,24 +159,46 @@ export function useBusinessTelemetryTagCurrentValue(
   }
 }
 
-export function useBusinessTelemetryHistory(initialFilters: Partial<TelemetryWindowFilters> = {}) {
+export function useBusinessTelemetryHistory(
+  initialFilters: Partial<TelemetryWindowFilters> = {},
+  poll: MaybeRefOrGetter<number | false> = false,
+  rollingMinutes: MaybeRefOrGetter<number | undefined> = undefined,
+) {
   const businessContext = useBusinessContextStore()
   const filters = defaultWindowFilters(initialFilters)
   const deviceAssetId = computed(() => filters.deviceAssetId.trim())
   const historyEnabled = computed(
     () => hasBusinessContext(businessContext) && deviceAssetId.value.length > 0,
   )
-  const historyQuery = useQuery(() => ({
-    ...queryBusinessConsoleTelemetryDeviceHistoryQueryOptions({
+  const historyQuery = useQuery(() => {
+    const options = queryBusinessConsoleTelemetryDeviceHistoryQueryOptions({
       path: { deviceAssetId: deviceAssetId.value },
       query: {
         ...toContextQuery(businessContext),
         fromUtc: trimOptional(filters.windowStartUtc),
         toUtc: trimOptional(filters.windowEndUtc),
       },
-    }),
-    enabled: historyEnabled.value,
-  }))
+    })
+    const minutes = toValue(rollingMinutes)
+    return {
+      ...options,
+      enabled: historyEnabled.value,
+      autoRefetch: () => toValue(poll),
+      ...(minutes
+        ? {
+            query: (context: Parameters<typeof options.query>[0]) =>
+              queryBusinessConsoleTelemetryDeviceHistoryQueryOptions({
+                path: { deviceAssetId: deviceAssetId.value },
+                query: {
+                  ...toContextQuery(businessContext),
+                  fromUtc: new Date(Date.now() - minutes * 60_000).toISOString(),
+                  toUtc: new Date().toISOString(),
+                },
+              }).query(context),
+          }
+        : {}),
+    }
+  })
   const historyItems = computed<BusinessConsoleTelemetryHistoryItem[]>(() =>
     listItems<BusinessConsoleTelemetryHistoryItem>(
       historyQuery.data.value as BusinessConsoleTelemetryHistoryEnvelope | undefined,

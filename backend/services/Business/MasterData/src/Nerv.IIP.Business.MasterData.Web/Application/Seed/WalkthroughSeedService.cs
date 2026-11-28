@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
@@ -14,7 +15,7 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
 {
     /// <summary>
-    /// 只写入人工走查需要的结构与小目录；不写设备、员工或任何交易结果事实。
+    /// 只写入人工走查需要的结构与小目录；不写员工或任何交易结果事实。
     /// </summary>
     public async Task SeedAsync(
         string organizationId,
@@ -150,6 +151,22 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
             {
                 throw Collision(workCenter.Code);
             }
+        }
+
+        foreach (var device in WalkthroughSeedSpec.Devices)
+        {
+            if (await dbContext.DeviceAssets.AnyAsync(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId && x.Code == device.Code, cancellationToken))
+            {
+                continue;
+            }
+
+            var center = WalkthroughSeedSpec.WorkCenters.Single(x => x.Code == device.WorkCenterCode);
+            var asset = DeviceAsset.RegisterCapability(organizationId, environmentId,
+                device.Code, device.Name, center.LineCode, center.Code, "equipment", "", "", null, null, "",
+                "normal", maintainable: true, telemetryEnabled: true, new Dictionary<string, string>())
+                .WithLedger(null, null, "", null, "", WalkthroughSeedSpec.SiteCode, center.WorkshopCode, center.LineCode, "", null, null);
+            dbContext.DeviceAssets.Add(asset);
         }
     }
 

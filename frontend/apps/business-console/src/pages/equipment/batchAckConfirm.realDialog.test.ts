@@ -228,3 +228,10 @@ describe('批量确认报警在真弹层下的关闭时机', () => {
     )
   })
 })
+
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', async () => {
+  const { ref } = await import('vue')
+  return {
+    useEquipmentDeviceCatalog: () => ({ deviceOptions: ref([]), devicesPending: ref(false) }),
+  }
+})

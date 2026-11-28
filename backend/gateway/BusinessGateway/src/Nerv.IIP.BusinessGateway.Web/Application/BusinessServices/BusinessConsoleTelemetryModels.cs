@@ -42,7 +42,9 @@ public sealed record BusinessConsoleTelemetryTagItem(
     decimal? ControlMaxValue = null,
     IReadOnlyCollection<string>? ControlAllowedValues = null,
     string? DisplayName = null,
-    bool IsEnabled = true);
+    bool IsEnabled = true,
+    decimal? LatestValue = null,
+    DateTimeOffset? LatestSampledAtUtc = null);
 
 /// <summary>
 /// 设备采集点位的新建/编辑（#3870）。按「设备 + 点位编码」upsert：编码是与连接器配置对接的键，

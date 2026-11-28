@@ -195,6 +195,47 @@ function openCreate() {
   formError.value = ''
   formOpen.value = true
 }
+async function toggleRule(row: BusinessConsoleTelemetryAlarmRuleItem) {
+  try {
+    const {
+      deviceAssetId,
+      ruleCode,
+      alarmCode,
+      severity,
+      tagKey,
+      comparisonOperator,
+      thresholdValue,
+      unitCode,
+      isEnabled,
+    } = row
+    if (
+      !deviceAssetId ||
+      !ruleCode ||
+      !alarmCode ||
+      !severity ||
+      !tagKey ||
+      !comparisonOperator ||
+      !unitCode ||
+      thresholdValue == null
+    ) {
+      throw new Error('当前规则缺少保存所需的字段。')
+    }
+    await saveAlarmRule({
+      deviceAssetId,
+      ruleCode,
+      alarmCode,
+      severity,
+      tagKey,
+      comparisonOperator,
+      thresholdValue,
+      unitCode,
+      isEnabled: !isEnabled,
+    })
+    notifySuccess(isEnabled ? '报警规则已停用' : '报警规则已启用')
+  } catch (cause) {
+    notifyOperationFailure('更新报警规则失败', cause, '更新报警规则失败，请稍后重试。')
+  }
+}
 function openEdit(row: BusinessConsoleTelemetryAlarmRuleItem) {
   if (!canManage.value) return
   formEditing.value = true
@@ -380,6 +421,12 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
               查看趋势
             </RouterLink>
           </NvDropdownMenuItem>
+          <NvDropdownMenuItem
+            v-if="canManage"
+            :disabled="saveAlarmRulePending"
+            @select="toggleRule(row)"
+            >{{ row.isEnabled ? '停用' : '启用' }}</NvDropdownMenuItem
+          >
         </NvRowActions>
       </template>
     </NvDataTable>

@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("industrial_telemetry")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -1098,6 +1098,71 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.ToTable("oee_production_facts", "industrial_telemetry", t =>
                         {
                             t.HasComment("MES production-report facts projected for explainable IndustrialTelemetry OEE calculations.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryConnectorConfigAggregate.TelemetryConnectorConfig", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id");
+
+                    b.Property<string>("ConnectorId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("connector_id");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("endpoint");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_enabled");
+
+                    b.Property<string>("MappingsJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("mappings_json");
+
+                    b.Property<int>("PollIntervalSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("poll_interval_seconds");
+
+                    b.Property<string>("Protocol")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("protocol");
+
+                    b.Property<Guid>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("revision");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("OrganizationId", "EnvironmentId", "ConnectorId");
+
+                    b.ToTable("telemetry_connector_configs", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("Desired telemetry collector configuration.");
                         });
                 });
 

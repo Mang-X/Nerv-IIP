@@ -10,6 +10,7 @@
  */
 import type { BusinessConsoleMaintenanceWorkOrderItem } from '@nerv-iip/api-client'
 import type { EntityPickerOption } from '@nerv-iip/ui'
+import { normalizeTelemetryValueType, isProductionCountValueType } from '@/data/businessLabels'
 import { computed, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import {
   useMaintenancePlans,
@@ -75,6 +76,14 @@ export function useEquipmentDeviceCatalog() {
         .sort(byLabel),
     ),
     devicesPending: deviceCatalog.resourcesPending,
+    devicePublicIdByCode: computed(
+      () =>
+        new Map(
+          deviceCatalog.resources.value.flatMap((row) =>
+            row.code && row.deviceAssetId ? [[row.code, row.deviceAssetId] as const] : [],
+          ),
+        ),
+    ),
   }
 }
 
@@ -138,6 +147,14 @@ export function useTelemetryTagCatalog(deviceAssetId: MaybeRefOrGetter<string>) 
         .sort(byLabel),
     ),
     tagsPending: tagCatalog.tagsPending,
+    numericTags: computed(() =>
+      tagCatalog.tags.value.filter(
+        (tag) =>
+          tag.isEnabled !== false &&
+          (normalizeTelemetryValueType(tag.valueType) === 'number' ||
+            isProductionCountValueType(tag.valueType)),
+      ),
+    ),
     /** tagKey → 该测点标注的单位编码，用于选完标签自动带出单位。 */
     unitByTagKey: computed(() => {
       const map = new Map<string, string>()

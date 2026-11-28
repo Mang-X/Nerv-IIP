@@ -24,7 +24,13 @@ public sealed class WalkthroughSeedServiceTests
         Assert.Equal(10, await db.BusinessPartners.CountAsync());
         Assert.Equal(5, await db.BusinessPartners.CountAsync(x => x.PartnerType == "customer"));
         Assert.Equal(5, await db.BusinessPartners.CountAsync(x => x.PartnerType == "supplier"));
-        Assert.Empty(await db.DeviceAssets.ToArrayAsync());
+        var devices = await db.DeviceAssets.ToDictionaryAsync(x => x.Code);
+        Assert.Equal(WalkthroughSeedSpec.Devices.Length, devices.Count);
+        foreach (var device in WalkthroughSeedSpec.Devices)
+        {
+            Assert.Equal(device.WorkCenterCode, devices[device.Code].WorkCenterCode);
+            Assert.True(devices[device.Code].TelemetryEnabled);
+        }
         Assert.Empty(await db.Workers.ToArrayAsync());
     }
 

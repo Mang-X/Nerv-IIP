@@ -931,6 +931,91 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItemOf = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsIndustrialTelemetryTelemetryConnectorConfigItem> | null;
+};
+
+export type NervIipContractsIndustrialTelemetryTelemetryConnectorConfigItem = {
+    connectorId?: string;
+    displayName?: string;
+    protocol?: string;
+    endpoint?: string;
+    isEnabled?: boolean;
+    pollIntervalSeconds?: number;
+    mappings?: Array<NervIipContractsIndustrialTelemetryTelemetryConnectorMapping>;
+    revision?: string;
+    updatedAtUtc?: string;
+};
+
+export type NervIipContractsIndustrialTelemetryTelemetryConnectorMapping = {
+    deviceAssetId?: string;
+    tagKey?: string;
+    unitCode?: string;
+    bucketSeconds?: number;
+    unitId?: number;
+    address?: number;
+    dataType?: string;
+    topicFilter?: string | null;
+    valueJsonPath?: string | null;
+    nodeId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsTelemetryBusinessConsoleListTelemetryConnectorConfigsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsIndustrialTelemetryTelemetryConnectorConfigItem | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsTelemetryBusinessConsoleSaveTelemetryConnectorConfigRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    config?: NervIipContractsIndustrialTelemetryTelemetryConnectorConfigInput;
+};
+
+export type NervIipContractsIndustrialTelemetryTelemetryConnectorConfigInput = {
+    connectorId?: string;
+    displayName?: string;
+    protocol?: string;
+    endpoint?: string;
+    isEnabled?: boolean;
+    pollIntervalSeconds?: number;
+    mappings?: Array<NervIipContractsIndustrialTelemetryTelemetryConnectorMapping>;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBoolean = NetCorePalExtensionsDtoResponseData & {
+    data?: boolean;
+};
+
+export type NervIipBusinessGatewayWebEndpointsTelemetryBusinessConsoleDeleteTelemetryConnectorConfigRequest = {
+    organizationId?: string;
+    environmentId?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfTelemetryConnectionTestResult = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsIndustrialTelemetryTelemetryConnectionTestResult | null;
+};
+
+export type NervIipContractsIndustrialTelemetryTelemetryConnectionTestResult = {
+    reachable?: boolean;
+    latencyMs?: number;
+    message?: string;
+    samplePreview?: number | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsTelemetryBusinessConsoleTestTelemetryConnectorConnectionRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    connection?: NervIipContractsIndustrialTelemetryTelemetryConnectionTestInput;
+};
+
+export type NervIipContractsIndustrialTelemetryTelemetryConnectionTestInput = {
+    protocol?: string;
+    endpoint?: string;
+    mapping?: NervIipContractsIndustrialTelemetryTelemetryConnectorMapping | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagListResponse | null;
 };
@@ -955,6 +1040,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     controlAllowedValues?: Array<string> | null;
     displayName?: string | null;
     isEnabled?: boolean;
+    latestValue?: number | null;
+    latestSampledAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagListRequest = {
@@ -12373,6 +12460,119 @@ export type GetBusinessConsoleTelemetryConnectorTagCoverageResponses = {
 };
 
 export type GetBusinessConsoleTelemetryConnectorTagCoverageResponse = GetBusinessConsoleTelemetryConnectorTagCoverageResponses[keyof GetBusinessConsoleTelemetryConnectorTagCoverageResponses];
+
+export type ListBusinessConsoleTelemetryConnectorConfigsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/telemetry/connector-configs';
+};
+
+export type ListBusinessConsoleTelemetryConnectorConfigsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleTelemetryConnectorConfigsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItemOf;
+};
+
+export type ListBusinessConsoleTelemetryConnectorConfigsResponse = ListBusinessConsoleTelemetryConnectorConfigsResponses[keyof ListBusinessConsoleTelemetryConnectorConfigsResponses];
+
+export type SaveBusinessConsoleTelemetryConnectorConfigData = {
+    body: NervIipBusinessGatewayWebEndpointsTelemetryBusinessConsoleSaveTelemetryConnectorConfigRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/connector-configs';
+};
+
+export type SaveBusinessConsoleTelemetryConnectorConfigErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SaveBusinessConsoleTelemetryConnectorConfigResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfTelemetryConnectorConfigItem;
+};
+
+export type SaveBusinessConsoleTelemetryConnectorConfigResponse = SaveBusinessConsoleTelemetryConnectorConfigResponses[keyof SaveBusinessConsoleTelemetryConnectorConfigResponses];
+
+export type DeleteBusinessConsoleTelemetryConnectorConfigData = {
+    body: NervIipBusinessGatewayWebEndpointsTelemetryBusinessConsoleDeleteTelemetryConnectorConfigRequest;
+    path: {
+        connectorId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/telemetry/connector-configs/{connectorId}';
+};
+
+export type DeleteBusinessConsoleTelemetryConnectorConfigErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DeleteBusinessConsoleTelemetryConnectorConfigResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBoolean;
+};
+
+export type DeleteBusinessConsoleTelemetryConnectorConfigResponse = DeleteBusinessConsoleTelemetryConnectorConfigResponses[keyof DeleteBusinessConsoleTelemetryConnectorConfigResponses];
+
+export type TestBusinessConsoleTelemetryConnectorConnectionData = {
+    body: NervIipBusinessGatewayWebEndpointsTelemetryBusinessConsoleTestTelemetryConnectorConnectionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/connector-configs/test-connection';
+};
+
+export type TestBusinessConsoleTelemetryConnectorConnectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type TestBusinessConsoleTelemetryConnectorConnectionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfTelemetryConnectionTestResult;
+};
+
+export type TestBusinessConsoleTelemetryConnectorConnectionResponse = TestBusinessConsoleTelemetryConnectorConnectionResponses[keyof TestBusinessConsoleTelemetryConnectorConnectionResponses];
 
 export type ListBusinessConsoleTelemetryTagsData = {
     body?: never;

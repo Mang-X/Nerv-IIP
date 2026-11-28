@@ -180,7 +180,6 @@ export function useDeviceDetailPage() {
   const blockCount = computed(
     () => availabilityWindows.value.filter((w) => w.availabilityStatus !== 'available').length,
   )
-  const historyPreview = computed(() => visibleHistoryItems.value.slice(0, 5))
   const historyCount = computed(() => visibleHistoryItems.value.length)
   const currentDeviceId = computed(() => filters.deviceAssetId.trim())
   const currentDeviceWorkOrderMatches = computed(() =>
@@ -466,13 +465,19 @@ export function useDeviceDetailPage() {
   )
 
   // 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-  const { resolveDevice, resolveDeviceCode, resolveWorkCenter, resolveUom, resolveUser } =
-    useMasterDataDisplayNames({
-      devices: true,
-      workCenters: true,
-      uoms: true,
-      users: true,
-    })
+  const {
+    resolveDevice,
+    resolveDeviceAssetId,
+    resolveDeviceCode,
+    resolveWorkCenter,
+    resolveUom,
+    resolveUser,
+  } = useMasterDataDisplayNames({
+    devices: true,
+    workCenters: true,
+    uoms: true,
+    users: true,
+  })
   // 本页这台设备。路由里的设备引用可能是编码，也可能是设备公开 ID（从维保可用窗口进来时），
   // 名称和编码都从主数据按引用解析，不依赖设备有没有运行数据。
   const deviceName = computed(() => resolveDevice(filters.deviceAssetId))
@@ -582,25 +587,7 @@ export function useDeviceDetailPage() {
     if (value === null || value === undefined) return '暂无记录'
     return `${Number(value).toFixed(1)} 小时`
   }
-  function historyTypeLabel(value?: string | null) {
-    const labels: Record<string, string> = {
-      alarm: '报警',
-      daily: '日汇总',
-      hourly: '小时汇总',
-      sample: '采集值',
-      state: '状态',
-    }
-    // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
-    return value ? (labels[value.toLowerCase()] ?? '其他记录') : '事件'
-  }
-  function historyType(row: { itemType?: string | null }) {
-    return row.itemType
-  }
-  function historyValue(row: { itemType?: string | null; value?: string | null }) {
-    if (!row.value) return '无数值'
-    // 状态类记录的值是设备状态码，按设备状态词表说中文。
-    return row.itemType?.toLowerCase() === 'state' ? statusLabel(row.value) : row.value
-  }
+
   function inspectionResultLabel(value?: string | null) {
     return value ? labelFor(MAINTENANCE_INSPECTION_RESULT_LABELS, value, '未知结果') : '未记录'
   }
@@ -691,6 +678,9 @@ export function useDeviceDetailPage() {
     currentDeviceSpareParts,
     currentDeviceWorkOrders,
     currentState,
+    liveTelemetryDeviceAssetId: computed(
+      () => resolveDeviceAssetId(filters.deviceAssetId) || currentState.value?.deviceAssetId,
+    ),
     deviceCode,
     deviceName,
     devicePending,
@@ -702,10 +692,6 @@ export function useDeviceDetailPage() {
     healthPending,
     historyCount,
     historyFilters,
-    historyPreview,
-    historyType,
-    historyTypeLabel,
-    historyValue,
     inspectionResultLabel,
     intervalLabel,
     maintenanceAvailabilityWindows,

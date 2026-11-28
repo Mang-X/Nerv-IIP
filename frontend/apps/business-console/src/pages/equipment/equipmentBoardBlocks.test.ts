@@ -24,6 +24,8 @@ vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) =
     filters: { deviceAssetIds: '' },
     overviewError: computed(() => undefined),
     overviewPending: computed(() => false),
+    polling: computed(() => true),
+    updatedAt: computed(() => undefined),
     overviewState: computed(() => 'ready'),
     refreshDeviceRoster: vi.fn(),
     refreshOverview: vi.fn(),
@@ -132,3 +134,7 @@ describe('设备看板：当前阻塞卡片', () => {
     expect(freshnessCell('EQ00002').classes()).toContain('bg-warning/10')
   })
 })
+
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
+  useBusinessTelemetryTags: () => ({ tags: computed(() => []) }),
+}))

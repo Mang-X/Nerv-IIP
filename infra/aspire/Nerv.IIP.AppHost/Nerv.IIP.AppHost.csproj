@@ -38,6 +38,7 @@
     <ProjectReference Include="..\..\..\backend\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\gateway\PlatformGateway\src\Nerv.IIP.PlatformGateway.Web\Nerv.IIP.PlatformGateway.Web.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\backend\gateway\BusinessGateway\src\Nerv.IIP.BusinessGateway.Web\Nerv.IIP.BusinessGateway.Web.csproj" IsAspireProjectResource="true" />
+    <ProjectReference Include="..\..\..\connector-hosts\src\Nerv.IIP.ConnectorHost.DevSimulator\Nerv.IIP.ConnectorHost.DevSimulator.csproj" IsAspireProjectResource="true" />
     <ProjectReference Include="..\..\..\connector-hosts\src\Nerv.IIP.ConnectorHost.Host\Nerv.IIP.ConnectorHost.Host.csproj" IsAspireProjectResource="true" />
   </ItemGroup>
 

@@ -41,6 +41,7 @@ interface NumericMeasurement {
 
 export function projectTelemetryHistory(
   items: BusinessConsoleTelemetryHistoryItem[],
+  windowMinutes = Infinity,
 ): TelemetryHistoryProjection {
   const measurements = items.filter((item) =>
     MEASUREMENT_TYPES.has(item.itemType?.toLowerCase() ?? ''),
@@ -64,9 +65,12 @@ export function projectTelemetryHistory(
         .filter((entry) => entry.itemType === basis)
         .sort((left, right) => left.occurredAt - right.occurredAt)
     : []
-  const chartData = selectedMeasurements.map(({ item, value }) => ({
+  const chartData = selectedMeasurements.map(({ item, occurredAt, value }) => ({
     occurredAt: item.occurredAtUtc ?? '',
-    time: shortDateTime(item.occurredAtUtc),
+    time:
+      windowMinutes <= 120
+        ? telemetryClockFormat.format(occurredAt)
+        : shortDateTime(item.occurredAtUtc),
     value,
   }))
 
@@ -153,6 +157,25 @@ function shortDateTime(value?: string | null) {
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((candidate) => candidate.type === type)?.value ?? ''
   return `${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`
+}
+
+const telemetryClockFormat = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+const telemetryDateFormat = new Intl.DateTimeFormat('en-US', {
+  month: '2-digit',
+  day: '2-digit',
+})
+
+export function formatCompactTelemetryDateTime(value?: string | null) {
+  if (!value) return '无时间'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : telemetryDateFormat.format(date) + ' ' + telemetryClockFormat.format(date)
 }
 
 export function formatTelemetryDateTime(value?: string | null) {

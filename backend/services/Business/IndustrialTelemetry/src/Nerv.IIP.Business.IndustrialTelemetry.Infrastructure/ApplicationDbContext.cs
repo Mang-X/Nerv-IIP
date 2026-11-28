@@ -1,4 +1,5 @@
 using MediatR;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryConnectorConfigAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
@@ -24,6 +25,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<DeviceControlChannelBinding> DeviceControlChannelBindings => Set<DeviceControlChannelBinding>();
     public DbSet<DeviceControlCommand> DeviceControlCommands => Set<DeviceControlCommand>();
     public DbSet<TelemetryTag> TelemetryTags => Set<TelemetryTag>();
+    public DbSet<TelemetryConnectorConfig> TelemetryConnectorConfigs => Set<TelemetryConnectorConfig>();
     public DbSet<DeviceStateSnapshot> DeviceStateSnapshots => Set<DeviceStateSnapshot>();
     public DbSet<OeeProductionFact> OeeProductionFacts => Set<OeeProductionFact>();
     public DbSet<AlarmEvent> AlarmEvents => Set<AlarmEvent>();
