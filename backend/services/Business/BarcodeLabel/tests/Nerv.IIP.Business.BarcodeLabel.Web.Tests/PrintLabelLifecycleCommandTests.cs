@@ -54,6 +54,31 @@ public sealed class PrintLabelLifecycleCommandTests
     }
 
     [Fact]
+    public async Task Preview_compiles_frozen_labels_in_sequence_without_advancing_the_batch()
+    {
+        await using var dbContext = CreateDbContext();
+        var (batch, template) = CreateReplayableBatch(2);
+        dbContext.AddRange(template, batch);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new PreviewLabelPrintBatchQueryHandler(dbContext, ValidAssetPort());
+        var labels = await handler.Handle(
+            new PreviewLabelPrintBatchQuery(batch.Id, "org-001", "env-dev"), CancellationToken.None);
+
+        Assert.Equal(new[] { 1, 2 }, labels.Select(x => x.SequenceNo));
+        Assert.Equal(batch.Items.OrderBy(x => x.SequenceNo).Select(x => x.LabelValue), labels.Select(x => x.LabelValue));
+        Assert.All(labels, label =>
+        {
+            Assert.StartsWith("^XA", label.Zpl);
+            Assert.Contains(label.LabelValue, label.Zpl);
+        });
+        Assert.Equal("ready-to-print", batch.Status);
+        Assert.False(dbContext.ChangeTracker.HasChanges());
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new PreviewLabelPrintBatchQuery(batch.Id, "org-002", "env-dev"), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Dispatch_replay_sends_once_and_explicit_reprint_uses_the_same_frozen_item()
     {
         await using var dbContext = CreateDbContext();

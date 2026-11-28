@@ -10025,6 +10025,20 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintPreviewResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewResponse = {
+    labels?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintPreviewItem = {
+    sequenceNo?: number;
+    labelValue?: string;
+    zpl?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintLifecycleResponse | null;
 };
@@ -26881,6 +26895,38 @@ export type GetBusinessConsoleBarcodePrintBatchResponses = {
 };
 
 export type GetBusinessConsoleBarcodePrintBatchResponse = GetBusinessConsoleBarcodePrintBatchResponses[keyof GetBusinessConsoleBarcodePrintBatchResponses];
+
+export type PreviewBusinessConsoleBarcodePrintBatchData = {
+    body?: never;
+    path: {
+        printBatchId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/preview';
+};
+
+export type PreviewBusinessConsoleBarcodePrintBatchErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleBarcodePrintBatchResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintPreviewResponse;
+};
+
+export type PreviewBusinessConsoleBarcodePrintBatchResponse = PreviewBusinessConsoleBarcodePrintBatchResponses[keyof PreviewBusinessConsoleBarcodePrintBatchResponses];
 
 export type DispatchBusinessConsoleBarcodePrintBatchData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody;

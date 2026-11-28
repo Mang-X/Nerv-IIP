@@ -171,6 +171,36 @@ public sealed class GetBusinessConsoleBarcodePrintBatchEndpoint(
 }
 
 [Tags("Business Console Barcode")]
+[HttpGet("/api/business-console/v1/barcode/print-batches/{printBatchId}/preview")]
+[BusinessGatewayOperationId("previewBusinessConsoleBarcodePrintBatch")]
+public sealed class PreviewBusinessConsoleBarcodePrintBatchEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessBarcodeLabelClient barcode,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBarcodePrintBatchRequest, BusinessConsoleBarcodePrintPreviewResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodePrint)
+{
+    protected override string OrganizationId(BusinessConsoleBarcodePrintBatchRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBarcodePrintBatchRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleBarcodePrintBatchRequest request) => "barcode-print-batch";
+
+    protected override string? ResourceId(BusinessConsoleBarcodePrintBatchRequest request) =>
+        Route<string>("printBatchId") ?? request.PrintBatchId;
+
+    protected override Task<BusinessConsoleBarcodePrintPreviewResponse> ForwardAsync(
+        BusinessConsoleBarcodePrintBatchRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with { PrintBatchId = Route<string>("printBatchId") ?? request.PrintBatchId };
+        return barcode.PreviewPrintBatchAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
+}
+
+[Tags("Business Console Barcode")]
 [HttpPost("/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch")]
 [BusinessGatewayOperationId("dispatchBusinessConsoleBarcodePrintBatch")]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]

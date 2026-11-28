@@ -1,9 +1,12 @@
-using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
+using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
 using NJsonSchema.Annotations;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 
@@ -60,6 +63,29 @@ public sealed record GetScopedLabelPrintBatchQuery(
     LabelPrintBatchId PrintBatchId,
     string OrganizationId,
     string EnvironmentId) : IQuery<ScopedLabelPrintBatchDetail>;
+
+public sealed record LabelPrintPreviewItem(int SequenceNo, string LabelValue, string Zpl);
+
+public sealed record PreviewLabelPrintBatchQuery(
+    LabelPrintBatchId PrintBatchId,
+    string OrganizationId,
+    string EnvironmentId) : IQuery<LabelPrintPreviewItem[]>;
+
+public sealed class PreviewLabelPrintBatchQueryHandler(ApplicationDbContext dbContext, ILabelTemplateAssetPort templateAssets)
+    : IQueryHandler<PreviewLabelPrintBatchQuery, LabelPrintPreviewItem[]>
+{
+    public async Task<LabelPrintPreviewItem[]> Handle(PreviewLabelPrintBatchQuery request, CancellationToken cancellationToken)
+    {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var batch = await LabelPrintLifecycle.LoadScopedBatchAsync(
+            dbContext, request.PrintBatchId, tenant.OrganizationId, tenant.EnvironmentId, cancellationToken);
+        var documents = await LabelPrintLifecycle.CompileFrozenBatchAsync(dbContext, templateAssets, batch, cancellationToken);
+        return batch.Items.OrderBy(item => item.SequenceNo)
+            .Select((item, index) => new LabelPrintPreviewItem(
+                item.SequenceNo, item.LabelValue, Encoding.UTF8.GetString(documents[index].Payload.Span)))
+            .ToArray();
+    }
+}
 
 public sealed record GetScopedLabelPrintBatchByIdempotencyKeyQuery(
     string OrganizationId,

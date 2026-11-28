@@ -22084,6 +22084,12 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
         return Task.FromResult(new BusinessConsoleCreateBarcodePrintBatchResponse("print-batch-001"));
     }
 
+    public Task<BusinessConsoleBarcodePrintPreviewResponse> PreviewPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleBarcodePrintPreviewResponse([]));
+
     public Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchRequest request,

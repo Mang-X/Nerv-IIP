@@ -21,7 +21,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(23, contracts.Length);
+        Assert.Equal(24, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -136,6 +136,7 @@ public sealed class BarcodeLabelEndpointContractTests
     [InlineData(typeof(ScopedVoidLabelEndpoint))]
     [InlineData(typeof(ListLabelPrintBatchesEndpoint))]
     [InlineData(typeof(GetLabelPrintBatchEndpoint))]
+    [InlineData(typeof(PreviewLabelPrintBatchEndpoint))]
     [InlineData(typeof(GetScopedLabelPrintBatchEndpoint))]
     [InlineData(typeof(GetScopedLabelPrintBatchByIdempotencyKeyEndpoint))]
     [InlineData(typeof(RecordScanEndpoint))]

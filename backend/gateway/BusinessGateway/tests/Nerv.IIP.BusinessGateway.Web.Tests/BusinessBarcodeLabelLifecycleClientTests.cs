@@ -160,6 +160,25 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
     }
 
     [Fact]
+    public async Task Preview_preserves_scope_and_reads_compiled_labels()
+    {
+        var handler = new RecordingResponseHandler("""{"success":true,"data":{"labels":[{"sequenceNo":1,"labelValue":"FG-001","zpl":"^XA^FDFG-001^FS^XZ"}]},"message":"","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var response = await client.PreviewPrintBatchAsync(
+            "internal-token",
+            new BusinessConsoleBarcodePrintBatchRequest("org-001", "env-dev", "batch-001"),
+            CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Get, handler.LastRequest!.Method);
+        Assert.Equal("/api/business/v1/barcodes/print-batches/batch-001/preview?organizationId=org-001&environmentId=env-dev",
+            handler.LastRequest.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token", handler.LastRequest.Headers.Authorization!.Parameter);
+        Assert.Equal(new BusinessConsoleBarcodePrintPreviewItem(1, "FG-001", "^XA^FDFG-001^FS^XZ"), Assert.Single(response.Labels));
+    }
+
+    [Fact]
     public async Task Detail_reads_the_report_intent_fingerprint_from_the_downstream_v2_response()
     {
         var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatch":{"printBatchId":"batch-001","labelTemplateId":"template-001","sourceDocumentType":"work-order","sourceDocumentId":"WO-001","idempotencyKey":"intent-001","reportIntentKey":"intent-001","reportIntentFingerprint":"  opaque:Report-Intent/A  ","requestedQuantity":1,"status":"reserved","printerId":null,"printJobId":null,"failureReason":null,"productionReportId":null,"productionReportNo":null,"items":[]}},"message":"","code":0}""");
